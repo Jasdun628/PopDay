@@ -79,6 +79,9 @@ def _key_excerpt(alert: object, max_sentences: int = 3, limit: int = 420) -> str
 def build_alert_body(alerts: list[object], unsubscribe_link: str | None = None) -> str:
     lines: list[str] = []
     alert_count = len(alerts)
+    lines.append("POPDAY ALERT")
+    lines.append("=" * 12)
+    lines.append("")
     if alert_count == 1:
         lines.append("PopDay found 1 new investor-event announcement.")
     else:
@@ -88,26 +91,33 @@ def build_alert_body(alerts: list[object], unsubscribe_link: str | None = None) 
     for index, alert in enumerate(alerts):
         event_date = format_human_date(alert.event_date)
         source_label = getattr(alert, "source_label", "Source")
+        lines.append("-" * 56)
+        lines.append(f"ALERT {index + 1}")
+        lines.append("-" * 56)
         lines.append(f"Company: {alert.company_name}")
-        lines.append(f"Event: {alert.event_label}")
-        lines.append(f"Date: {event_date}")
+        lines.append(f"Event:   {alert.event_label}")
+        lines.append(f"Date:    {event_date}")
         nugget = _main_nugget(alert)
         if nugget:
-            lines.append(f"Main nugget: {nugget}")
+            lines.append("")
+            lines.append("MAIN NUGGET")
+            lines.append(nugget)
         excerpt = _key_excerpt(alert)
         if excerpt:
-            lines.append("Key excerpt:")
+            lines.append("")
+            lines.append("KEY EXCERPT")
             lines.append(excerpt)
-        lines.append(f"{source_label}:")
+        lines.append("")
+        lines.append(source_label.upper())
         lines.append(alert.filing_url)
         if index != len(alerts) - 1:
-            lines.append("")
-            lines.append("---")
             lines.append("")
 
     if unsubscribe_link:
         lines.append("")
-        lines.append(f"Unsubscribe:\n{unsubscribe_link}")
+        lines.append("-" * 56)
+        lines.append("UNSUBSCRIBE")
+        lines.append(unsubscribe_link)
     return "\n".join(lines)
 
 
