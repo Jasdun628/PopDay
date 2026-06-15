@@ -296,7 +296,7 @@
       <div class="summary-card">
         <div class="summary-label">Alerts Sent</div>
         <div class="summary-value">{{ latest_run_alerts_sent or '0' }}</div>
-        <div class="summary-note">Emails sent by the latest recorded run. Next: {{ next_run }}</div>
+        <div class="summary-note">Emails sent by the latest recorded run. Next: {{ next_run|replace("UTC", "GMT") }}</div>
       </div>
     </div>
   </section>
@@ -509,7 +509,7 @@
     <p class="page-note">Recent scheduled runs and the next expected run.</p>
     <div class="summary-card" style="margin-bottom:12px; display:inline-block; min-width:320px;">
       <div class="summary-label">Next scheduled run</div>
-      <div class="summary-value" style="font-size:16px;">{{ next_run }}</div>
+      <div class="summary-value" style="font-size:16px;">{{ next_run|replace("UTC", "GMT") }}</div>
     </div>
     {% if health_rows %}
     <table>
