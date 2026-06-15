@@ -132,6 +132,31 @@ def send_alert_email(config: Config, alerts: list[object], recipients: list[str]
             smtp.send_message(message)
 
 
+def send_privileged_format_test_email(
+    config: Config,
+    alerts: list[object],
+    *,
+    recipient: str,
+) -> None:
+    if not config.email_configured:
+        raise RuntimeError("Email is not configured. Set SMTP and email environment variables or config.json.")
+    if not recipient.strip():
+        raise RuntimeError("No privileged test recipient is configured.")
+    if not alerts:
+        raise RuntimeError("No recent alert content is available to replay as a format test.")
+
+    message = EmailMessage()
+    message["Subject"] = "TEST PopDay alert: Investor Day announced"
+    message["From"] = config.email_from
+    message["To"] = recipient.strip().lower()
+    message.set_content(build_alert_body(alerts))
+
+    with smtplib.SMTP(config.smtp_host, config.smtp_port, timeout=30) as smtp:
+        smtp.starttls()
+        smtp.login(config.smtp_username, config.smtp_password)
+        smtp.send_message(message)
+
+
 def send_test_email(config: Config, recipients: list[str] | None = None) -> None:
     if not config.email_configured:
         raise RuntimeError("Email is not configured. Set SMTP and email environment variables or config.json.")
@@ -152,4 +177,3 @@ def send_test_email(config: Config, recipients: list[str] | None = None) -> None
         smtp.starttls()
         smtp.login(config.smtp_username, config.smtp_password)
         smtp.send_message(message)
-

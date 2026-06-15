@@ -13,7 +13,11 @@ from .db import Database
 from .detector import detect_in_sections
 from .debug_server import serve_debug_ui
 from .edgar_fetch import EdgarClient, TARGET_FORMS
-from .emailer import build_alert_body, send_alert_email, send_test_email
+from .emailer import (
+    build_alert_body,
+    send_alert_email,
+    send_privileged_format_test_email,
+)
 from .parser import parse_filing_sections
 from .rules import ALERT_REQUIREMENTS
 
@@ -27,6 +31,9 @@ class Alert:
     filing_url: str
     source_label: str = "Source"
     snippet: str = ""
+
+
+PRIVILEGED_TEST_RECIPIENT = "jd@jasondunne.co.uk"
 
 
 def previous_business_day(value: date | None = None) -> date:
@@ -66,6 +73,18 @@ def _alert_from_known(row: object) -> Alert:
         filing_url=str(row["source_url"]),
         source_label=str(row["source_label"] or "Source"),
         snippet="",
+    )
+
+
+def _alert_from_sent_row(row: object) -> Alert:
+    return Alert(
+        detection_id=int(row["id"]),
+        company_name=str(row["company_name"]),
+        event_label=str(row["event_type"] or "Investor Day"),
+        event_date=datetime.strptime(str(row["event_date"]), "%Y-%m-%d").date(),
+        filing_url=str(row["source_url"]),
+        source_label=str(row["source_label"] or "Source"),
+        snippet=str(row["snippet"] or ""),
     )
 
 
@@ -287,14 +306,22 @@ def send_test(args: argparse.Namespace) -> int:
     db = Database(config.db_path)
     db.seed_recipients(config.email_recipients)
     try:
-        recipients = db.active_alert_recipients()
-        send_test_email(config, recipients=recipients)
+        latest_batch = db.latest_sent_alert_batch()
+        if not latest_batch:
+            print("No recent real PopDay alert batch is available to replay as a format test.")
+            return 1
+        alerts = [_alert_from_sent_row(row) for row in latest_batch]
+        send_privileged_format_test_email(
+            config,
+            alerts,
+            recipient=PRIVILEGED_TEST_RECIPIENT,
+        )
     except Exception as exc:
         print(f"Test email failed: {exc}")
         return 1
     finally:
         db.close()
-    print(f"Test email sent.")
+    print(f"Test email sent to {PRIVILEGED_TEST_RECIPIENT}.")
     return 0
 
 
@@ -386,4 +413,3 @@ def main(argv: list[str] | None = None) -> int:
             "--send-test-email, --send-known-alerts, or --debug-ui"
         )
     return run_scan(args)
-

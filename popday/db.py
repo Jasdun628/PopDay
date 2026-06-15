@@ -294,6 +294,59 @@ class Database:
             """
         ).fetchone()
 
+    def latest_sent_alert_batch(self) -> list[dict[str, Any]]:
+        latest_detection_ts = self.conn.execute(
+            """
+            SELECT alert_sent_timestamp
+            FROM detections
+            WHERE alert_sent = 1 AND alert_sent_timestamp IS NOT NULL
+            ORDER BY alert_sent_timestamp DESC, created_timestamp DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        latest_known_ts = self.conn.execute(
+            """
+            SELECT alert_sent_timestamp
+            FROM known_announcements
+            WHERE alert_sent = 1 AND alert_sent_timestamp IS NOT NULL
+            ORDER BY alert_sent_timestamp DESC, created_timestamp DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        timestamps = [
+            str(row["alert_sent_timestamp"])
+            for row in (latest_detection_ts, latest_known_ts)
+            if row and row["alert_sent_timestamp"]
+        ]
+        if not timestamps:
+            return []
+        latest_timestamp = max(timestamps)
+
+        detection_rows = self.conn.execute(
+            """
+            SELECT id, company_name, event_type, event_date, filing_url AS source_url,
+                   'SEC filing' AS source_label, snippet, alert_sent_timestamp
+            FROM detections
+            WHERE alert_sent = 1 AND alert_sent_timestamp = ?
+              AND status = 'alert_candidate'
+              AND event_type IS NOT NULL
+              AND event_date IS NOT NULL
+            ORDER BY id
+            """,
+            (latest_timestamp,),
+        ).fetchall()
+        known_rows = self.conn.execute(
+            """
+            SELECT id, company_name, event_type, event_date, source_url,
+                   source_label, '' AS snippet, alert_sent_timestamp
+            FROM known_announcements
+            WHERE alert_sent = 1 AND alert_sent_timestamp = ?
+            ORDER BY id
+            """,
+            (latest_timestamp,),
+        ).fetchall()
+        return [dict(row) for row in [*detection_rows, *known_rows]]
+
     def investor_day_announcements(self) -> list[dict[str, Any]]:
         rows = self.conn.execute(
             """
