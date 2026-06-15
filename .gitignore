@@ -5,3 +5,4 @@ __pycache__/
 popday.sqlite3
 config.json
 logs/
+.claude/
