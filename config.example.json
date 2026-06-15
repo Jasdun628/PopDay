@@ -1,0 +1,13 @@
+{
+  "db_path": "popday.sqlite3",
+  "sec_user_agent": "PopDay/0.1 jd@jasondunne.co.uk",
+  "request_delay_seconds": 0.65,
+  "smtp_host": "smtp.example.com",
+  "smtp_port": 587,
+  "smtp_username": "alerts@example.com",
+  "smtp_password": "app-password",
+  "email_from": "alerts@example.com",
+  "email_to": "jd@jasondunne.co.uk",
+  "unsubscribe_base_url": "",
+  "unsubscribe_secret": ""
+}

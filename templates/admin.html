@@ -1,0 +1,666 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PopDay</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f7f5;
+      --text: #202124;
+      --muted: #63676c;
+      --line: #d9d9d4;
+      --panel: #ffffff;
+      --panel-soft: #fbfbfa;
+      --accent: #2f6f9f;
+      --ok: #137333;
+      --warn: #9a6700;
+      --danger: #b3261e;
+      --ok-bg: #e6f4ea;
+      --warn-bg: #fff4d8;
+      --danger-bg: #fce8e6;
+      --neutral-bg: #eef1f3;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    header {
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+      padding: 18px 24px;
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }
+    .header-row { display: flex; justify-content: space-between; align-items: center; }
+    .header-actions { display: flex; gap: 8px; flex-shrink: 0; }
+    main { max-width: 1240px; margin: 0 auto; padding: 24px; }
+    h1 { margin: 0; font-size: 22px; font-weight: 650; letter-spacing: 0; }
+    h2 { margin: 0 0 12px; font-size: 16px; font-weight: 650; }
+    p { margin: 4px 0 0; color: var(--muted); }
+    section { margin-bottom: 26px; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; }
+    .tabs {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      display: flex;
+      gap: 4px;
+      margin: 0 0 22px;
+      overflow-x: auto;
+      padding: 0 10px;
+    }
+    .tab {
+      color: var(--muted);
+      display: inline-block;
+      font-weight: 650;
+      padding: 12px 11px 10px;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    .tab:hover { color: var(--text); }
+    .tab-active { border-bottom: 3px solid var(--accent); color: var(--text); }
+    .summary-grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .status-banner {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-left: 5px solid var(--accent);
+      margin-bottom: 14px;
+      padding: 20px;
+    }
+    .status-title { font-size: 26px; font-weight: 750; line-height: 1.2; }
+    .status-meta { color: var(--muted); margin-top: 6px; }
+    .summary-card {
+      background: var(--panel-soft);
+      border: 1px solid var(--line);
+      padding: 14px;
+    }
+    .summary-label { color: var(--muted); font-size: 12px; font-weight: 650; text-transform: uppercase; }
+    .summary-value { font-size: 22px; font-weight: 650; margin-top: 4px; }
+    .summary-note { color: var(--muted); margin-top: 6px; }
+    .tab-footer {
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 20px;
+      padding-top: 10px;
+    }
+    .page-note { color: var(--muted); margin: -6px 0 14px; }
+    .pill {
+      border-radius: 999px;
+      display: inline-block;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1;
+      padding: 5px 8px;
+      white-space: nowrap;
+    }
+    .pill-ok  { background: var(--ok-bg);      color: var(--ok); }
+    .pill-warn { background: var(--warn-bg);   color: var(--warn); }
+    .pill-danger { background: var(--danger-bg); color: var(--danger); }
+    .pill-neutral { background: var(--neutral-bg); color: var(--muted); }
+    .manual-grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+    .manual-card { background: var(--panel); border: 1px solid var(--line); padding: 12px; }
+    .manual-card h3 { font-size: 13px; margin: 0 0 6px; }
+    .manual-card p  { color: var(--text); font-size: 13px; margin: 0; }
+    .rule-helper {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      margin-bottom: 12px;
+      padding: 12px;
+    }
+    .rule-helper h3 { font-size: 13px; margin: 0 0 6px; }
+    .rule-helper p  { color: var(--text); font-size: 13px; margin: 0 0 6px; }
+    .rule-helper p:last-child { margin-bottom: 0; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--panel);
+      border: 1px solid var(--line);
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 9px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { color: var(--muted); font-size: 12px; font-weight: 650; text-transform: uppercase; }
+    tbody tr:nth-child(even) { background: var(--panel-soft); }
+    tbody tr:hover { background: #eef5f8; }
+    tr:last-child td { border-bottom: 0; }
+    ul { margin: 0; padding: 12px 18px; background: var(--panel); border: 1px solid var(--line); }
+    li { margin: 5px 0; }
+    .empty {
+      background: var(--panel-soft);
+      border: 1px solid var(--line);
+      color: var(--muted);
+      padding: 18px;
+    }
+    .action-stack { display: flex; flex-wrap: wrap; gap: 7px; }
+    .inline-action {
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      color: var(--text);
+      display: inline-block;
+      font-weight: 650;
+      padding: 6px 8px;
+      text-decoration: none;
+    }
+    .inline-action-primary { background: #202124; border-color: #202124; color: #fff; }
+    .inline-action:hover, button:hover { opacity: 0.86; }
+    form { margin: 0; }
+    .rule-form {
+      align-items: end;
+      background: var(--panel-soft);
+      border: 1px solid var(--line);
+      display: grid;
+      gap: 10px;
+      grid-template-columns: 160px minmax(180px, 1fr) minmax(240px, 1.4fr) auto;
+      margin-bottom: 10px;
+      padding: 12px;
+    }
+    .recipient-form {
+      align-items: end;
+      background: var(--panel-soft);
+      border: 1px solid var(--line);
+      display: grid;
+      gap: 10px;
+      grid-template-columns: minmax(280px, 1fr) auto;
+      margin-bottom: 10px;
+      padding: 12px;
+    }
+    label {
+      color: var(--muted);
+      display: grid;
+      font-size: 12px;
+      font-weight: 650;
+      gap: 4px;
+      text-transform: uppercase;
+    }
+    input, select {
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      color: var(--text);
+      font: inherit;
+      min-height: 36px;
+      padding: 7px 8px;
+      text-transform: none;
+      width: 100%;
+    }
+    input:focus, select:focus { border-color: var(--accent); outline: 2px solid rgba(47,111,159,0.18); }
+    button {
+      background: #202124;
+      border: 0;
+      border-radius: 4px;
+      color: #fff;
+      cursor: pointer;
+      font: inherit;
+      font-weight: 650;
+      min-height: 36px;
+      padding: 7px 11px;
+    }
+    .delete-button {
+      background: transparent;
+      border: 1px solid var(--line);
+      color: var(--danger);
+      min-width: 70px;
+    }
+    @media (max-width: 800px) {
+      main { padding: 16px; }
+      .grid { grid-template-columns: 1fr; }
+      .summary-grid { grid-template-columns: 1fr; }
+      .manual-grid { grid-template-columns: 1fr; }
+      .rule-form { grid-template-columns: 1fr; }
+      .recipient-form { grid-template-columns: 1fr; }
+      table { display: block; overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-row">
+    <div>
+      <h1>PopDay</h1>
+      <p>Local monitor for EDGAR Investor Day alerts.</p>
+    </div>
+    <div class="header-actions">
+      <a href="{{ url_for('admin_logout') }}" class="inline-action">Sign out</a>
+    </div>
+  </div>
+</header>
+
+<main>
+  <nav class="tabs">
+    {% for key, label in tabs %}
+    <a class="tab {% if active_tab == key %}tab-active{% endif %}"
+       href="{{ url_for('admin_tab', tab=key) }}">{{ label }}</a>
+    {% endfor %}
+  </nav>
+
+  {# ------------------------------------------------------------------ #}
+  {# SUMMARY                                                             #}
+  {# ------------------------------------------------------------------ #}
+  {% if active_tab == 'summary' %}
+  <section>
+    <h2>Summary</h2>
+    <p class="page-note">The current PopDay alert state at a glance.</p>
+
+    <div class="status-banner">
+      {% if latest_alert %}
+      <div class="status-title">{{ latest_alert.company_name }} announced {{ latest_alert.event_type or 'an Investor Day' }}</div>
+      <div class="status-meta">Event date: {{ latest_alert.event_date }}</div>
+      {% else %}
+      <div class="status-title">No qualifying EDGAR Investor Day alerts yet</div>
+      <div class="status-meta">This does not cover announcements not filed as an 8-K or 6-K.</div>
+      {% endif %}
+    </div>
+
+    <div class="summary-grid">
+      <div class="summary-card">
+        <div class="summary-label">Investor Days Found</div>
+        <div class="summary-value">{{ announcement_count }}</div>
+        <div class="summary-note">Qualifying EDGAR announcements stored by PopDay.</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-label">Latest EDGAR Index</div>
+        <div class="summary-value">
+          {% if latest_run_index_status and latest_run_index_status != '—' %}
+            {% if latest_run_index_status == 'available' %}
+              <span class="pill pill-ok">{{ latest_run_index_status }}</span>
+            {% elif 'not yet' in latest_run_index_status %}
+              <span class="pill pill-warn">{{ latest_run_index_status }}</span>
+            {% else %}
+              <span class="pill pill-neutral">{{ latest_run_index_status }}</span>
+            {% endif %}
+          {% else %}
+            <span class="pill pill-neutral">no runs yet</span>
+          {% endif %}
+        </div>
+        <div class="summary-note">
+          Scanned: {{ latest_run_filing_date }}{% if latest_run_started %}; last run: {{ latest_run_started }}{% endif %}
+        </div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-label">Alerts Sent</div>
+        <div class="summary-value">{{ latest_run_alerts_sent or '0' }}</div>
+        <div class="summary-note">Emails sent by the latest recorded run. Next: {{ next_run }}</div>
+      </div>
+    </div>
+  </section>
+
+  {# ------------------------------------------------------------------ #}
+  {# INVESTOR DAYS                                                       #}
+  {# ------------------------------------------------------------------ #}
+  {% elif active_tab == 'announcements' %}
+  <section>
+    <h2>Investor Days</h2>
+    <p class="page-note">Running list of qualifying Investor Day announcements PopDay has found.</p>
+    <div class="summary-card" style="margin-bottom:12px; display:inline-block; min-width:180px;">
+      <div class="summary-label">Investor Days Found</div>
+      <div class="summary-value">{{ announcements | length }}</div>
+    </div>
+    {% if announcements %}
+    <table>
+      <thead>
+        <tr>
+          <th>Company</th><th>Event</th><th>Event Date</th>
+          <th>Source Type</th><th>Source</th><th>Announced / Filed</th>
+          <th>Matched Phrase</th><th>Email</th><th>Link</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in announcements %}
+        <tr>
+          <td>{{ a.company_name }}</td>
+          <td>{{ a.event_type }}</td>
+          <td>{{ a.event_date }}</td>
+          <td>{{ a.source_type }}</td>
+          <td>{{ a.source }}</td>
+          <td>{{ a.filing_date }}</td>
+          <td>{{ a.matched_phrase }}</td>
+          <td>
+            {% if a.alert_sent %}
+              <span class="pill pill-ok">sent</span>
+            {% else %}
+              <span class="pill pill-neutral">not sent</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if a.source_url %}
+            <a href="{{ a.source_url }}" target="_blank" rel="noopener" class="inline-action">Source</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty">No qualifying Investor Day announcements stored yet.</div>
+    {% endif %}
+  </section>
+
+  {# ------------------------------------------------------------------ #}
+  {# RULES                                                               #}
+  {# ------------------------------------------------------------------ #}
+  {% elif active_tab == 'rules' %}
+  <div class="grid">
+    <section>
+      <h2>Rules</h2>
+      <p class="page-note">Add or remove phrases used by the detector.</p>
+      <form class="rule-form" method="post" action="{{ url_for('admin_rules_add') }}">
+        <label>Type
+          <select name="rule_type">
+            <option value="include">Include</option>
+            <option value="routine_context">Routine context</option>
+          </select>
+        </label>
+        <label>Phrase
+          <input name="phrase" required placeholder="e.g. healthcare day">
+        </label>
+        <label>Description
+          <input name="description" placeholder="Optional">
+        </label>
+        <button type="submit">Add Rule</button>
+      </form>
+      {% if rules %}
+      <table>
+        <thead>
+          <tr><th>Type</th><th>Phrase</th><th>Description</th><th>Active</th><th>Action</th></tr>
+        </thead>
+        <tbody>
+          {% for r in rules %}
+          <tr>
+            <td>{{ r.rule_type | replace('_', ' ') | capitalize }}</td>
+            <td>{{ r.phrase }}</td>
+            <td>{{ r.description }}</td>
+            <td>
+              {% if r.active %}
+                <span class="pill pill-ok">yes</span>
+              {% else %}
+                <span class="pill pill-warn">no</span>
+              {% endif %}
+            </td>
+            <td>
+              <form method="post" action="{{ url_for('admin_rules_delete') }}">
+                <input type="hidden" name="rule_type" value="{{ r.rule_type }}">
+                <input type="hidden" name="phrase" value="{{ r.phrase }}">
+                <button class="delete-button" type="submit">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty">No rules configured.</div>
+      {% endif %}
+    </section>
+
+    <section>
+      <h2>Alert Requirements</h2>
+      <p class="page-note">All requirements must be true before an email is sent.</p>
+      <ul>
+        {% for req in alert_requirements %}
+        <li>{{ req }}</li>
+        {% endfor %}
+      </ul>
+      <div class="rule-helper" style="margin-top:12px;">
+        <h3>How routine context is used</h3>
+        <p><strong>Include</strong> phrases are the positive phrases PopDay looks for, such as investor day or analyst day.</p>
+        <p><strong>Routine context</strong> phrases are ordinary events, such as earnings calls or annual meetings. They do not automatically block an alert.</p>
+        <p>They help PopDay explain weaker matches and avoid treating a passing mention of an ordinary meeting as an Investor Day announcement.</p>
+      </div>
+    </section>
+  </div>
+
+  {# ------------------------------------------------------------------ #}
+  {# EMAIL ALERTS                                                        #}
+  {# ------------------------------------------------------------------ #}
+  {% elif active_tab == 'recipients' %}
+  <section>
+    <h2>Email Alerts</h2>
+    <p class="page-note">People who receive PopDay alert emails.</p>
+    <form class="recipient-form" method="post" action="{{ url_for('admin_recipients_add') }}">
+      <label>Email address
+        <input name="email" type="email" required placeholder="person@example.com">
+      </label>
+      <button type="submit">Add</button>
+    </form>
+    {% if recipients %}
+    <table>
+      <thead>
+        <tr><th>Email</th><th>Active</th><th>Added</th><th>Action</th></tr>
+      </thead>
+      <tbody>
+        {% for r in recipients %}
+        <tr>
+          <td>{{ r.email }}</td>
+          <td>
+            {% if r.active %}
+              <span class="pill pill-ok">yes</span>
+            {% else %}
+              <span class="pill pill-warn">no</span>
+            {% endif %}
+          </td>
+          <td>{{ r.created }}</td>
+          <td>
+            {% if r.active %}
+            <form method="post" action="{{ url_for('admin_recipients_unsubscribe') }}">
+              <input type="hidden" name="email" value="{{ r.email }}">
+              <button class="delete-button" type="submit">Unsubscribe</button>
+            </form>
+            {% else %}
+            <form method="post" action="{{ url_for('admin_recipients_reactivate') }}">
+              <input type="hidden" name="email" value="{{ r.email }}">
+              <button type="submit">Reactivate</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty">No alert recipients configured.</div>
+    {% endif %}
+  </section>
+
+  {% if sent_alerts %}
+  <section style="margin-top:26px;">
+    <h2>Alert History</h2>
+    <p class="page-note">Emails sent by PopDay, most recent first.</p>
+    <table>
+      <thead>
+        <tr><th>Company</th><th>Event</th><th>Event Date</th><th>Sent</th></tr>
+      </thead>
+      <tbody>
+        {% for a in sent_alerts %}
+        <tr>
+          <td>{{ a.company_name }}</td>
+          <td>{{ a.event_type }}</td>
+          <td>{{ a.event_date }}</td>
+          <td>{{ a.sent_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+
+  {# ------------------------------------------------------------------ #}
+  {# SYSTEM HEALTH                                                       #}
+  {# ------------------------------------------------------------------ #}
+  {% elif active_tab == 'health' %}
+  <section>
+    <h2>System Health</h2>
+    <p class="page-note">Recent scheduled runs and the next expected run.</p>
+    <div class="summary-card" style="margin-bottom:12px; display:inline-block; min-width:320px;">
+      <div class="summary-label">Next scheduled run</div>
+      <div class="summary-value" style="font-size:16px;">{{ next_run }}</div>
+    </div>
+    {% if health_rows %}
+    <table>
+      <thead>
+        <tr><th>Recent run</th><th>Filing Date</th><th>EDGAR Index</th><th>Filings Checked</th><th>8-K Count</th><th>Alerts Sent</th></tr>
+      </thead>
+      <tbody>
+        {% for h in health_rows %}
+        <tr>
+          <td>{{ h.started }}</td>
+          <td>{{ h.filing_date }}</td>
+          <td>
+            {% if h.index_status == 'available' %}
+              <span class="pill pill-ok">{{ h.index_status }}</span>
+            {% elif 'not yet' in h.index_status %}
+              <span class="pill pill-warn">{{ h.index_status }}</span>
+            {% else %}
+              <span class="pill pill-neutral">{{ h.index_status }}</span>
+            {% endif %}
+          </td>
+          <td>{{ h.filings_parsed }}</td>
+          <td>{{ h.eight_k_sanity_count }}</td>
+          <td>{{ h.alerts_sent }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty">No system health runs recorded yet.</div>
+    {% endif %}
+  </section>
+
+  {# ------------------------------------------------------------------ #}
+  {# CANDIDATES                                                          #}
+  {# ------------------------------------------------------------------ #}
+  {% elif active_tab == 'candidates' %}
+  <section>
+    <h2>Candidate Matches</h2>
+    <p class="page-note">Matches PopDay inspected, including dismissed false positives.</p>
+    {% if candidates %}
+    <table>
+      <thead>
+        <tr>
+          <th>Seen</th><th>Status</th><th>Company</th><th>Phrase</th>
+          <th>Event Date</th><th>Location</th><th>Reason</th><th>Source</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in candidates %}
+        <tr>
+          <td>{{ c.created }}</td>
+          <td>
+            {% if c.status == 'alert_candidate' %}
+              <span class="pill pill-ok">{{ c.status_display }}</span>
+            {% elif c.status == 'dismissed' %}
+              <span class="pill pill-warn">{{ c.status_display }}</span>
+            {% else %}
+              <span class="pill pill-neutral">{{ c.status_display }}</span>
+            {% endif %}
+          </td>
+          <td>{{ c.company_name }}</td>
+          <td>{{ c.matched_phrase }}</td>
+          <td>{{ c.event_date }}</td>
+          <td>{{ c.matched_location }}</td>
+          <td>{{ c.reason }}</td>
+          <td>
+            <div class="action-stack">
+              <a href="{{ url_for('admin_candidate', detection_id=c.id) }}"
+                 class="inline-action inline-action-primary">Read text</a>
+              {% if c.sec_url %}
+              <a href="{{ c.sec_url }}" target="_blank" rel="noopener"
+                 class="inline-action">SEC page</a>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty">No candidate matches yet.</div>
+    {% endif %}
+  </section>
+
+  {# ------------------------------------------------------------------ #}
+  {# FILINGS                                                             #}
+  {# ------------------------------------------------------------------ #}
+  {% elif active_tab == 'filings' %}
+  <section>
+    <h2>Processed Filings</h2>
+    <p class="page-note">Recent SEC filings PopDay has already scanned.</p>
+    {% if filings %}
+    <table>
+      <thead>
+        <tr><th>Processed</th><th>Form</th><th>Company</th><th>Accession</th><th>Filed</th></tr>
+      </thead>
+      <tbody>
+        {% for f in filings %}
+        <tr>
+          <td>{{ f.processed }}</td>
+          <td>{{ f.form_type }}</td>
+          <td>{{ f.company_name }}</td>
+          <td>{{ f.accession_number }}</td>
+          <td>{{ f.filing_date }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty">No processed filings yet.</div>
+    {% endif %}
+  </section>
+
+  {# ------------------------------------------------------------------ #}
+  {# HELP                                                                #}
+  {# ------------------------------------------------------------------ #}
+  {% elif active_tab == 'help' %}
+  <section>
+    <h2>Help</h2>
+    <p class="page-note">Short explanation of the PopDay detection logic.</p>
+    <div class="manual-grid">
+      {% for title, text in [
+        ("Schedule",        "launchd runs PopDay Tuesday–Saturday at 04:30 and 08:00, scanning the previous SEC business day."),
+        ("Source",          "PopDay reads SEC EDGAR daily indexes, then fetches only 8-K and 6-K filings."),
+        ("Include Rules",   "These are event phrases PopDay looks for, such as investor day or analyst day."),
+        ("Routine Context", "These phrases help explain dismissals. They are not automatic blockers."),
+        ("Date Rule",       "No future event date nearby means no alert."),
+        ("Duplicate Rule",  "Previously processed filings and already alerted events are skipped."),
+        ("Email Rule",      "Email is sent only for qualifying future event announcements."),
+        ("No Commentary",   "Alerts contain only company, event date, and SEC source link.")
+      ] %}
+      <div class="manual-card">
+        <h3>{{ title }}</h3>
+        <p>{{ text }}</p>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  <div class="tab-footer">
+    {% if active_tab == 'summary' %}This page shows the current alert state and the latest EDGAR check.
+    {% elif active_tab == 'announcements' %}This page shows every qualifying Investor Day announcement PopDay has found.
+    {% elif active_tab == 'rules' %}This page controls the phrases PopDay uses when deciding what to inspect.
+    {% elif active_tab == 'recipients' %}This page controls who receives PopDay alert emails.
+    {% elif active_tab == 'health' %}This page shows recent scheduled runs and low-level scan counts.
+    {% elif active_tab == 'candidates' %}This page shows filings that matched or were dismissed, with public SEC source links.
+    {% elif active_tab == 'filings' %}This page shows recently processed SEC filings so duplicate runs can be checked.
+    {% elif active_tab == 'help' %}This page briefly explains how PopDay works.
+    {% endif %}
+  </div>
+</main>
+</body>
+</html>
