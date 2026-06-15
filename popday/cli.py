@@ -26,6 +26,7 @@ class Alert:
     event_date: date
     filing_url: str
     source_label: str = "Source"
+    snippet: str = ""
 
 
 def previous_business_day(value: date | None = None) -> date:
@@ -52,6 +53,7 @@ def _alert_from_detection(detection_id: int, detection: object) -> Alert:
         event_date=datetime.strptime(detection.event_date, "%Y-%m-%d").date(),
         filing_url=detection.filing.filing_url,
         source_label="SEC filing",
+        snippet=str(detection.snippet or ""),
     )
 
 
@@ -63,6 +65,7 @@ def _alert_from_known(row: object) -> Alert:
         event_date=datetime.strptime(str(row["event_date"]), "%Y-%m-%d").date(),
         filing_url=str(row["source_url"]),
         source_label=str(row["source_label"] or "Source"),
+        snippet="",
     )
 
 
@@ -383,3 +386,4 @@ def main(argv: list[str] | None = None) -> int:
             "--send-test-email, --send-known-alerts, or --debug-ui"
         )
     return run_scan(args)
+
