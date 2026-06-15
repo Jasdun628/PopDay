@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 import urllib.error
 import urllib.request
@@ -59,6 +60,9 @@ class EdgarClient:
 
     def get_text(self, url: str) -> str:
         return self._request(url).decode("utf-8", errors="replace")
+
+    def get_json(self, url: str) -> dict:
+        return json.loads(self.get_text(url))
 
     def _daily_index_url(self, run_date: date) -> str:
         quarter = ((run_date.month - 1) // 3) + 1

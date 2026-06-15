@@ -554,7 +554,7 @@
       <thead>
         <tr>
           <th>Seen</th><th>Status</th><th>Company</th><th>Phrase</th>
-          <th>Event Date</th><th>Location</th><th>Reason</th><th>Source</th>
+          <th>Event Date</th><th>Hype</th><th>Location</th><th>Reason</th><th>Source</th>
         </tr>
       </thead>
       <tbody>
@@ -573,6 +573,16 @@
           <td>{{ c.company_name }}</td>
           <td>{{ c.matched_phrase }}</td>
           <td>{{ c.event_date }}</td>
+          <td>
+            {% if c.hype_status %}
+              <span class="pill pill-{{ c.hype_tone }}">{{ c.hype_status_display }}</span>
+              {% if c.hype_count is not none %}
+                <div class="status-meta">{{ c.hype_count }} voluntary filing{{ '' if c.hype_count == 1 else 's' }}</div>
+              {% endif %}
+            {% else %}
+              <span class="pill pill-neutral">not checked</span>
+            {% endif %}
+          </td>
           <td>{{ c.matched_location }}</td>
           <td>{{ c.reason }}</td>
           <td>

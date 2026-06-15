@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import re
 import smtplib
 from email.message import EmailMessage
@@ -76,6 +77,16 @@ def _key_excerpt(alert: object, max_sentences: int = 3, limit: int = 420) -> str
     return f"{clipped}..."
 
 
+def _disclosure_activity_line(alert: object) -> str:
+    hype_status = str(getattr(alert, "hype_status", "") or "").strip()
+    hype_count = getattr(alert, "hype_count", None)
+    if not hype_status or hype_status == "pending" or hype_count is None:
+        return ""
+    filing_word = "filing" if int(hype_count) == 1 else "filings"
+    label = hype_status.replace("_", " ")
+    return f"Disclosure activity: {label} ({hype_count} voluntary {filing_word} since announcement)"
+
+
 def build_alert_body(alerts: list[object], unsubscribe_link: str | None = None) -> str:
     lines: list[str] = []
     alert_count = len(alerts)
@@ -97,6 +108,9 @@ def build_alert_body(alerts: list[object], unsubscribe_link: str | None = None) 
         lines.append(f"Company: {alert.company_name}")
         lines.append(f"Event:   {alert.event_label}")
         lines.append(f"Date:    {event_date}")
+        disclosure_line = _disclosure_activity_line(alert)
+        if disclosure_line:
+            lines.append(disclosure_line)
         nugget = _main_nugget(alert)
         if nugget:
             lines.append("")
@@ -121,6 +135,61 @@ def build_alert_body(alerts: list[object], unsubscribe_link: str | None = None) 
     return "\n".join(lines)
 
 
+def build_alert_html(alerts: list[object], unsubscribe_link: str | None = None) -> str:
+    parts: list[str] = [
+        "<html><body style=\"font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:1.5;color:#111;\">",
+        "<div style=\"font-size:20px;font-weight:700;letter-spacing:0.02em;\">POPDAY ALERT</div>",
+        "<hr style=\"border:none;border-top:2px solid #111;margin:8px 0 16px;\">",
+    ]
+    alert_count = len(alerts)
+    if alert_count == 1:
+        parts.append("<p>PopDay found 1 new investor-event announcement.</p>")
+    else:
+        parts.append(f"<p>PopDay found {alert_count} new investor-event announcements.</p>")
+
+    for index, alert in enumerate(alerts):
+        event_date = format_human_date(alert.event_date)
+        source_label = html.escape(getattr(alert, "source_label", "Source").upper())
+        company_name = html.escape(str(alert.company_name))
+        event_label = html.escape(str(alert.event_label))
+        filing_url = html.escape(str(alert.filing_url))
+        parts.extend(
+            [
+                "<hr style=\"border:none;border-top:1px solid #bbb;margin:18px 0 14px;\">",
+                f"<div style=\"font-size:13px;font-weight:700;letter-spacing:0.04em;color:#444;\">ALERT {index + 1}</div>",
+                f"<p><strong>Company:</strong> {company_name}<br>",
+                f"<strong>Event:</strong> {event_label}<br>",
+                f"<strong>Date:</strong> {html.escape(event_date)}",
+            ]
+        )
+        disclosure_line = _disclosure_activity_line(alert)
+        if disclosure_line:
+            parts.append(f"<br><strong>Disclosure activity:</strong> {html.escape(disclosure_line.split(': ', 1)[1])}")
+        parts.append("</p>")
+        nugget = _main_nugget(alert)
+        if nugget:
+            parts.append("<div style=\"font-size:13px;font-weight:700;letter-spacing:0.04em;color:#444;\">MAIN NUGGET</div>")
+            parts.append(f"<p>{html.escape(nugget)}</p>")
+        excerpt = _key_excerpt(alert)
+        if excerpt:
+            parts.append("<div style=\"font-size:13px;font-weight:700;letter-spacing:0.04em;color:#444;\">KEY EXCERPT</div>")
+            parts.append(f"<p>{html.escape(excerpt)}</p>")
+        parts.append(f"<div style=\"font-size:13px;font-weight:700;letter-spacing:0.04em;color:#444;\">{source_label}</div>")
+        parts.append(f'<p><a href="{filing_url}">{filing_url}</a></p>')
+
+    if unsubscribe_link:
+        safe_unsub = html.escape(unsubscribe_link)
+        parts.extend(
+            [
+                "<hr style=\"border:none;border-top:1px solid #bbb;margin:18px 0 14px;\">",
+                "<div style=\"font-size:13px;font-weight:700;letter-spacing:0.04em;color:#444;\">UNSUBSCRIBE</div>",
+                f'<p><a href="{safe_unsub}">{safe_unsub}</a></p>',
+            ]
+        )
+    parts.append("</body></html>")
+    return "".join(parts)
+
+
 def send_alert_email(config: Config, alerts: list[object], recipients: list[str] | None = None) -> None:
     if not config.email_configured:
         raise RuntimeError("Email is not configured. Set SMTP and email environment variables or config.json.")
@@ -139,6 +208,7 @@ def send_alert_email(config: Config, alerts: list[object], recipients: list[str]
             message["To"] = recipient
             message["List-Unsubscribe"] = f"<{unsubscribe_link}>"
             message.set_content(build_alert_body(alerts, unsubscribe_link=unsubscribe_link))
+            message.add_alternative(build_alert_html(alerts, unsubscribe_link=unsubscribe_link), subtype="html")
             smtp.send_message(message)
 
 
@@ -160,6 +230,7 @@ def send_privileged_format_test_email(
     message["From"] = config.email_from
     message["To"] = recipient.strip().lower()
     message.set_content(build_alert_body(alerts))
+    message.add_alternative(build_alert_html(alerts), subtype="html")
 
     with smtplib.SMTP(config.smtp_host, config.smtp_port, timeout=30) as smtp:
         smtp.starttls()

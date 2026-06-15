@@ -162,6 +162,15 @@ def _admin_display_text(value: object) -> str:
     ).capitalize()
 
 
+def _hype_pill_tone(value: object) -> str:
+    status = str(value or "").strip().lower()
+    if status in {"building", "hyped"}:
+        return "ok"
+    if status in {"quiet", "non_hyped"}:
+        return "neutral"
+    return "warn"
+
+
 def _next_scheduled_run() -> str:
     now = datetime.now().astimezone()
     for day_offset in range(8):
@@ -310,6 +319,10 @@ def _build_admin_context(db: Database, db_path: str, tab: str) -> dict:
                 "matched_location": _admin_display_text(dict(r).get("matched_location")),
                 "reason": _admin_display_text(dict(r).get("dismissal_reason") or "alert ready"),
                 "sec_url": _sec_filing_url(r["filing_url"]) if dict(r).get("filing_url") else "",
+                "hype_status": dict(r).get("hype_status") or "",
+                "hype_status_display": _admin_display_text(dict(r).get("hype_status")),
+                "hype_count": dict(r).get("qualifying_count"),
+                "hype_tone": _hype_pill_tone(dict(r).get("hype_status")),
             }
             for r in db.recent_candidates()
         ]

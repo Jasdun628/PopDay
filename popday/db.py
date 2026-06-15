@@ -78,6 +78,17 @@ CREATE TABLE IF NOT EXISTS known_announcements (
     created_timestamp TEXT NOT NULL,
     UNIQUE(company_name, event_type, event_date, source_url)
 );
+
+CREATE TABLE IF NOT EXISTS hype_tracking (
+    candidate_id INTEGER PRIMARY KEY,
+    cik TEXT NOT NULL,
+    announcement_date TEXT NOT NULL,
+    event_date TEXT NOT NULL,
+    qualifying_count INTEGER DEFAULT 0,
+    hype_status TEXT DEFAULT 'pending',
+    last_checked TEXT,
+    detected_json TEXT
+);
 """
 
 
@@ -262,10 +273,12 @@ class Database:
     def recent_candidates(self, limit: int = 30) -> list[sqlite3.Row]:
         return self.conn.execute(
             """
-            SELECT id, created_timestamp, company_name, form_type, filing_date, event_type, event_date,
-                   matched_phrase, matched_location, status, dismissal_reason, filing_url
-            FROM detections
-            ORDER BY created_timestamp DESC
+            SELECT d.id, d.created_timestamp, d.company_name, d.form_type, d.filing_date, d.event_type, d.event_date,
+                   d.matched_phrase, d.matched_location, d.status, d.dismissal_reason, d.filing_url,
+                   h.qualifying_count, h.hype_status
+            FROM detections d
+            LEFT JOIN hype_tracking h ON h.candidate_id = d.id
+            ORDER BY d.created_timestamp DESC
             LIMIT ?
             """,
             (limit,),
@@ -325,12 +338,14 @@ class Database:
         detection_rows = self.conn.execute(
             """
             SELECT id, company_name, event_type, event_date, filing_url AS source_url,
-                   'SEC filing' AS source_label, snippet, alert_sent_timestamp
-            FROM detections
-            WHERE alert_sent = 1 AND alert_sent_timestamp = ?
-              AND status = 'alert_candidate'
-              AND event_type IS NOT NULL
-              AND event_date IS NOT NULL
+                   'SEC filing' AS source_label, snippet, alert_sent_timestamp,
+                   h.qualifying_count, h.hype_status
+            FROM detections d
+            LEFT JOIN hype_tracking h ON h.candidate_id = d.id
+            WHERE d.alert_sent = 1 AND d.alert_sent_timestamp = ?
+              AND d.status = 'alert_candidate'
+              AND d.event_type IS NOT NULL
+              AND d.event_date IS NOT NULL
             ORDER BY id
             """,
             (latest_timestamp,),
@@ -338,7 +353,8 @@ class Database:
         known_rows = self.conn.execute(
             """
             SELECT id, company_name, event_type, event_date, source_url,
-                   source_label, '' AS snippet, alert_sent_timestamp
+                   source_label, '' AS snippet, alert_sent_timestamp,
+                   NULL AS qualifying_count, NULL AS hype_status
             FROM known_announcements
             WHERE alert_sent = 1 AND alert_sent_timestamp = ?
             ORDER BY id
@@ -346,6 +362,68 @@ class Database:
             (latest_timestamp,),
         ).fetchall()
         return [dict(row) for row in [*detection_rows, *known_rows]]
+
+    def hype_watch_candidates(self) -> list[sqlite3.Row]:
+        return self.conn.execute(
+            """
+            SELECT id, accession_number, company_name, cik, filing_date, event_date, event_type, filing_url
+            FROM detections
+            WHERE status = 'alert_candidate'
+              AND filing_date IS NOT NULL
+              AND event_date IS NOT NULL
+            ORDER BY event_date, created_timestamp
+            """
+        ).fetchall()
+
+    def upsert_hype_tracking(
+        self,
+        *,
+        candidate_id: int,
+        cik: str,
+        announcement_date: str,
+        event_date: str,
+        qualifying_count: int,
+        hype_status: str,
+        last_checked: str,
+        detected_json: str,
+    ) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO hype_tracking
+            (candidate_id, cik, announcement_date, event_date, qualifying_count, hype_status, last_checked, detected_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(candidate_id) DO UPDATE SET
+                cik = excluded.cik,
+                announcement_date = excluded.announcement_date,
+                event_date = excluded.event_date,
+                qualifying_count = excluded.qualifying_count,
+                hype_status = excluded.hype_status,
+                last_checked = excluded.last_checked,
+                detected_json = excluded.detected_json
+            """,
+            (
+                candidate_id,
+                cik,
+                announcement_date,
+                event_date,
+                qualifying_count,
+                hype_status,
+                last_checked,
+                detected_json,
+            ),
+        )
+        self.conn.commit()
+
+    def hype_tracking_for_candidate(self, candidate_id: int) -> sqlite3.Row | None:
+        return self.conn.execute(
+            """
+            SELECT candidate_id, cik, announcement_date, event_date, qualifying_count,
+                   hype_status, last_checked, detected_json
+            FROM hype_tracking
+            WHERE candidate_id = ?
+            """,
+            (candidate_id,),
+        ).fetchone()
 
     def investor_day_announcements(self) -> list[dict[str, Any]]:
         rows = self.conn.execute(

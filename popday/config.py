@@ -23,6 +23,7 @@ class Config:
     email_from: str | None
     email_to: str | None
     request_delay_seconds: float
+    hype_threshold: int
     unsubscribe_base_url: str | None
     unsubscribe_secret: str | None
 
@@ -83,6 +84,7 @@ def load_config(path: str | None = None) -> Config:
         request_delay_seconds=float(
             _pick(settings, "request_delay_seconds", "POPDAY_REQUEST_DELAY_SECONDS", 0.65)
         ),
+        hype_threshold=int(_pick(settings, "hype_threshold", "POPDAY_HYPE_THRESHOLD", 2)),
         unsubscribe_base_url=_pick(settings, "unsubscribe_base_url", "POPDAY_UNSUBSCRIBE_BASE_URL"),
         unsubscribe_secret=_pick(settings, "unsubscribe_secret", "POPDAY_UNSUBSCRIBE_SECRET"),
     )

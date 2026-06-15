@@ -18,6 +18,7 @@ from .emailer import (
     send_alert_email,
     send_privileged_format_test_email,
 )
+from .hype import watch_hype_candidates
 from .parser import parse_filing_sections
 from .rules import ALERT_REQUIREMENTS
 
@@ -31,6 +32,8 @@ class Alert:
     filing_url: str
     source_label: str = "Source"
     snippet: str = ""
+    hype_status: str = ""
+    hype_count: int | None = None
 
 
 PRIVILEGED_TEST_RECIPIENT = "jd@jasondunne.co.uk"
@@ -73,6 +76,8 @@ def _alert_from_known(row: object) -> Alert:
         filing_url=str(row["source_url"]),
         source_label=str(row["source_label"] or "Source"),
         snippet="",
+        hype_status="",
+        hype_count=None,
     )
 
 
@@ -85,6 +90,8 @@ def _alert_from_sent_row(row: object) -> Alert:
         filing_url=str(row["source_url"]),
         source_label=str(row["source_label"] or "Source"),
         snippet=str(row["snippet"] or ""),
+        hype_status=str(row["hype_status"] or ""),
+        hype_count=int(row["qualifying_count"]) if row["qualifying_count"] is not None else None,
     )
 
 
@@ -349,6 +356,34 @@ def send_known_alerts(args: argparse.Namespace) -> int:
     return 0
 
 
+def watch_hype(args: argparse.Namespace) -> int:
+    config = load_config(args.config)
+    if config.sec_user_agent_has_placeholder_contact:
+        print(
+            "PopDay needs a real SEC User-Agent contact before running the hype watcher.\n"
+            "Set it in config.json or POPDAY_SEC_USER_AGENT and try again."
+        )
+        return 2
+
+    db = Database(config.db_path)
+    db.seed_recipients(config.email_recipients)
+    try:
+        watched = watch_hype_candidates(config, db)
+    except Exception as exc:
+        print(f"Hype watcher failed: {exc}")
+        return 1
+    finally:
+        db.close()
+
+    print(f"Hype watcher checked {len(watched)} candidate(s).")
+    for row in watched[:20]:
+        print(
+            f"- {row['company_name']} {row['event_type']} {row['event_date']}: "
+            f"{row['hype_status']} ({row['qualifying_count']})"
+        )
+    return 0
+
+
 def debug_ui(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     db = Database(config.db_path)
@@ -381,6 +416,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Send alert emails for unsent known non-EDGAR announcements.",
     )
+    parser.add_argument(
+        "--watch-hype",
+        action="store_true",
+        help="Classify upcoming Analyst and Investor Days as hyped or quiet using SEC submissions JSON.",
+    )
     parser.add_argument("--debug-ui", action="store_true", help="Start the local read-only debug UI.")
     parser.add_argument("--host", default="127.0.0.1", help="Debug UI host.")
     parser.add_argument("--port", type=int, default=8765, help="Debug UI port.")
@@ -405,11 +445,13 @@ def main(argv: list[str] | None = None) -> int:
         return send_test(args)
     if args.send_known_alerts:
         return send_known_alerts(args)
+    if args.watch_hype:
+        return watch_hype(args)
     if args.debug_ui:
         return debug_ui(args)
     if not args.date:
         parser.error(
             "--date is required unless using --show-rules, --recent-candidates, "
-            "--send-test-email, --send-known-alerts, or --debug-ui"
+            "--send-test-email, --send-known-alerts, --watch-hype, or --debug-ui"
         )
     return run_scan(args)
