@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS detections (
     matched_phrase TEXT,
     matched_location TEXT,
     snippet TEXT,
+    items_json TEXT NOT NULL DEFAULT '[]',
     status TEXT NOT NULL,
     dismissal_reason TEXT,
     alert_sent INTEGER NOT NULL DEFAULT 0,
@@ -86,6 +87,8 @@ CREATE TABLE IF NOT EXISTS hype_tracking (
     event_date TEXT NOT NULL,
     qualifying_count INTEGER DEFAULT 0,
     hype_status TEXT DEFAULT 'pending',
+    hype_definition_version TEXT DEFAULT 'v1-abstract-guess',
+    provisional INTEGER NOT NULL DEFAULT 1,
     last_checked TEXT,
     detected_json TEXT
 );
@@ -122,6 +125,24 @@ class Database:
         if "alert_sent_timestamp" not in columns:
             self.conn.execute(
                 "ALTER TABLE known_announcements ADD COLUMN alert_sent_timestamp TEXT"
+            )
+        detection_columns = {
+            row["name"] for row in self.conn.execute("PRAGMA table_info(detections)").fetchall()
+        }
+        if "items_json" not in detection_columns:
+            self.conn.execute(
+                "ALTER TABLE detections ADD COLUMN items_json TEXT NOT NULL DEFAULT '[]'"
+            )
+        hype_columns = {
+            row["name"] for row in self.conn.execute("PRAGMA table_info(hype_tracking)").fetchall()
+        }
+        if "hype_definition_version" not in hype_columns:
+            self.conn.execute(
+                "ALTER TABLE hype_tracking ADD COLUMN hype_definition_version TEXT DEFAULT 'v1-abstract-guess'"
+            )
+        if "provisional" not in hype_columns:
+            self.conn.execute(
+                "ALTER TABLE hype_tracking ADD COLUMN provisional INTEGER NOT NULL DEFAULT 1"
             )
 
     def close(self) -> None:
@@ -275,7 +296,7 @@ class Database:
             """
             SELECT d.id, d.created_timestamp, d.company_name, d.form_type, d.filing_date, d.event_type, d.event_date,
                    d.matched_phrase, d.matched_location, d.status, d.dismissal_reason, d.filing_url,
-                   h.qualifying_count, h.hype_status
+                   h.qualifying_count, h.hype_status, h.hype_definition_version, h.provisional
             FROM detections d
             LEFT JOIN hype_tracking h ON h.candidate_id = d.id
             ORDER BY d.created_timestamp DESC
@@ -288,7 +309,7 @@ class Database:
         return self.conn.execute(
             """
             SELECT id, accession_number, company_name, cik, form_type, filing_date, filing_url,
-                   event_type, event_date, matched_phrase, matched_location, snippet, status,
+                   event_type, event_date, matched_phrase, matched_location, snippet, items_json, status,
                    dismissal_reason, alert_sent, created_timestamp
             FROM detections
             WHERE id = ?
@@ -339,7 +360,7 @@ class Database:
             """
             SELECT id, company_name, event_type, event_date, filing_url AS source_url,
                    'SEC filing' AS source_label, snippet, alert_sent_timestamp,
-                   h.qualifying_count, h.hype_status
+                   h.qualifying_count, h.hype_status, h.provisional
             FROM detections d
             LEFT JOIN hype_tracking h ON h.candidate_id = d.id
             WHERE d.alert_sent = 1 AND d.alert_sent_timestamp = ?
@@ -354,7 +375,7 @@ class Database:
             """
             SELECT id, company_name, event_type, event_date, source_url,
                    source_label, '' AS snippet, alert_sent_timestamp,
-                   NULL AS qualifying_count, NULL AS hype_status
+                   NULL AS qualifying_count, NULL AS hype_status, NULL AS provisional
             FROM known_announcements
             WHERE alert_sent = 1 AND alert_sent_timestamp = ?
             ORDER BY id
@@ -384,20 +405,25 @@ class Database:
         event_date: str,
         qualifying_count: int,
         hype_status: str,
+        hype_definition_version: str,
+        provisional: bool,
         last_checked: str,
         detected_json: str,
     ) -> None:
         self.conn.execute(
             """
             INSERT INTO hype_tracking
-            (candidate_id, cik, announcement_date, event_date, qualifying_count, hype_status, last_checked, detected_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (candidate_id, cik, announcement_date, event_date, qualifying_count, hype_status,
+             hype_definition_version, provisional, last_checked, detected_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(candidate_id) DO UPDATE SET
                 cik = excluded.cik,
                 announcement_date = excluded.announcement_date,
                 event_date = excluded.event_date,
                 qualifying_count = excluded.qualifying_count,
                 hype_status = excluded.hype_status,
+                hype_definition_version = excluded.hype_definition_version,
+                provisional = excluded.provisional,
                 last_checked = excluded.last_checked,
                 detected_json = excluded.detected_json
             """,
@@ -408,6 +434,8 @@ class Database:
                 event_date,
                 qualifying_count,
                 hype_status,
+                hype_definition_version,
+                int(provisional),
                 last_checked,
                 detected_json,
             ),
@@ -418,12 +446,22 @@ class Database:
         return self.conn.execute(
             """
             SELECT candidate_id, cik, announcement_date, event_date, qualifying_count,
-                   hype_status, last_checked, detected_json
+                   hype_status, hype_definition_version, provisional, last_checked, detected_json
             FROM hype_tracking
             WHERE candidate_id = ?
             """,
             (candidate_id,),
         ).fetchone()
+
+    def all_hype_tracking_rows(self) -> list[sqlite3.Row]:
+        return self.conn.execute(
+            """
+            SELECT candidate_id, cik, announcement_date, event_date, qualifying_count,
+                   hype_status, hype_definition_version, provisional, last_checked, detected_json
+            FROM hype_tracking
+            ORDER BY event_date, candidate_id
+            """
+        ).fetchall()
 
     def investor_day_announcements(self) -> list[dict[str, Any]]:
         rows = self.conn.execute(

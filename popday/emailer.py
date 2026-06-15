@@ -84,6 +84,8 @@ def _disclosure_activity_line(alert: object) -> str:
         return ""
     filing_word = "filing" if int(hype_count) == 1 else "filings"
     label = hype_status.replace("_", " ")
+    if bool(getattr(alert, "hype_provisional", False)):
+        label = f"{label} (provisional)"
     return f"Disclosure activity: {label} ({hype_count} voluntary {filing_word} since announcement)"
 
 

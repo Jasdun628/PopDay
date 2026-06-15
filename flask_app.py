@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import secrets
 from datetime import date, datetime, timedelta
@@ -171,6 +172,13 @@ def _hype_pill_tone(value: object) -> str:
     return "warn"
 
 
+def _hype_display(value: object, provisional: object) -> str:
+    label = _admin_display_text(value)
+    if label and bool(provisional):
+        return f"{label} (provisional)"
+    return label
+
+
 def _next_scheduled_run() -> str:
     now = datetime.now().astimezone()
     for day_offset in range(8):
@@ -320,9 +328,13 @@ def _build_admin_context(db: Database, db_path: str, tab: str) -> dict:
                 "reason": _admin_display_text(dict(r).get("dismissal_reason") or "alert ready"),
                 "sec_url": _sec_filing_url(r["filing_url"]) if dict(r).get("filing_url") else "",
                 "hype_status": dict(r).get("hype_status") or "",
-                "hype_status_display": _admin_display_text(dict(r).get("hype_status")),
+                "hype_status_display": _hype_display(
+                    dict(r).get("hype_status"),
+                    dict(r).get("provisional"),
+                ),
                 "hype_count": dict(r).get("qualifying_count"),
                 "hype_tone": _hype_pill_tone(dict(r).get("hype_status")),
+                "hype_provisional": bool(dict(r).get("provisional")),
             }
             for r in db.recent_candidates()
         ]
@@ -493,15 +505,18 @@ def admin_candidate(detection_id):
         return redirect(url_for("admin_tab", tab="candidates"))
 
     from popday.edgar_fetch import EdgarClient
-    from popday.parser import normalize_text, strip_tags
+    from popday.filing_parser import normalize_text, parse_sec_filing
 
     sec_url = _sec_filing_url(row["filing_url"])
     preview = ""
     fetch_error = ""
+    items: list[str] = []
     try:
         client = EdgarClient(config.sec_user_agent, config.request_delay_seconds)
         raw = client.get_text(row["filing_url"])
-        plain = normalize_text(strip_tags(raw))
+        parsed = parse_sec_filing(raw)
+        items = parsed.items
+        plain = normalize_text("\n\n".join(parsed.press_releases) or parsed.cover_text)
         snippet = row["snippet"] or ""
         if snippet:
             anchor = snippet[:80].lower()
@@ -526,6 +541,7 @@ def admin_candidate(detection_id):
         status_display=_admin_display_text(row["status"]),
         reason_display=_admin_display_text(row["dismissal_reason"] or "alert ready"),
         filing_date_display=_friendly_date(row["filing_date"]) if dict(row).get("filing_date") else "—",
+        items=items or json.loads(row["items_json"] or "[]"),
     )
 
 

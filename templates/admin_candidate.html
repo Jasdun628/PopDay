@@ -176,6 +176,10 @@
           <div class="meta-label">Location</div>
           {{ row.matched_location or '—' }}
         </div>
+        <div class="meta-item">
+          <div class="meta-label">8-K items</div>
+          {{ ", ".join(items) if items else '—' }}
+        </div>
       </div>
     </div>
 

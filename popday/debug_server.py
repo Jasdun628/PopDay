@@ -9,7 +9,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from .db import Database
-from .parser import normalize_text, strip_tags
+from .filing_parser import normalize_text, parse_sec_filing
 from .rules import ALERT_REQUIREMENTS
 
 
@@ -548,8 +548,8 @@ def _sec_detail_url(filing_url: str) -> str:
 
 
 def _clean_filing_preview(raw: str, snippet: str) -> str:
-    plain = strip_tags(raw)
-    plain = normalize_text(plain)
+    parsed = parse_sec_filing(raw)
+    plain = normalize_text("\n\n".join(parsed.press_releases) or parsed.cover_text)
     if not plain:
         return "No readable filing text could be extracted."
 

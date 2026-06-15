@@ -100,6 +100,7 @@ def _qualifying_match(candidate: HypeCandidate, filing: dict[str, Any]) -> dict[
     items = str(filing.get("items") or "").strip()
     if not QUALIFYING_ITEM_RE.search(items):
         return None
+    item_codes = [item.strip() for item in re.split(r"[,;]\s*", items) if item.strip()]
 
     primary_document = str(filing.get("primaryDocument") or "").strip()
     accession_no_dashes = accession_number.replace("-", "")
@@ -108,13 +109,20 @@ def _qualifying_match(candidate: HypeCandidate, filing: dict[str, Any]) -> dict[
         "accession_number": accession_number,
         "filing_date": filing_date_raw,
         "form": form_type,
-        "items": items,
+        "item_codes": item_codes,
         "primary_document": primary_document,
         "source_url": (
             f"{SEC_BASE}/Archives/edgar/data/{cik_no_zeros}/{accession_no_dashes}/{primary_document}"
             if primary_document and accession_no_dashes
             else ""
         ),
+        # Kept lightweight for PythonAnywhere; full exhibit text can be added later if the paper's
+        # definition turns out to weight disclosure complexity.
+        "text_proxy": {
+            "clean_text_chars": None,
+            "clean_text_words": None,
+            "todo": "fetch_primary_document_text_if_complexity_weighting_is_needed",
+        },
     }
 
 
@@ -122,6 +130,37 @@ def _status_for(candidate: HypeCandidate, *, as_of: date, threshold: int, qualif
     if candidate.event_date >= as_of:
         return "building" if qualifying_count >= threshold else "quiet"
     return "hyped" if qualifying_count >= threshold else "non_hyped"
+
+
+def _qualifying_count_from_detected_json(detected_json: str) -> int:
+    try:
+        payload = json.loads(detected_json or "[]")
+    except Exception:
+        return 0
+    if not isinstance(payload, list):
+        return 0
+    return len(payload)
+
+
+def _reclassified_status(*, event_date: str, as_of: date, threshold: int, detected_json: str) -> tuple[int, str]:
+    event_day = _parse_iso_date(event_date) or as_of
+    qualifying_count = _qualifying_count_from_detected_json(detected_json)
+    candidate = HypeCandidate(
+        candidate_id=0,
+        accession_number="",
+        company_name="",
+        cik="",
+        announcement_date=as_of,
+        event_date=event_day,
+        event_type="",
+        filing_url="",
+    )
+    return qualifying_count, _status_for(
+        candidate,
+        as_of=as_of,
+        threshold=max(threshold, 1),
+        qualifying_count=qualifying_count,
+    )
 
 
 def watch_hype_candidates(
@@ -165,6 +204,8 @@ def watch_hype_candidates(
             event_date=candidate.event_date.isoformat(),
             qualifying_count=qualifying_count,
             hype_status=status,
+            hype_definition_version=config.hype_definition_version,
+            provisional=config.hype_provisional,
             last_checked=today.isoformat(),
             detected_json=json.dumps(matches, sort_keys=True),
         )
@@ -176,7 +217,48 @@ def watch_hype_candidates(
                 "event_date": candidate.event_date.isoformat(),
                 "qualifying_count": qualifying_count,
                 "hype_status": status,
+                "provisional": config.hype_provisional,
             }
         )
 
     return watched
+
+
+def reclassify_hype_tracking(
+    config: Config,
+    db: Database,
+    *,
+    as_of: date | None = None,
+) -> list[dict[str, Any]]:
+    today = as_of or date.today()
+    updated: list[dict[str, Any]] = []
+    for row in db.all_hype_tracking_rows():
+        detected_json = str(row["detected_json"] or "[]")
+        qualifying_count, status = _reclassified_status(
+            event_date=str(row["event_date"] or ""),
+            as_of=today,
+            threshold=config.hype_threshold,
+            detected_json=detected_json,
+        )
+        db.upsert_hype_tracking(
+            candidate_id=int(row["candidate_id"]),
+            cik=str(row["cik"]),
+            announcement_date=str(row["announcement_date"]),
+            event_date=str(row["event_date"]),
+            qualifying_count=qualifying_count,
+            hype_status=status,
+            hype_definition_version=config.hype_definition_version,
+            provisional=config.hype_provisional,
+            last_checked=today.isoformat(),
+            detected_json=detected_json,
+        )
+        updated.append(
+            {
+                "candidate_id": int(row["candidate_id"]),
+                "event_date": str(row["event_date"]),
+                "qualifying_count": qualifying_count,
+                "hype_status": status,
+                "provisional": config.hype_provisional,
+            }
+        )
+    return updated

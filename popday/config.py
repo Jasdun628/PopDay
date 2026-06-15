@@ -23,7 +23,10 @@ class Config:
     email_from: str | None
     email_to: str | None
     request_delay_seconds: float
+    # Placeholder pending Cabrera et al. results section.
     hype_threshold: int
+    hype_definition_version: str
+    hype_provisional: bool
     unsubscribe_base_url: str | None
     unsubscribe_secret: str | None
 
@@ -68,6 +71,14 @@ def _pick(settings: dict[str, Any], key: str, env_key: str, default: Any = None)
     return os.environ.get(env_key, settings.get(key, default))
 
 
+def _as_bool(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def load_config(path: str | None = None) -> Config:
     settings = _read_json(path)
     return Config(
@@ -85,6 +96,18 @@ def load_config(path: str | None = None) -> Config:
             _pick(settings, "request_delay_seconds", "POPDAY_REQUEST_DELAY_SECONDS", 0.65)
         ),
         hype_threshold=int(_pick(settings, "hype_threshold", "POPDAY_HYPE_THRESHOLD", 2)),
+        hype_definition_version=str(
+            _pick(
+                settings,
+                "hype_definition_version",
+                "POPDAY_HYPE_DEFINITION_VERSION",
+                "v1-abstract-guess",
+            )
+        ),
+        hype_provisional=_as_bool(
+            _pick(settings, "hype_provisional", "POPDAY_HYPE_PROVISIONAL", True),
+            default=True,
+        ),
         unsubscribe_base_url=_pick(settings, "unsubscribe_base_url", "POPDAY_UNSUBSCRIBE_BASE_URL"),
         unsubscribe_secret=_pick(settings, "unsubscribe_secret", "POPDAY_UNSUBSCRIBE_SECRET"),
     )

@@ -10,15 +10,16 @@ from datetime import date, datetime, timedelta, timezone
 from .config import load_config
 from .date_extract import format_human_date
 from .db import Database
-from .detector import detect_in_sections
+from .detector import detect_in_parsed_filing, detect_in_sections
 from .debug_server import serve_debug_ui
-from .edgar_fetch import EdgarClient, TARGET_FORMS
+from .edgar_fetch import EdgarClient, Filing, TARGET_FORMS
 from .emailer import (
     build_alert_body,
     send_alert_email,
     send_privileged_format_test_email,
 )
-from .hype import watch_hype_candidates
+from .filing_parser import parse_sec_filing
+from .hype import reclassify_hype_tracking, watch_hype_candidates
 from .parser import parse_filing_sections
 from .rules import ALERT_REQUIREMENTS
 
@@ -34,9 +35,27 @@ class Alert:
     snippet: str = ""
     hype_status: str = ""
     hype_count: int | None = None
+    hype_provisional: bool = False
 
 
 PRIVILEGED_TEST_RECIPIENT = "jd@jasondunne.co.uk"
+
+
+def _enriched_filing(filing: Filing, parsed: object) -> Filing:
+    accession = str(getattr(parsed, "accession", "") or filing.accession_number)
+    cik = str(getattr(parsed, "cik", "") or filing.cik).zfill(10)
+    company_name = str(getattr(parsed, "company_name", "") or filing.company_name)
+    form_type = str(getattr(parsed, "form_type", "") or filing.form_type)
+    filing_date = str(getattr(parsed, "filed_date", "") or filing.filing_date)
+    return Filing(
+        accession_number=accession,
+        cik=cik,
+        company_name=company_name,
+        form_type=form_type,
+        filing_date=filing_date,
+        filing_url=filing.filing_url,
+        primary_document=filing.primary_document,
+    )
 
 
 def previous_business_day(value: date | None = None) -> date:
@@ -78,6 +97,7 @@ def _alert_from_known(row: object) -> Alert:
         snippet="",
         hype_status="",
         hype_count=None,
+        hype_provisional=False,
     )
 
 
@@ -92,6 +112,7 @@ def _alert_from_sent_row(row: object) -> Alert:
         snippet=str(row["snippet"] or ""),
         hype_status=str(row["hype_status"] or ""),
         hype_count=int(row["qualifying_count"]) if row["qualifying_count"] is not None else None,
+        hype_provisional=bool(row["provisional"]) if row["provisional"] is not None else False,
     )
 
 
@@ -189,15 +210,26 @@ def run_scan(args: argparse.Namespace) -> int:
                 continue
 
             raw = client.get_text(filing.filing_url)
-            sections = parse_filing_sections(raw)
             filings_parsed += 1
-            detections = detect_in_sections(
-                filing,
-                sections,
-                run_date,
-                include_phrases=include_phrases,
-                routine_phrases=routine_phrases,
-            )
+            if args.legacy_parser:
+                sections = parse_filing_sections(raw)
+                detections = detect_in_sections(
+                    filing,
+                    sections,
+                    run_date,
+                    include_phrases=include_phrases,
+                    routine_phrases=routine_phrases,
+                )
+            else:
+                parsed = parse_sec_filing(raw)
+                filing = _enriched_filing(filing, parsed)
+                detections = detect_in_parsed_filing(
+                    filing,
+                    parsed,
+                    run_date,
+                    include_phrases=include_phrases,
+                    routine_phrases=routine_phrases,
+                )
 
             for detection in detections:
                 if detection.status == "alert_candidate" and detection.event_type and detection.event_date:
@@ -211,6 +243,7 @@ def run_scan(args: argparse.Namespace) -> int:
                             matched_phrase=detection.matched_phrase,
                             matched_location=detection.matched_location,
                             snippet=detection.snippet,
+                            items=detection.items,
                             status="dismissed",
                             dismissal_reason="event_already_alerted",
                         )
@@ -379,7 +412,30 @@ def watch_hype(args: argparse.Namespace) -> int:
     for row in watched[:20]:
         print(
             f"- {row['company_name']} {row['event_type']} {row['event_date']}: "
-            f"{row['hype_status']} ({row['qualifying_count']})"
+            f"{row['hype_status']}{' provisional' if row['provisional'] else ''} "
+            f"({row['qualifying_count']})"
+        )
+    return 0
+
+
+def reclassify_hype(args: argparse.Namespace) -> int:
+    config = load_config(args.config)
+    db = Database(config.db_path)
+    db.seed_recipients(config.email_recipients)
+    try:
+        updated = reclassify_hype_tracking(config, db)
+    except Exception as exc:
+        print(f"Hype reclassification failed: {exc}")
+        return 1
+    finally:
+        db.close()
+
+    print(f"Reclassified {len(updated)} hype row(s) with {config.hype_definition_version}.")
+    for row in updated[:20]:
+        print(
+            f"- candidate {row['candidate_id']} {row['event_date']}: "
+            f"{row['hype_status']}{' provisional' if row['provisional'] else ''} "
+            f"({row['qualifying_count']})"
         )
     return 0
 
@@ -421,7 +477,17 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Classify upcoming Analyst and Investor Days as hyped or quiet using SEC submissions JSON.",
     )
+    parser.add_argument(
+        "--reclassify",
+        action="store_true",
+        help="Recompute hype labels from stored detected_json only, with no EDGAR calls.",
+    )
     parser.add_argument("--debug-ui", action="store_true", help="Start the local read-only debug UI.")
+    parser.add_argument(
+        "--legacy-parser",
+        action="store_true",
+        help="Use the older section-based filing parser for one-cycle comparison.",
+    )
     parser.add_argument("--host", default="127.0.0.1", help="Debug UI host.")
     parser.add_argument("--port", type=int, default=8765, help="Debug UI port.")
     parser.add_argument("--limit", type=int, default=30, help="Recent candidate row limit.")
@@ -447,11 +513,13 @@ def main(argv: list[str] | None = None) -> int:
         return send_known_alerts(args)
     if args.watch_hype:
         return watch_hype(args)
+    if args.reclassify:
+        return reclassify_hype(args)
     if args.debug_ui:
         return debug_ui(args)
     if not args.date:
         parser.error(
             "--date is required unless using --show-rules, --recent-candidates, "
-            "--send-test-email, --send-known-alerts, --watch-hype, or --debug-ui"
+            "--send-test-email, --send-known-alerts, --watch-hype, --reclassify, or --debug-ui"
         )
     return run_scan(args)
