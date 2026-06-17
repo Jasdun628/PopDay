@@ -397,7 +397,7 @@ def _launchd_health_rows_from_lines(lines: list[str]) -> list[dict]:
 
 def _check_admin():
     if not session.get("admin_authenticated"):
-        return redirect(url_for("admin_login"))
+        return redirect(url_for("admin_login", next=request.full_path))
     return None
 
 
@@ -558,11 +558,14 @@ def admin_login():
             disabled=True,
         )
     error = None
+    next_path = request.args.get("next", "")
+    if not next_path.startswith("/admin/"):
+        next_path = url_for("admin_tab", tab="summary")
     if request.method == "POST":
         provided = request.form.get("password", "")
         if secrets.compare_digest(provided.encode(), admin_pw.encode()):
             session["admin_authenticated"] = True
-            return redirect(url_for("admin_tab", tab="summary"))
+            return redirect(next_path)
         error = "Incorrect password."
     return render_template("admin_login.html", error=error, disabled=False)
 

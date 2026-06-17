@@ -37,7 +37,8 @@ def main() -> int:
         all(tab in front for tab in ["Summary", "Investor Days", "System Health", "Candidates", "Filings", "Help"]),
         failures,
     )
-    check("admin tabs hidden", all(tab not in front for tab in ["Rules", "Email Alerts"]), failures)
+    check("rules tab hidden", "Rules" not in front, failures)
+    check("email alerts management link", "Email Alerts" in front and "/admin/recipients" in front, failures)
     check("health strip", "Scanner health" in front, failures)
 
     announcements = fetch("?tab=announcements&v=verify")

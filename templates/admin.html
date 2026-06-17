@@ -309,11 +309,13 @@
       <h1>PopDay</h1>
       <p>Local monitor for EDGAR Investor Day alerts.</p>
     </div>
-    {% if is_admin %}
     <div class="header-actions">
+      {% if is_admin %}
       <a href="{{ url_for('admin_logout') }}" class="inline-action">Sign out</a>
+      {% else %}
+      <a href="{{ url_for('admin_tab', tab='recipients') }}" class="inline-action">Email Alerts</a>
+      {% endif %}
     </div>
-    {% endif %}
   </div>
 </header>
 
