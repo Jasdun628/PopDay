@@ -6,7 +6,7 @@ import hashlib
 import json
 import os
 import secrets
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from flask import Flask, redirect, render_template, request, session, url_for
@@ -86,7 +86,12 @@ def _prepare_row(row: dict, today: date) -> dict:
 
 @app.route("/")
 def index():
-    return redirect(url_for("admin_index"))
+    return _render_main_ui(request.args.get("tab", "summary"), is_admin=False)
+
+
+@app.route("/status")
+def public_status():
+    return redirect(url_for("index"))
 
 
 @app.route("/unsubscribe")
@@ -138,7 +143,17 @@ ADMIN_TABS = [
     ("help", "Help"),
 ]
 
+PUBLIC_TABS = [
+    ("summary", "Summary"),
+    ("announcements", "Investor Days"),
+    ("health", "System Health"),
+    ("candidates", "Candidates"),
+    ("filings", "Filings"),
+    ("help", "Help"),
+]
+
 _VALID_ADMIN_TABS = {key for key, _ in ADMIN_TABS}
+_VALID_PUBLIC_TABS = {key for key, _ in PUBLIC_TABS}
 
 
 def _friendly_datetime_str(value: str) -> str:
@@ -153,6 +168,133 @@ def _friendly_datetime_str(value: str) -> str:
         f"{parsed.strftime('%A')} {day}{_day_suffix(day)} "
         f"{parsed.strftime('%B %Y')} {parsed.strftime('%H:%M %Z')}"
     )
+
+
+def _parse_datetime(value: object) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _friendly_datetime_value(value: object) -> str:
+    parsed = _parse_datetime(value)
+    if not parsed:
+        return "unknown"
+    local = parsed.astimezone()
+    day = local.day
+    return (
+        f"{local.strftime('%A')} {day}{_day_suffix(day)} "
+        f"{local.strftime('%B %Y')} {local.strftime('%H:%M %Z')}"
+    )
+
+
+def _status_path() -> Path:
+    return Path(os.environ.get("POPDAY_STATUS_JSON", "status/popday_status.json"))
+
+
+def _status_age_note(updated_at: datetime | None) -> str:
+    if not updated_at:
+        return "No synced status file has been received."
+    age_seconds = max(0, (datetime.now(timezone.utc) - updated_at).total_seconds())
+    age_minutes = int(age_seconds // 60)
+    if age_minutes < 90:
+        return f"{age_minutes} minute{'s' if age_minutes != 1 else ''} ago."
+    age_hours = int(age_minutes // 60)
+    if age_hours < 48:
+        return f"{age_hours} hour{'s' if age_hours != 1 else ''} ago."
+    age_days = int(age_hours // 24)
+    return f"{age_days} day{'s' if age_days != 1 else ''} ago."
+
+
+def _level_class(level: object) -> str:
+    normalized = str(level or "unknown").strip().lower()
+    if normalized in {"live", "healthy"}:
+        return "live"
+    if normalized == "stale":
+        return "stale"
+    if normalized == "broken":
+        return "broken"
+    return "unknown"
+
+
+def _fallback_status(message: str) -> dict:
+    return {
+        "health": {"level": "BROKEN", "summary": message},
+        "public_level": "BROKEN",
+        "level_class": "broken",
+        "architecture_note": "Scanner runs on Mac Mini. This page shows last synced Mac Mini status.",
+        "generated_at_display": "unknown",
+        "status_file_updated_at_display": "missing",
+        "status_file_age_note": "No synced Mac Mini status file has been received.",
+        "latest_scan_started_at_display": "unknown",
+        "next_expected_scan_display": _next_scheduled_run(),
+        "filing_date_scanned": None,
+        "edgar_index_status": None,
+        "filings_parsed": None,
+        "eight_k_sanity_count": None,
+        "qualifying_alerts_sent": None,
+        "last_alert_company": None,
+        "last_alert_date": None,
+        "days_since_last_alert": None,
+        "last_alert_filing_url": None,
+        "live_database_backed_up": False,
+        "last_backup_at": None,
+        "retained_backups": 0,
+        "database_counts": {},
+    }
+
+
+def _load_public_status() -> dict:
+    path = _status_path()
+    if not path.exists():
+        return _fallback_status(f"BROKEN: no synced Mac Mini status file found at {path}.")
+    try:
+        status = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return _fallback_status(f"BROKEN: synced Mac Mini status file could not be read: {exc}.")
+
+    status.setdefault("health", {})
+    status["health"].setdefault("level", "UNKNOWN")
+    status["health"].setdefault("summary", "Status file loaded, but no health summary was provided.")
+    status.setdefault(
+        "architecture_note",
+        "Scanner runs on Mac Mini. This page shows last synced Mac Mini status.",
+    )
+    status.setdefault("database_counts", {})
+
+    updated_at = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)
+    age_hours = (datetime.now(timezone.utc) - updated_at).total_seconds() / 3600
+    level = str(status["health"].get("level") or "UNKNOWN").upper()
+
+    if age_hours > 42:
+        level = "BROKEN"
+        status["health"]["summary"] = (
+            f"BROKEN: last Mac Mini sync was more than 42 hours ago. "
+            f"Last received: {_friendly_datetime_value(updated_at.isoformat())}."
+        )
+    elif age_hours > 18 and level == "LIVE":
+        level = "STALE"
+        status["health"]["summary"] = (
+            f"STALE: last Mac Mini sync was more than 18 hours ago. "
+            f"Last received: {_friendly_datetime_value(updated_at.isoformat())}."
+        )
+
+    status["public_level"] = "LIVE / HEALTHY" if level == "LIVE" else level
+    status["level_class"] = _level_class(level)
+    status["generated_at_display"] = _friendly_datetime_value(status.get("generated_at"))
+    status["status_file_updated_at_display"] = _friendly_datetime_value(updated_at.isoformat())
+    status["status_file_age_note"] = _status_age_note(updated_at)
+    status["latest_scan_started_at_display"] = _friendly_datetime_value(
+        status.get("latest_scan_started_at")
+    )
+    status["next_expected_scan_display"] = _next_scheduled_run()
+    return status
 
 
 def _admin_display_text(value: object) -> str:
@@ -179,6 +321,32 @@ def _hype_display(value: object, provisional: object) -> str:
     return label
 
 
+def _announcement_sort_settings() -> tuple[str, str]:
+    sort_key = request.args.get("sort", "filed").strip().lower()
+    direction = request.args.get("direction", "desc").strip().lower()
+    if sort_key not in {"filed", "event"}:
+        sort_key = "filed"
+    if direction not in {"asc", "desc"}:
+        direction = "desc"
+    return sort_key, direction
+
+
+def _sort_announcements(items: list[dict], sort_key: str, direction: str) -> list[dict]:
+    reverse = direction == "desc"
+    items.sort(
+        key=lambda item: (
+            item["company_name"].casefold(),
+            item.get("event_date_raw") or "",
+            item.get("filing_date_raw") or "",
+        )
+    )
+    if sort_key == "event":
+        items.sort(key=lambda item: item.get("event_date_raw") or "", reverse=reverse)
+    else:
+        items.sort(key=lambda item: item.get("filing_date_raw") or "", reverse=reverse)
+    return items
+
+
 def _next_scheduled_run() -> str:
     now = datetime.now().astimezone()
     for day_offset in range(8):
@@ -197,11 +365,7 @@ def _next_scheduled_run() -> str:
     return f"{now.strftime('%A')} {d}{_day_suffix(d)} {now.strftime('%B %Y')} {now.strftime('%H:%M %Z')}"
 
 
-def _launchd_health_rows(db_path: str) -> list[dict]:
-    log_path = Path(db_path).parent / "logs" / "popday.launchd.out.log"
-    if not log_path.exists():
-        return []
-    lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-300:]
+def _launchd_health_rows_from_lines(lines: list[str]) -> list[dict]:
     runs: list[dict] = []
     current: dict | None = None
     for line in lines:
@@ -237,11 +401,12 @@ def _check_admin():
     return None
 
 
-def _build_admin_context(db: Database, db_path: str, tab: str) -> dict:
-    ctx: dict = {}
+def _build_admin_context(db: Database, tab: str) -> dict:
+    status = _load_public_status()
+    synced_health_rows = _launchd_health_rows_from_lines(status.get("latest_log_tail") or [])
+    ctx: dict = {"status": status}
     if tab == "summary":
-        health_rows = _launchd_health_rows(db_path)
-        latest_run = health_rows[0] if health_rows else None
+        latest_run = synced_health_rows[0] if synced_health_rows else None
         latest_alert = db.latest_sent_alert()
         ctx.update(
             announcement_count=db.investor_day_announcement_count(),
@@ -253,14 +418,17 @@ def _build_admin_context(db: Database, db_path: str, tab: str) -> dict:
             latest_run_alerts_sent=latest_run["alerts_sent"] if latest_run else "0",
         )
     elif tab == "announcements":
-        ctx["announcements"] = [
+        sort_key, direction = _announcement_sort_settings()
+        announcements = [
             {
                 "company_name": r["company_name"],
                 "event_type": r["event_type"] or "Investor Day",
                 "event_date": _friendly_date(r["event_date"]) if dict(r).get("event_date") else "—",
+                "event_date_raw": dict(r).get("event_date") or "",
                 "source_type": dict(r).get("source_type") or "",
                 "source": dict(r).get("form_type") or dict(r).get("source_label") or "Source",
                 "filing_date": _friendly_date(r["filing_date"]) if dict(r).get("filing_date") else "—",
+                "filing_date_raw": dict(r).get("filing_date") or "",
                 "matched_phrase": dict(r).get("matched_phrase") or "",
                 "alert_sent": bool(dict(r).get("alert_sent")),
                 "source_url": (
@@ -271,6 +439,11 @@ def _build_admin_context(db: Database, db_path: str, tab: str) -> dict:
             }
             for r in db.investor_day_announcements()
         ]
+        ctx.update(
+            announcements=_sort_announcements(announcements, sort_key, direction),
+            announcement_sort=sort_key,
+            announcement_direction=direction,
+        )
     elif tab == "rules":
         from popday.rules import ALERT_REQUIREMENTS
         ctx["rules"] = [dict(r) for r in db.rules()]
@@ -301,7 +474,6 @@ def _build_admin_context(db: Database, db_path: str, tab: str) -> dict:
             for r in sent_rows
         ]
     elif tab == "health":
-        health_rows = _launchd_health_rows(db_path)
         ctx["health_rows"] = [
             {
                 "started": _friendly_datetime_str(r["started"]),
@@ -311,7 +483,7 @@ def _build_admin_context(db: Database, db_path: str, tab: str) -> dict:
                 "eight_k_sanity_count": dict(r).get("eight_k_sanity_count") or "—",
                 "alerts_sent": dict(r).get("alerts_sent") or "0",
             }
-            for r in health_rows
+            for r in synced_health_rows
         ]
         ctx["next_run"] = _next_scheduled_run()
     elif tab == "candidates":
@@ -350,6 +522,25 @@ def _build_admin_context(db: Database, db_path: str, tab: str) -> dict:
             for r in db.recent_processed()
         ]
     return ctx
+
+
+def _render_main_ui(tab: str, *, is_admin: bool) -> str:
+    valid_tabs = _VALID_ADMIN_TABS if is_admin else _VALID_PUBLIC_TABS
+    if tab not in valid_tabs:
+        tab = "summary"
+    config = load_config()
+    db = Database(config.db_path)
+    try:
+        ctx = _build_admin_context(db, tab)
+    finally:
+        db.close()
+    return render_template(
+        "admin.html",
+        active_tab=tab,
+        tabs=ADMIN_TABS if is_admin else PUBLIC_TABS,
+        is_admin=is_admin,
+        **ctx,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -395,15 +586,7 @@ def admin_tab(tab):
     auth = _check_admin()
     if auth is not None:
         return auth
-    if tab not in _VALID_ADMIN_TABS:
-        tab = "summary"
-    config = load_config()
-    db = Database(config.db_path)
-    try:
-        ctx = _build_admin_context(db, config.db_path, tab)
-    finally:
-        db.close()
-    return render_template("admin.html", active_tab=tab, tabs=ADMIN_TABS, **ctx)
+    return _render_main_ui(tab, is_admin=True)
 
 
 @app.route("/admin/rules/add", methods=["POST"])

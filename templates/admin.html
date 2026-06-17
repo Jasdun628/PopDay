@@ -78,6 +78,52 @@
     }
     .status-title { font-size: 26px; font-weight: 750; line-height: 1.2; }
     .status-meta { color: var(--muted); margin-top: 6px; }
+    .health-strip {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-left: 6px solid var(--accent);
+      margin-bottom: 18px;
+      padding: 18px;
+    }
+    .health-live { border-left-color: var(--ok); }
+    .health-stale { border-left-color: var(--warn); }
+    .health-broken { border-left-color: var(--danger); }
+    .health-head {
+      align-items: start;
+      display: flex;
+      gap: 14px;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .health-title {
+      font-size: 24px;
+      font-weight: 750;
+      line-height: 1.2;
+      margin-top: 6px;
+    }
+    .health-badge {
+      border-radius: 999px;
+      display: inline-block;
+      font-size: 13px;
+      font-weight: 800;
+      line-height: 1;
+      padding: 8px 11px;
+      white-space: nowrap;
+    }
+    .health-badge-live { background: var(--ok-bg); color: var(--ok); }
+    .health-badge-stale { background: var(--warn-bg); color: var(--warn); }
+    .health-badge-broken { background: var(--danger-bg); color: var(--danger); }
+    .health-badge-unknown { background: var(--neutral-bg); color: var(--muted); }
+    .health-grid {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .health-item {
+      background: var(--panel-soft);
+      border: 1px solid var(--line);
+      padding: 12px;
+    }
     .summary-card {
       background: var(--panel-soft);
       border: 1px solid var(--line);
@@ -137,6 +183,30 @@
       vertical-align: top;
     }
     th { color: var(--muted); font-size: 12px; font-weight: 650; text-transform: uppercase; }
+    .sortable-head {
+      align-items: center;
+      display: inline-flex;
+      gap: 8px;
+      white-space: nowrap;
+    }
+    .sort-controls {
+      display: inline-flex;
+      gap: 3px;
+      text-transform: none;
+    }
+    .sort-link {
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 9px;
+      font-weight: 750;
+      line-height: 1;
+      min-width: 16px;
+      padding: 3px 0;
+      text-align: center;
+      text-decoration: none;
+    }
+    .sort-link:hover { border-color: var(--accent); color: var(--text); }
+    .sort-active { background: var(--accent); border-color: var(--accent); color: #fff; }
     tbody tr:nth-child(even) { background: var(--panel-soft); }
     tbody tr:hover { background: #eef5f8; }
     tr:last-child td { border-bottom: 0; }
@@ -221,6 +291,9 @@
       main { padding: 16px; }
       .grid { grid-template-columns: 1fr; }
       .summary-grid { grid-template-columns: 1fr; }
+      .health-head { display: block; }
+      .health-badge { margin-top: 10px; }
+      .health-grid { grid-template-columns: 1fr; }
       .manual-grid { grid-template-columns: 1fr; }
       .rule-form { grid-template-columns: 1fr; }
       .recipient-form { grid-template-columns: 1fr; }
@@ -236,19 +309,21 @@
       <h1>PopDay</h1>
       <p>Local monitor for EDGAR Investor Day alerts.</p>
     </div>
+    {% if is_admin %}
     <div class="header-actions">
       <a href="{{ url_for('admin_logout') }}" class="inline-action">Sign out</a>
     </div>
+    {% endif %}
   </div>
 </header>
 
 <main>
-  <nav class="tabs">
-    {% for key, label in tabs %}
-    <a class="tab {% if active_tab == key %}tab-active{% endif %}"
-       href="{{ url_for('admin_tab', tab=key) }}">{{ label }}</a>
-    {% endfor %}
-  </nav>
+	  <nav class="tabs">
+	    {% for key, label in tabs %}
+	    <a class="tab {% if active_tab == key %}tab-active{% endif %}"
+	       href="{{ url_for('admin_tab', tab=key) if is_admin else url_for('index', tab=key) }}">{{ label }}</a>
+	    {% endfor %}
+	  </nav>
 
   {# ------------------------------------------------------------------ #}
   {# SUMMARY                                                             #}
@@ -257,6 +332,57 @@
   <section>
     <h2>Summary</h2>
     <p class="page-note">The current PopDay alert state at a glance.</p>
+
+    <div class="health-strip health-{{ status.level_class }}">
+      <div class="health-head">
+        <div>
+          <div class="summary-label">Scanner health</div>
+          <div class="health-title">{{ status.health.summary }}</div>
+          <p>{{ status.architecture_note }}</p>
+        </div>
+        <span class="health-badge health-badge-{{ status.level_class }}">{{ status.public_level }}</span>
+      </div>
+      <div class="health-grid">
+        <div class="health-item">
+          <div class="summary-label">Last Mac Mini scan</div>
+          <div class="summary-value">{{ status.latest_scan_started_at_display }}</div>
+          <div class="summary-note">Filing date: {{ status.filing_date_scanned or "unknown" }}</div>
+        </div>
+        <div class="health-item">
+          <div class="summary-label">Last sync</div>
+          <div class="summary-value">{{ status.status_file_updated_at_display }}</div>
+          <div class="summary-note">{{ status.status_file_age_note }}</div>
+        </div>
+        <div class="health-item">
+          <div class="summary-label">Last alert</div>
+          {% if status.last_alert_company %}
+          <div class="summary-value">{{ status.last_alert_company }}</div>
+          <div class="summary-note">
+            {{ status.last_alert_date or "date unknown" }}
+            {% if status.days_since_last_alert is not none %}; {{ status.days_since_last_alert }} day{{ "" if status.days_since_last_alert == 1 else "s" }} ago{% endif %}
+          </div>
+          {% else %}
+          <div class="summary-value">No alerts recorded</div>
+          <div class="summary-note">This is not automatically a scanner failure.</div>
+          {% endif %}
+        </div>
+        <div class="health-item">
+          <div class="summary-label">Next scan</div>
+          <div class="summary-value">{{ status.next_expected_scan_display|replace("UTC", "GMT") }}</div>
+          <div class="summary-note">Mac Mini launchd schedule.</div>
+        </div>
+        <div class="health-item">
+          <div class="summary-label">Backup status</div>
+          <div class="summary-value">{{ "Backed up" if status.live_database_backed_up else "No backup found" }}</div>
+          <div class="summary-note">Latest: {{ status.last_backup_at or "unknown" }}; retained: {{ status.retained_backups or 0 }}</div>
+        </div>
+        <div class="health-item">
+          <div class="summary-label">Latest scan facts</div>
+          <div class="summary-value">{{ status.edgar_index_status or "unknown" }}</div>
+          <div class="summary-note">{{ status.filings_parsed or "0" }} filings parsed; {{ status.eight_k_sanity_count or "0" }} 8-Ks; {{ status.qualifying_alerts_sent or "0" }} alerts.</div>
+        </div>
+      </div>
+    </div>
 
     <div class="status-banner">
       {% if latest_alert %}
@@ -316,8 +442,34 @@
     <table>
       <thead>
         <tr>
-          <th>Company</th><th>Event</th><th>Event Date</th>
-          <th>Source Type</th><th>Source</th><th>Announced / Filed</th>
+          <th>Company</th>
+          <th>
+            <span class="sortable-head">
+              Event Date
+              <span class="sort-controls">
+                <a class="sort-link {% if announcement_sort == 'event' and announcement_direction == 'desc' %}sort-active{% endif %}"
+                   aria-label="Sort event date newest first"
+                   href="{{ url_for('admin_tab', tab='announcements', sort='event', direction='desc') if is_admin else url_for('index', tab='announcements', sort='event', direction='desc') }}">▲</a>
+                <a class="sort-link {% if announcement_sort == 'event' and announcement_direction == 'asc' %}sort-active{% endif %}"
+                   aria-label="Sort event date oldest first"
+                   href="{{ url_for('admin_tab', tab='announcements', sort='event', direction='asc') if is_admin else url_for('index', tab='announcements', sort='event', direction='asc') }}">▼</a>
+              </span>
+            </span>
+          </th>
+          <th>Source Type</th><th>Source</th>
+          <th>
+            <span class="sortable-head">
+              Announced / Filed
+              <span class="sort-controls">
+                <a class="sort-link {% if announcement_sort == 'filed' and announcement_direction == 'desc' %}sort-active{% endif %}"
+                   aria-label="Sort filed date newest first"
+                   href="{{ url_for('admin_tab', tab='announcements', sort='filed', direction='desc') if is_admin else url_for('index', tab='announcements', sort='filed', direction='desc') }}">▲</a>
+                <a class="sort-link {% if announcement_sort == 'filed' and announcement_direction == 'asc' %}sort-active{% endif %}"
+                   aria-label="Sort filed date oldest first"
+                   href="{{ url_for('admin_tab', tab='announcements', sort='filed', direction='asc') if is_admin else url_for('index', tab='announcements', sort='filed', direction='asc') }}">▼</a>
+              </span>
+            </span>
+          </th>
           <th>Matched Phrase</th><th>Email</th><th>Link</th>
         </tr>
       </thead>
@@ -325,7 +477,6 @@
         {% for a in announcements %}
         <tr>
           <td>{{ a.company_name }}</td>
-          <td>{{ a.event_type }}</td>
           <td>{{ a.event_date }}</td>
           <td>{{ a.source_type }}</td>
           <td>{{ a.source }}</td>
@@ -358,11 +509,12 @@
   {% elif active_tab == 'rules' %}
   <div class="grid">
     <section>
-      <h2>Rules</h2>
-      <p class="page-note">Add or remove phrases used by the detector.</p>
-      <form class="rule-form" method="post" action="{{ url_for('admin_rules_add') }}">
-        <label>Type
-          <select name="rule_type">
+	      <h2>Rules</h2>
+	      <p class="page-note">{{ "Add or remove phrases used by the detector." if is_admin else "Read-only detector phrase list. Sign in to change rules." }}</p>
+	      {% if is_admin %}
+	      <form class="rule-form" method="post" action="{{ url_for('admin_rules_add') }}">
+	        <label>Type
+	          <select name="rule_type">
             <option value="include">Include</option>
             <option value="routine_context">Routine context</option>
           </select>
@@ -373,14 +525,15 @@
         <label>Description
           <input name="description" placeholder="Optional">
         </label>
-        <button type="submit">Add Rule</button>
-      </form>
-      {% if rules %}
-      <table>
-        <thead>
-          <tr><th>Type</th><th>Phrase</th><th>Description</th><th>Active</th><th>Action</th></tr>
-        </thead>
-        <tbody>
+	        <button type="submit">Add Rule</button>
+	      </form>
+	      {% endif %}
+	      {% if rules %}
+	      <table>
+	        <thead>
+	          <tr><th>Type</th><th>Phrase</th><th>Description</th><th>Active</th>{% if is_admin %}<th>Action</th>{% endif %}</tr>
+	        </thead>
+	        <tbody>
           {% for r in rules %}
           <tr>
             <td>{{ r.rule_type | replace('_', ' ') | capitalize }}</td>
@@ -390,18 +543,20 @@
               {% if r.active %}
                 <span class="pill pill-ok">yes</span>
               {% else %}
-                <span class="pill pill-warn">no</span>
-              {% endif %}
-            </td>
-            <td>
-              <form method="post" action="{{ url_for('admin_rules_delete') }}">
-                <input type="hidden" name="rule_type" value="{{ r.rule_type }}">
+	                <span class="pill pill-warn">no</span>
+	              {% endif %}
+	            </td>
+	            {% if is_admin %}
+	            <td>
+	              <form method="post" action="{{ url_for('admin_rules_delete') }}">
+	                <input type="hidden" name="rule_type" value="{{ r.rule_type }}">
                 <input type="hidden" name="phrase" value="{{ r.phrase }}">
-                <button class="delete-button" type="submit">Delete</button>
-              </form>
-            </td>
-          </tr>
-          {% endfor %}
+	                <button class="delete-button" type="submit">Delete</button>
+	              </form>
+	            </td>
+	            {% endif %}
+	          </tr>
+	          {% endfor %}
         </tbody>
       </table>
       {% else %}
@@ -429,18 +584,22 @@
   {# ------------------------------------------------------------------ #}
   {# EMAIL ALERTS                                                        #}
   {# ------------------------------------------------------------------ #}
-  {% elif active_tab == 'recipients' %}
-  <section>
-    <h2>Email Alerts</h2>
-    <p class="page-note">People who receive PopDay alert emails.</p>
-    <form class="recipient-form" method="post" action="{{ url_for('admin_recipients_add') }}">
-      <label>Email address
-        <input name="email" type="email" required placeholder="person@example.com">
+	  {% elif active_tab == 'recipients' %}
+	  <section>
+	    <h2>Email Alerts</h2>
+	    <p class="page-note">{{ "People who receive PopDay alert emails." if is_admin else "Email recipient management is private. Sign in to manage alert recipients." }}</p>
+	    {% if is_admin %}
+	    <form class="recipient-form" method="post" action="{{ url_for('admin_recipients_add') }}">
+	      <label>Email address
+	        <input name="email" type="email" required placeholder="person@example.com">
       </label>
-      <button type="submit">Add</button>
-    </form>
-    {% if recipients %}
-    <table>
+	      <button type="submit">Add</button>
+	    </form>
+	    {% endif %}
+	    {% if not is_admin %}
+	    <div class="empty">Recipient emails and alert controls are available after admin sign-in.</div>
+	    {% elif recipients %}
+	    <table>
       <thead>
         <tr><th>Email</th><th>Active</th><th>Added</th><th>Action</th></tr>
       </thead>
@@ -473,12 +632,12 @@
         {% endfor %}
       </tbody>
     </table>
-    {% else %}
-    <div class="empty">No alert recipients configured.</div>
-    {% endif %}
-  </section>
+	    {% else %}
+	    <div class="empty">No alert recipients configured.</div>
+	    {% endif %}
+	  </section>
 
-  {% if sent_alerts %}
+	  {% if is_admin and sent_alerts %}
   <section style="margin-top:26px;">
     <h2>Alert History</h2>
     <p class="page-note">Emails sent by PopDay, most recent first.</p>
@@ -586,12 +745,14 @@
           <td>{{ c.matched_location }}</td>
           <td>{{ c.reason }}</td>
           <td>
-            <div class="action-stack">
-              <a href="{{ url_for('admin_candidate', detection_id=c.id) }}"
-                 class="inline-action inline-action-primary">Read text</a>
-              {% if c.sec_url %}
-              <a href="{{ c.sec_url }}" target="_blank" rel="noopener"
-                 class="inline-action">SEC page</a>
+	            <div class="action-stack">
+	              {% if is_admin %}
+	              <a href="{{ url_for('admin_candidate', detection_id=c.id) }}"
+	                 class="inline-action inline-action-primary">Read text</a>
+	              {% endif %}
+	              {% if c.sec_url %}
+	              <a href="{{ c.sec_url }}" target="_blank" rel="noopener"
+	                 class="inline-action">SEC page</a>
               {% endif %}
             </div>
           </td>
