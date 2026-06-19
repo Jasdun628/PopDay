@@ -41,6 +41,15 @@ def main() -> int:
     check("email alerts management link", "Email Alerts" in front and "/admin/recipients" in front, failures)
     check("health strip", "Scanner health" in front, failures)
 
+    candidates = fetch("?tab=candidates&v=verify")
+    candidates_text = plain_text(candidates)
+    check("hype column", "Hype" in candidates_text, failures)
+    check(
+        "hype labels visible",
+        "provisional" in candidates_text or "voluntary filing" in candidates_text,
+        failures,
+    )
+
     announcements = fetch("?tab=announcements&v=verify")
     text = plain_text(announcements)
     check("investor-days column removed", "Company Event Event Date" not in text and "Company Event Date" in text, failures)

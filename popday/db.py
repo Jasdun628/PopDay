@@ -299,7 +299,14 @@ class Database:
                    h.qualifying_count, h.hype_status, h.hype_definition_version, h.provisional
             FROM detections d
             LEFT JOIN hype_tracking h ON h.candidate_id = d.id
-            ORDER BY d.created_timestamp DESC
+            ORDER BY
+                CASE
+                    WHEN h.candidate_id IS NOT NULL THEN 0
+                    WHEN d.status = 'alert_candidate' THEN 1
+                    ELSE 2
+                END,
+                COALESCE(h.last_checked, d.created_timestamp) DESC,
+                d.created_timestamp DESC
             LIMIT ?
             """,
             (limit,),

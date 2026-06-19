@@ -31,10 +31,13 @@ class HypeCandidate:
 
 
 def _parse_iso_date(value: str) -> date | None:
-    try:
-        return datetime.strptime(value, "%Y-%m-%d").date()
-    except Exception:
-        return None
+    normalized = str(value or "").strip()
+    for fmt in ("%Y-%m-%d", "%Y%m%d"):
+        try:
+            return datetime.strptime(normalized, fmt).date()
+        except ValueError:
+            continue
+    return None
 
 
 def _eligible_event_type(event_type: str) -> bool:
