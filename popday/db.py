@@ -37,6 +37,8 @@ CREATE TABLE IF NOT EXISTS detections (
     snippet TEXT,
     items_json TEXT NOT NULL DEFAULT '[]',
     event_url TEXT,
+    evidence_url TEXT,
+    evidence_label TEXT,
     status TEXT NOT NULL,
     dismissal_reason TEXT,
     alert_sent INTEGER NOT NULL DEFAULT 0,
@@ -136,6 +138,10 @@ class Database:
             )
         if "event_url" not in detection_columns:
             self.conn.execute("ALTER TABLE detections ADD COLUMN event_url TEXT")
+        if "evidence_url" not in detection_columns:
+            self.conn.execute("ALTER TABLE detections ADD COLUMN evidence_url TEXT")
+        if "evidence_label" not in detection_columns:
+            self.conn.execute("ALTER TABLE detections ADD COLUMN evidence_label TEXT")
         hype_columns = {
             row["name"] for row in self.conn.execute("PRAGMA table_info(hype_tracking)").fetchall()
         }
@@ -299,7 +305,7 @@ class Database:
             """
             SELECT d.id, d.created_timestamp, d.company_name, d.form_type, d.filing_date, d.event_type, d.event_date,
                    d.matched_phrase, d.matched_location, d.status, d.dismissal_reason, d.filing_url,
-                   d.event_url,
+                   d.event_url, d.evidence_url, d.evidence_label,
                    h.qualifying_count, h.hype_status, h.hype_definition_version, h.provisional
             FROM detections d
             LEFT JOIN hype_tracking h ON h.candidate_id = d.id
@@ -321,7 +327,7 @@ class Database:
             """
             SELECT id, accession_number, company_name, cik, form_type, filing_date, filing_url,
                    event_type, event_date, matched_phrase, matched_location, snippet, items_json, status,
-                   dismissal_reason, event_url, alert_sent, created_timestamp
+                   dismissal_reason, event_url, evidence_url, evidence_label, alert_sent, created_timestamp
             FROM detections
             WHERE id = ?
             """,
@@ -369,8 +375,9 @@ class Database:
 
         detection_rows = self.conn.execute(
             """
-            SELECT d.id, d.company_name, d.event_type, d.event_date, d.filing_url AS source_url,
-                   'SEC filing' AS source_label, snippet, d.event_url, alert_sent_timestamp,
+            SELECT d.id, d.company_name, d.event_type, d.event_date, d.form_type, d.filing_url AS source_url,
+                   'SEC filing' AS source_label, snippet, d.event_url,
+                   d.evidence_url, d.evidence_label, alert_sent_timestamp,
                    h.qualifying_count, h.hype_status, h.provisional
             FROM detections d
             LEFT JOIN hype_tracking h ON h.candidate_id = d.id
@@ -384,8 +391,9 @@ class Database:
         ).fetchall()
         known_rows = self.conn.execute(
             """
-            SELECT id, company_name, event_type, event_date, source_url,
-                   source_label, '' AS snippet, '' AS event_url, alert_sent_timestamp,
+            SELECT id, company_name, event_type, event_date, '' AS form_type, source_url,
+                   source_label, '' AS snippet, '' AS event_url,
+                   source_url AS evidence_url, source_label AS evidence_label, alert_sent_timestamp,
                    NULL AS qualifying_count, NULL AS hype_status, NULL AS provisional
             FROM known_announcements
             WHERE alert_sent = 1 AND alert_sent_timestamp = ?

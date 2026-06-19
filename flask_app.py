@@ -507,6 +507,8 @@ def _build_admin_context(db: Database, tab: str) -> dict:
                 "reason": _admin_display_text(dict(r).get("dismissal_reason") or "alert ready"),
                 "sec_url": _sec_filing_url(r["filing_url"]) if dict(r).get("filing_url") else "",
                 "event_url": dict(r).get("event_url") or "",
+                "evidence_url": dict(r).get("evidence_url") or "",
+                "evidence_label": dict(r).get("evidence_label") or "Evidence",
                 "hype_status": dict(r).get("hype_status") or "",
                 "hype_status_display": _hype_display(
                     dict(r).get("hype_status"),

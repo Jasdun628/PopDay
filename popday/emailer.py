@@ -153,8 +153,18 @@ def build_alert_body(alerts: list[object], unsubscribe_link: str | None = None) 
             lines.append("COMPANY EVENT / IR LINK")
             lines.append(event_url)
             lines.append("")
+        evidence_url = str(getattr(alert, "evidence_url", "") or "").strip()
+        evidence_label = str(getattr(alert, "evidence_label", "") or "").strip() or "Evidence"
+        if not evidence_url:
+            evidence_url = _sec_readable_url(str(alert.filing_url))
+            evidence_label = "SEC filing page"
+        lines.append(f"EVIDENCE: {evidence_label}")
+        lines.append(evidence_url)
+        lines.append("")
         readable_filing_url = _sec_readable_url(str(alert.filing_url))
-        lines.append(f"{source_label.upper()} PAGE")
+        form_type = str(getattr(alert, "form_type", "") or "").strip()
+        filing_label = f"{source_label.upper()}: {form_type}" if form_type else f"{source_label.upper()} PAGE"
+        lines.append(filing_label)
         lines.append(readable_filing_url)
         if index != len(alerts) - 1:
             lines.append("")
@@ -188,6 +198,13 @@ def build_alert_html(alerts: list[object], unsubscribe_link: str | None = None) 
         filing_url = html.escape(readable_filing_url_raw)
         event_url_raw = str(getattr(alert, "event_url", "") or "").strip()
         event_url = html.escape(event_url_raw)
+        evidence_url_raw = str(getattr(alert, "evidence_url", "") or "").strip()
+        evidence_label_raw = str(getattr(alert, "evidence_label", "") or "").strip() or "Evidence"
+        if not evidence_url_raw:
+            evidence_url_raw = readable_filing_url_raw
+            evidence_label_raw = "SEC filing page"
+        evidence_url = html.escape(evidence_url_raw)
+        evidence_label = html.escape(evidence_label_raw)
         parts.extend(
             [
                 "<hr style=\"border:none;border-top:1px solid #bbb;margin:18px 0 14px;\">",
@@ -209,7 +226,11 @@ def build_alert_html(alerts: list[object], unsubscribe_link: str | None = None) 
         if event_url_raw:
             parts.append("<div style=\"font-size:13px;font-weight:700;letter-spacing:0.04em;color:#444;\">COMPANY EVENT / IR LINK</div>")
             parts.append(f'<p><a href="{event_url}">{event_url}</a></p>')
-        parts.append(f"<div style=\"font-size:13px;font-weight:700;letter-spacing:0.04em;color:#444;\">{source_label} PAGE</div>")
+        parts.append("<div style=\"font-size:13px;font-weight:700;letter-spacing:0.04em;color:#444;\">EVIDENCE</div>")
+        parts.append(f'<p><a href="{evidence_url}">{evidence_label}</a></p>')
+        form_type = str(getattr(alert, "form_type", "") or "").strip()
+        filing_label = f"{source_label}: {form_type}" if form_type else f"{source_label} PAGE"
+        parts.append(f"<div style=\"font-size:13px;font-weight:700;letter-spacing:0.04em;color:#444;\">{html.escape(filing_label)}</div>")
         parts.append(f'<p><a href="{filing_url}">{filing_url}</a></p>')
 
     if unsubscribe_link:

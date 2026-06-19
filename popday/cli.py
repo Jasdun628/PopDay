@@ -32,8 +32,11 @@ class Alert:
     event_date: date
     filing_url: str
     source_label: str = "Source"
+    form_type: str = ""
     snippet: str = ""
     event_url: str = ""
+    evidence_url: str = ""
+    evidence_label: str = ""
     hype_status: str = ""
     hype_count: int | None = None
     hype_provisional: bool = False
@@ -83,8 +86,11 @@ def _alert_from_detection(detection_id: int, detection: object) -> Alert:
         event_date=datetime.strptime(detection.event_date, "%Y-%m-%d").date(),
         filing_url=detection.filing.filing_url,
         source_label="SEC filing",
+        form_type=str(detection.filing.form_type or ""),
         snippet=str(detection.snippet or ""),
         event_url=str(getattr(detection, "event_url", "") or ""),
+        evidence_url=str(getattr(detection, "evidence_url", "") or ""),
+        evidence_label=str(getattr(detection, "evidence_label", "") or ""),
     )
 
 
@@ -96,8 +102,11 @@ def _alert_from_known(row: object) -> Alert:
         event_date=datetime.strptime(str(row["event_date"]), "%Y-%m-%d").date(),
         filing_url=str(row["source_url"]),
         source_label=str(row["source_label"] or "Source"),
+        form_type="",
         snippet="",
         event_url="",
+        evidence_url=str(row["source_url"] or ""),
+        evidence_label=str(row["source_label"] or "Source"),
         hype_status="",
         hype_count=None,
         hype_provisional=False,
@@ -112,8 +121,11 @@ def _alert_from_sent_row(row: object) -> Alert:
         event_date=datetime.strptime(str(row["event_date"]), "%Y-%m-%d").date(),
         filing_url=str(row["source_url"]),
         source_label=str(row["source_label"] or "Source"),
+        form_type=str(row["form_type"] or ""),
         snippet=str(row["snippet"] or ""),
         event_url=str(row["event_url"] or ""),
+        evidence_url=str(row["evidence_url"] or ""),
+        evidence_label=str(row["evidence_label"] or ""),
         hype_status=str(row["hype_status"] or ""),
         hype_count=int(row["qualifying_count"]) if row["qualifying_count"] is not None else None,
         hype_provisional=bool(row["provisional"]) if row["provisional"] is not None else False,

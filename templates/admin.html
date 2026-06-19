@@ -752,6 +752,10 @@
 	              <a href="{{ url_for('admin_candidate', detection_id=c.id) }}"
 	                 class="inline-action inline-action-primary">Read text</a>
 	              {% endif %}
+	              {% if c.evidence_url %}
+	              <a href="{{ c.evidence_url }}" target="_blank" rel="noopener"
+	                 class="inline-action inline-action-primary">{{ c.evidence_label }}</a>
+	              {% endif %}
 	              {% if c.sec_url %}
 	              <a href="{{ c.sec_url }}" target="_blank" rel="noopener"
 	                 class="inline-action">SEC page</a>

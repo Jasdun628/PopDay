@@ -12,7 +12,10 @@ class Alert:
     event_date: date = date(2026, 9, 15)
     filing_url: str = "https://www.sec.gov/Archives/example.txt"
     source_label: str = "SEC filing"
+    form_type: str = "8-K"
     event_url: str = ""
+    evidence_url: str = ""
+    evidence_label: str = ""
     snippet: str = (
         "Harmonic also announced it will host an Investor Day event in New York City "
         "on September 15, 2026, offering a detailed look at the company's core "
@@ -73,9 +76,22 @@ class EmailerTests(unittest.TestCase):
 
         body = build_alert_body([alert])
 
-        self.assertIn("SEC FILING PAGE", body)
+        self.assertIn("SEC FILING: 8-K", body)
         self.assertIn("0001193125-26-273457-index.htm", body)
         self.assertNotIn("0001193125-26-273457.txt", body)
+
+    def test_alert_body_puts_evidence_link_before_parent_filing(self):
+        alert = Alert(
+            filing_url="https://www.sec.gov/Archives/edgar/data/851310/0001193125-26-273457.txt",
+            evidence_url="https://www.sec.gov/Archives/edgar/data/851310/000119312526273457/d842935dex991.htm",
+            evidence_label="Exhibit 99.1",
+        )
+
+        body = build_alert_body([alert])
+
+        self.assertIn("EVIDENCE: Exhibit 99.1", body)
+        self.assertIn("d842935dex991.htm", body)
+        self.assertLess(body.find("EVIDENCE: Exhibit 99.1"), body.find("SEC FILING: 8-K"))
 
 
 if __name__ == "__main__":

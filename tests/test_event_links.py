@@ -29,6 +29,7 @@ ITEM INFORMATION: 7.01
 </SEC-HEADER>
 <DOCUMENT>
 <TYPE>EX-99.1
+<FILENAME>d123dex991.htm
 <DESCRIPTION>Press release
 <TEXT>
 <html><body>
@@ -47,7 +48,7 @@ a detailed look at strategy and growth.</p>
             company_name="Example Inc.",
             form_type="8-K",
             filing_date="2026-06-19",
-            filing_url="https://www.sec.gov/Archives/example.txt",
+            filing_url="https://www.sec.gov/Archives/edgar/data/1/0000000000-26-000001.txt",
             primary_document="example.htm",
         )
 
@@ -57,6 +58,11 @@ a detailed look at strategy and growth.</p>
         self.assertEqual(
             detections[0].event_url,
             "https://investors.example.com/events/investor-day",
+        )
+        self.assertEqual(detections[0].evidence_label, "Exhibit 99.1")
+        self.assertEqual(
+            detections[0].evidence_url,
+            "https://www.sec.gov/Archives/edgar/data/1/000000000026000001/d123dex991.htm",
         )
 
 
