@@ -13,5 +13,8 @@
   "email_from": "alerts@example.com",
   "email_to": "jd@jasondunne.co.uk",
   "unsubscribe_base_url": "",
-  "unsubscribe_secret": ""
+  "unsubscribe_secret": "",
+  "company_websites": {
+    "Example Company Inc.": "https://www.example.com/"
+  }
 }

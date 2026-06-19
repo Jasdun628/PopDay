@@ -11,7 +11,7 @@ from pathlib import Path
 
 from flask import Flask, redirect, render_template, request, session, url_for
 
-from popday.config import load_config
+from popday.config import DEFAULT_COMPANY_WEBSITES, load_config
 from popday.db import Database
 
 
@@ -57,21 +57,17 @@ def _sec_filing_url(filing_url: str) -> str:
     )
 
 
-COMPANY_WEBSITE_BY_NAME = {
-    "climb global solutions, inc.": "https://www.climbglobalsolutions.com/",
-    "harmonic inc.": "https://www.harmonicinc.com/",
-    "radian group inc.": "https://www.radian.com/",
-    "samsara inc.": "https://www.samsara.com/",
-    "slb limited/nv": "https://www.slb.com/",
-}
-
-
 def _company_key(company_name: object) -> str:
     return " ".join(str(company_name or "").strip().lower().split())
 
 
-def _company_website(company_name: object) -> str:
-    return COMPANY_WEBSITE_BY_NAME.get(_company_key(company_name), "")
+def _company_website(
+    company_name: object,
+    company_websites: dict[str, str] | None = None,
+) -> str:
+    websites = company_websites or DEFAULT_COMPANY_WEBSITES
+    lookup = {_company_key(name): url for name, url in websites.items()}
+    return lookup.get(_company_key(company_name), "")
 
 
 def _get_db() -> Database:
@@ -555,10 +551,13 @@ def _check_admin():
     return None
 
 
-def _build_admin_context(db: Database, tab: str) -> dict:
+def _build_admin_context(db: Database, tab: str, *, company_websites: dict[str, str]) -> dict:
     status = _load_public_status()
     if status.get("last_alert_company"):
-        status["last_alert_company_url"] = _company_website(status.get("last_alert_company"))
+        status["last_alert_company_url"] = _company_website(
+            status.get("last_alert_company"),
+            company_websites,
+        )
     synced_health_rows = _launchd_health_rows_from_lines(status.get("latest_log_tail") or [])
     ctx: dict = {"status": status}
     if tab == "summary":
@@ -566,7 +565,10 @@ def _build_admin_context(db: Database, tab: str) -> dict:
         latest_alert = db.latest_sent_alert()
         latest_alert_dict = dict(latest_alert) if latest_alert else None
         if latest_alert_dict:
-            latest_alert_dict["company_url"] = _company_website(latest_alert_dict["company_name"])
+            latest_alert_dict["company_url"] = _company_website(
+                latest_alert_dict["company_name"],
+                company_websites,
+            )
         ctx.update(
             announcement_count=db.investor_day_announcement_count(),
             latest_alert=latest_alert_dict,
@@ -581,7 +583,7 @@ def _build_admin_context(db: Database, tab: str) -> dict:
         announcements = [
             {
                 "company_name": r["company_name"],
-                "company_url": _company_website(r["company_name"]),
+                "company_url": _company_website(r["company_name"], company_websites),
                 "event_type": r["event_type"] or "Investor Day",
                 "event_date": _friendly_date(r["event_date"]) if dict(r).get("event_date") else "—",
                 "event_date_raw": dict(r).get("event_date") or "",
@@ -637,7 +639,7 @@ def _build_admin_context(db: Database, tab: str) -> dict:
             research_rows.append(
                 {
                     "company_name": row.get("company_name") or "",
-                    "company_url": _company_website(row.get("company_name")),
+                    "company_url": _company_website(row.get("company_name"), company_websites),
                     "ticker": _unknown_text(row.get("ticker")),
                     "event_type": row.get("event_type") or "Investor Day",
                     "ad_date": _friendly_date(str(ad_raw)) if ad_raw else "unknown",
@@ -699,7 +701,7 @@ def _build_admin_context(db: Database, tab: str) -> dict:
         ctx["sent_alerts"] = [
             {
                 "company_name": r["company_name"],
-                "company_url": _company_website(r["company_name"]),
+                "company_url": _company_website(r["company_name"], company_websites),
                 "event_type": r["event_type"] or "Investor Day",
                 "event_date": r["event_date"] or "—",
                 "sent_at": _friendly_datetime_str(r["alert_sent_timestamp"]),
@@ -728,7 +730,7 @@ def _build_admin_context(db: Database, tab: str) -> dict:
                 "status": r["status"] or "",
                 "status_display": _admin_display_text(r["status"]),
                 "company_name": r["company_name"],
-                "company_url": _company_website(r["company_name"]),
+                "company_url": _company_website(r["company_name"], company_websites),
                 "matched_phrase": _matched_phrase_display(dict(r).get("matched_phrase")),
                 "event_date": _friendly_date(r["event_date"]) if dict(r).get("event_date") else "—",
                 "matched_location": _admin_display_text(dict(r).get("matched_location")),
@@ -758,7 +760,7 @@ def _render_main_ui(tab: str, *, is_admin: bool) -> str:
     config = load_config()
     db = Database(config.db_path)
     try:
-        ctx = _build_admin_context(db, tab)
+        ctx = _build_admin_context(db, tab, company_websites=config.company_websites)
     finally:
         db.close()
     return render_template(
@@ -949,7 +951,7 @@ def admin_candidate(detection_id):
 
     return render_template(
         "admin_candidate.html",
-        row=dict(row) | {"company_url": _company_website(row["company_name"])},
+        row=dict(row) | {"company_url": _company_website(row["company_name"], config.company_websites)},
         preview=preview,
         fetch_error=fetch_error,
         sec_url=sec_url,

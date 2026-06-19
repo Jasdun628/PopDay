@@ -16,6 +16,10 @@ class PublicCandidatesRouteTests(unittest.TestCase):
 
         self.assertEqual(_company_website("HARMONIC INC."), "https://www.harmonicinc.com/")
         self.assertEqual(_company_website("Unknown Co"), "")
+        self.assertEqual(
+            _company_website("  example co  ", {"Example Co": "https://example.com/"}),
+            "https://example.com/",
+        )
 
     def test_front_door_opens_investor_days_view(self):
         with tempfile.NamedTemporaryFile(suffix=".sqlite3") as db_file:

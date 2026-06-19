@@ -11,6 +11,14 @@ from typing import Any
 
 DEFAULT_USER_AGENT = "PopDay/0.1 contact@example.com"
 
+DEFAULT_COMPANY_WEBSITES = {
+    "Climb Global Solutions, Inc.": "https://www.climbglobalsolutions.com/",
+    "HARMONIC INC.": "https://www.harmonicinc.com/",
+    "Radian Group Inc.": "https://www.radian.com/",
+    "Samsara Inc.": "https://www.samsara.com/",
+    "SLB LIMITED/NV": "https://www.slb.com/",
+}
+
 
 @dataclass(frozen=True)
 class Config:
@@ -29,6 +37,7 @@ class Config:
     hype_provisional: bool
     unsubscribe_base_url: str | None
     unsubscribe_secret: str | None
+    company_websites: dict[str, str]
 
     @property
     def email_configured(self) -> bool:
@@ -79,6 +88,19 @@ def _as_bool(value: Any, default: bool = False) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _company_websites(settings: dict[str, Any]) -> dict[str, str]:
+    configured = settings.get("company_websites")
+    websites = dict(DEFAULT_COMPANY_WEBSITES)
+    if not isinstance(configured, dict):
+        return websites
+    for company_name, url in configured.items():
+        name = str(company_name or "").strip()
+        link = str(url or "").strip()
+        if name and link:
+            websites[name] = link
+    return websites
+
+
 def load_config(path: str | None = None) -> Config:
     settings = _read_json(path)
     return Config(
@@ -110,4 +132,5 @@ def load_config(path: str | None = None) -> Config:
         ),
         unsubscribe_base_url=_pick(settings, "unsubscribe_base_url", "POPDAY_UNSUBSCRIBE_BASE_URL"),
         unsubscribe_secret=_pick(settings, "unsubscribe_secret", "POPDAY_UNSUBSCRIBE_SECRET"),
+        company_websites=_company_websites(settings),
     )
