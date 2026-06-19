@@ -2,7 +2,7 @@ import unittest
 from dataclasses import dataclass
 from datetime import date
 
-from popday.emailer import build_alert_body
+from popday.emailer import _sec_readable_url, build_alert_body
 
 
 @dataclass(frozen=True)
@@ -57,6 +57,25 @@ class EmailerTests(unittest.TestCase):
 
         self.assertIn("COMPANY EVENT / IR LINK", body)
         self.assertIn("https://investor.example.com/events/investor-day", body)
+
+    def test_sec_complete_submission_url_becomes_readable_index_page(self):
+        url = "https://www.sec.gov/Archives/edgar/data/851310/0001193125-26-273457.txt"
+
+        self.assertEqual(
+            _sec_readable_url(url),
+            "https://www.sec.gov/Archives/edgar/data/851310/000119312526273457/0001193125-26-273457-index.htm",
+        )
+
+    def test_alert_body_uses_readable_sec_page_link(self):
+        alert = Alert(
+            filing_url="https://www.sec.gov/Archives/edgar/data/851310/0001193125-26-273457.txt"
+        )
+
+        body = build_alert_body([alert])
+
+        self.assertIn("SEC FILING PAGE", body)
+        self.assertIn("0001193125-26-273457-index.htm", body)
+        self.assertNotIn("0001193125-26-273457.txt", body)
 
 
 if __name__ == "__main__":

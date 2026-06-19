@@ -13,6 +13,23 @@ from .date_extract import format_human_date
 from .unsubscribe import unsubscribe_url
 
 
+def _sec_readable_url(filing_url: str) -> str:
+    marker = "/Archives/edgar/data/"
+    if marker not in filing_url or not filing_url.endswith(".txt"):
+        return filing_url
+    tail = filing_url.split(marker, 1)[1]
+    parts = tail.split("/")
+    if len(parts) < 2:
+        return filing_url
+    cik = parts[0]
+    accession = parts[-1].replace(".txt", "")
+    accession_no_dashes = parts[1] if len(parts) >= 3 else accession.replace("-", "")
+    return (
+        "https://www.sec.gov/Archives/edgar/data/"
+        f"{cik}/{accession_no_dashes}/{accession}-index.htm"
+    )
+
+
 def _mailto_unsubscribe(config: Config, recipient: str) -> str:
     target = config.email_from or config.smtp_username or recipient
     subject = quote("Unsubscribe PopDay")
@@ -136,8 +153,9 @@ def build_alert_body(alerts: list[object], unsubscribe_link: str | None = None) 
             lines.append("COMPANY EVENT / IR LINK")
             lines.append(event_url)
             lines.append("")
-        lines.append(source_label.upper())
-        lines.append(alert.filing_url)
+        readable_filing_url = _sec_readable_url(str(alert.filing_url))
+        lines.append(f"{source_label.upper()} PAGE")
+        lines.append(readable_filing_url)
         if index != len(alerts) - 1:
             lines.append("")
 
@@ -166,7 +184,8 @@ def build_alert_html(alerts: list[object], unsubscribe_link: str | None = None) 
         source_label = html.escape(getattr(alert, "source_label", "Source").upper())
         company_name = html.escape(str(alert.company_name))
         event_label = html.escape(str(alert.event_label))
-        filing_url = html.escape(str(alert.filing_url))
+        readable_filing_url_raw = _sec_readable_url(str(alert.filing_url))
+        filing_url = html.escape(readable_filing_url_raw)
         event_url_raw = str(getattr(alert, "event_url", "") or "").strip()
         event_url = html.escape(event_url_raw)
         parts.extend(
@@ -190,7 +209,7 @@ def build_alert_html(alerts: list[object], unsubscribe_link: str | None = None) 
         if event_url_raw:
             parts.append("<div style=\"font-size:13px;font-weight:700;letter-spacing:0.04em;color:#444;\">COMPANY EVENT / IR LINK</div>")
             parts.append(f'<p><a href="{event_url}">{event_url}</a></p>')
-        parts.append(f"<div style=\"font-size:13px;font-weight:700;letter-spacing:0.04em;color:#444;\">{source_label}</div>")
+        parts.append(f"<div style=\"font-size:13px;font-weight:700;letter-spacing:0.04em;color:#444;\">{source_label} PAGE</div>")
         parts.append(f'<p><a href="{filing_url}">{filing_url}</a></p>')
 
     if unsubscribe_link:

@@ -42,15 +42,15 @@ def _friendly_date(value: str) -> str:
 def _sec_filing_url(filing_url: str) -> str:
     """Convert raw SEC .txt URL to the human-readable filing index page."""
     marker = "/Archives/edgar/data/"
-    if marker not in filing_url:
+    if marker not in filing_url or not filing_url.endswith(".txt"):
         return filing_url
     tail = filing_url.split(marker, 1)[1]
     parts = tail.split("/")
-    if len(parts) < 3:
+    if len(parts) < 2:
         return filing_url
     cik = parts[0]
-    accession_no_dashes = parts[1]
     accession = parts[-1].replace(".txt", "")
+    accession_no_dashes = parts[1] if len(parts) >= 3 else accession.replace("-", "")
     return (
         f"https://www.sec.gov/Archives/edgar/data/"
         f"{cik}/{accession_no_dashes}/{accession}-index.htm"
