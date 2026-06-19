@@ -21,6 +21,11 @@ def plain_text(html: str) -> str:
     return re.sub(r"\s+", " ", re.sub("<[^>]+>", " ", html))
 
 
+def nav_text(html: str) -> str:
+    match = re.search(r"<nav\b.*?</nav>", html, re.S)
+    return plain_text(match.group(0)) if match else ""
+
+
 def check(name: str, ok: bool, failures: list[str]) -> None:
     print(f"{name}: {'OK' if ok else 'FAIL'}")
     if not ok:
@@ -34,12 +39,26 @@ def main() -> int:
     check("front title", "<title>PopDay</title>" in front, failures)
     check(
         "public tabs",
-        all(tab in front for tab in ["Summary", "Investor Days", "System Health", "Candidates", "Filings", "Help"]),
+        all(tab in front for tab in ["System Health", "Investor Days", "Research / Hype", "Schedule", "Candidates", "Help"])
+        and "Filings" not in nav_text(front),
+        failures,
+    )
+    check(
+        "schedule before system health",
+        nav_text(front).find("Research / Hype")
+        < nav_text(front).find("Candidates")
+        < nav_text(front).find("Schedule")
+        < nav_text(front).find("System Health")
+        < nav_text(front).find("Help"),
         failures,
     )
     check("rules tab hidden", "Rules" not in front, failures)
     check("email alerts management link", "Email Alerts" in front and "/admin/recipients" in front, failures)
-    check("health strip", "Scanner health" in front, failures)
+    check(
+        "opens investor days tab",
+        "Running list of qualifying Investor Day announcements" in front,
+        failures,
+    )
     front_text = plain_text(front)
     check("front door current", "PopDay is not current" not in front_text, failures)
 
@@ -48,14 +67,43 @@ def main() -> int:
     check("hype column", "Hype" in candidates_text, failures)
     check(
         "hype labels visible",
-        "provisional" in candidates_text or "voluntary filing" in candidates_text,
+        "provisional" in candidates_text or "voluntary filing" in candidates_text or "not checked" in candidates_text,
+        failures,
+    )
+
+    research = fetch("?tab=research&v=verify")
+    research_text = plain_text(research)
+    check("research tab", "Research / Hype" in research_text, failures)
+    check(
+        "research hype columns",
+        all(
+            label in research_text
+            for label in [
+                "Raw Hype Count",
+                "Investor Comms Count",
+                "8-K 7.01 Count",
+                "8-K 8.01 Count",
+                "Presentation / Deck Count",
+                "Latest filing AD-ID",
+            ]
+        ),
         failures,
     )
 
     announcements = fetch("?tab=announcements&v=verify")
     text = plain_text(announcements)
+    check("evidence links visible", "Exhibit 99.1" in text or "Business Wire release" in text, failures)
+    check(
+        "company website links",
+        "https://www.harmonicinc.com/" in announcements
+        or "https://www.slb.com/" in announcements
+        or "https://www.climbglobalsolutions.com/" in announcements
+        or "https://www.samsara.com/" in announcements
+        or "https://www.radian.com/" in announcements,
+        failures,
+    )
     check("investor-days column removed", "Company Event Event Date" not in text and "Company Event Date" in text, failures)
-    check("triangle sorters", announcements.count("▲") == 2 and announcements.count("▼") == 2, failures)
+    check("triangle sorters", announcements.count("▲") == 3 and announcements.count("▼") == 3, failures)
     check("hi-lo labels removed", "Hi</a>" not in announcements and "Lo</a>" not in announcements, failures)
     check(
         "newest filed first",

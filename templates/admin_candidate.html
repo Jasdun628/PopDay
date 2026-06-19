@@ -91,6 +91,12 @@
       color: var(--text);
     }
     .button-link:hover { opacity: 0.86; }
+    .company-link {
+      color: var(--link);
+      font-weight: 750;
+      text-decoration: none;
+    }
+    .company-link:hover { text-decoration: underline; }
     .inline-action {
       border: 1px solid var(--line);
       border-radius: 4px;
@@ -140,7 +146,13 @@
     <p class="page-note">Cleaned local preview of the source filing around the match.</p>
 
     <div class="snippet-box">
-      <strong style="font-size:16px;">{{ row.company_name }}</strong>
+      <strong style="font-size:16px;">
+        {% if row.company_url %}
+        <a href="{{ row.company_url }}" target="_blank" rel="noopener" class="company-link">{{ row.company_name }}</a>
+        {% else %}
+        {{ row.company_name }}
+        {% endif %}
+      </strong>
       <div class="meta-row">
         <div class="meta-item">
           <div class="meta-label">Form</div>

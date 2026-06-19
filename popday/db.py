@@ -309,14 +309,7 @@ class Database:
                    h.qualifying_count, h.hype_status, h.hype_definition_version, h.provisional
             FROM detections d
             LEFT JOIN hype_tracking h ON h.candidate_id = d.id
-            ORDER BY
-                CASE
-                    WHEN h.candidate_id IS NOT NULL THEN 0
-                    WHEN d.status = 'alert_candidate' THEN 1
-                    ELSE 2
-                END,
-                COALESCE(h.last_checked, d.created_timestamp) DESC,
-                d.created_timestamp DESC
+            ORDER BY d.filing_date DESC, d.created_timestamp DESC
             LIMIT ?
             """,
             (limit,),
@@ -485,23 +478,27 @@ class Database:
     def investor_day_announcements(self) -> list[dict[str, Any]]:
         rows = self.conn.execute(
             """
-            SELECT company_name, event_type, event_date, form_type, filing_date, filing_url AS source_url,
-                   accession_number, matched_phrase, matched_location, alert_sent,
-                   alert_sent_timestamp, created_timestamp, 'EDGAR' AS source_type,
-                   'SEC filing' AS source_label
-            FROM detections
-            WHERE status = 'alert_candidate'
-              AND event_type IS NOT NULL
-              AND event_date IS NOT NULL
-            ORDER BY event_date DESC, created_timestamp DESC
+            SELECT d.company_name, d.event_type, d.event_date, d.form_type, d.filing_date,
+                   d.filing_url AS source_url, d.evidence_url, d.evidence_label,
+                   d.accession_number, d.matched_phrase, d.matched_location, d.alert_sent,
+                   d.alert_sent_timestamp, d.created_timestamp, 'EDGAR' AS source_type,
+                   'SEC filing' AS source_label, h.qualifying_count AS hype_count
+            FROM detections d
+            LEFT JOIN hype_tracking h ON h.candidate_id = d.id
+            WHERE d.status = 'alert_candidate'
+              AND d.event_type IS NOT NULL
+              AND d.event_date IS NOT NULL
+            ORDER BY d.event_date DESC, d.created_timestamp DESC
             """
         ).fetchall()
         known_rows = self.conn.execute(
             """
             SELECT company_name, event_type, event_date, NULL AS form_type,
                    announcement_date AS filing_date, source_url, NULL AS accession_number,
+                   source_url AS evidence_url, source_label AS evidence_label,
                    NULL AS matched_phrase, NULL AS matched_location, alert_sent,
-                   alert_sent_timestamp, created_timestamp, source_type, source_label
+                   alert_sent_timestamp, created_timestamp, source_type, source_label,
+                   NULL AS hype_count
             FROM known_announcements
             ORDER BY event_date DESC, created_timestamp DESC
             """
@@ -537,6 +534,57 @@ class Database:
 
     def investor_day_announcement_count(self) -> int:
         return len(self.investor_day_announcements())
+
+    def research_hype_events(self) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            """
+            SELECT d.id AS candidate_id, d.company_name, d.ticker, d.cik, d.event_type,
+                   d.event_date, COALESCE(h.announcement_date, d.filing_date) AS announcement_date,
+                   d.filing_url AS source_url, d.evidence_url, d.evidence_label,
+                   d.created_timestamp, 'EDGAR' AS source_type,
+                   h.qualifying_count AS investor_comms_count,
+                   h.detected_json, h.last_checked, h.hype_definition_version, h.provisional
+            FROM detections d
+            LEFT JOIN hype_tracking h ON h.candidate_id = d.id
+            WHERE d.status = 'alert_candidate'
+              AND d.event_type IS NOT NULL
+              AND d.event_date IS NOT NULL
+            ORDER BY d.event_date DESC, d.created_timestamp DESC
+            """
+        ).fetchall()
+        known_rows = self.conn.execute(
+            """
+            SELECT NULL AS candidate_id, company_name, NULL AS ticker, NULL AS cik, event_type,
+                   event_date, announcement_date, source_url,
+                   source_url AS evidence_url, source_label AS evidence_label,
+                   created_timestamp, source_type,
+                   NULL AS investor_comms_count, NULL AS detected_json, NULL AS last_checked,
+                   NULL AS hype_definition_version, NULL AS provisional
+            FROM known_announcements
+            ORDER BY event_date DESC, created_timestamp DESC
+            """
+        ).fetchall()
+        deduped: dict[tuple[str, str, str], dict[str, Any]] = {}
+        for row in [*rows, *known_rows]:
+            item = dict(row)
+            key = (
+                str(item["company_name"]).strip().lower(),
+                str(item["event_type"]).strip().lower(),
+                str(item["event_date"]).strip(),
+            )
+            existing = deduped.get(key)
+            if not existing:
+                deduped[key] = item
+                continue
+            existing_count = existing.get("investor_comms_count")
+            item_count = item.get("investor_comms_count")
+            if item_count is not None and (
+                existing_count is None or int(item_count) > int(existing_count)
+            ):
+                deduped[key] = item
+            elif existing["source_type"] != "EDGAR" and item["source_type"] == "EDGAR":
+                deduped[key] = item
+        return list(deduped.values())
 
     def add_known_announcement(
         self,

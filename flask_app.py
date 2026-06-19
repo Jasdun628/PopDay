@@ -57,6 +57,23 @@ def _sec_filing_url(filing_url: str) -> str:
     )
 
 
+COMPANY_WEBSITE_BY_NAME = {
+    "climb global solutions, inc.": "https://www.climbglobalsolutions.com/",
+    "harmonic inc.": "https://www.harmonicinc.com/",
+    "radian group inc.": "https://www.radian.com/",
+    "samsara inc.": "https://www.samsara.com/",
+    "slb limited/nv": "https://www.slb.com/",
+}
+
+
+def _company_key(company_name: object) -> str:
+    return " ".join(str(company_name or "").strip().lower().split())
+
+
+def _company_website(company_name: object) -> str:
+    return COMPANY_WEBSITE_BY_NAME.get(_company_key(company_name), "")
+
+
 def _get_db() -> Database:
     config = load_config()
     return Database(config.db_path)
@@ -74,6 +91,7 @@ def _prepare_row(row: dict, today: date) -> dict:
 
     return {
         "company_name": row["company_name"],
+        "company_url": _company_website(row["company_name"]),
         "event_type": row["event_type"] or "Investor Day",
         "event_date_display": _friendly_date(event_date_raw),
         "event_date_raw": event_date_raw,
@@ -86,7 +104,7 @@ def _prepare_row(row: dict, today: date) -> dict:
 
 @app.route("/")
 def index():
-    return _render_main_ui(request.args.get("tab", "summary"), is_admin=False)
+    return _render_main_ui(request.args.get("tab", "announcements"), is_admin=False)
 
 
 @app.route("/status")
@@ -133,22 +151,22 @@ def unsubscribe():
 # ---------------------------------------------------------------------------
 
 ADMIN_TABS = [
-    ("summary", "Summary"),
     ("announcements", "Investor Days"),
+    ("research", "Research / Hype"),
     ("rules", "Rules"),
     ("recipients", "Email Alerts"),
-    ("health", "System Health"),
     ("candidates", "Candidates"),
-    ("filings", "Filings"),
+    ("health", "Schedule"),
+    ("summary", "System Health"),
     ("help", "Help"),
 ]
 
 PUBLIC_TABS = [
-    ("summary", "Summary"),
     ("announcements", "Investor Days"),
-    ("health", "System Health"),
+    ("research", "Research / Hype"),
     ("candidates", "Candidates"),
-    ("filings", "Filings"),
+    ("health", "Schedule"),
+    ("summary", "System Health"),
     ("help", "Help"),
 ]
 
@@ -328,14 +346,141 @@ def _hype_display(value: object, provisional: object) -> str:
     return label
 
 
+def _matched_phrase_display(value: object) -> str:
+    text = " ".join(str(value or "").strip().split())
+    if not text:
+        return ""
+    return f'"{text[:1].upper()}{text[1:]}"'
+
+
+def _parse_date_for_delta(value: object) -> date | None:
+    text = str(value or "").strip()
+    for fmt in ("%Y-%m-%d", "%Y%m%d"):
+        try:
+            return datetime.strptime(text, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _unknown_text(value: object) -> str:
+    text = str(value or "").strip()
+    return text or "unknown"
+
+
+def _research_payload(value: object) -> list[dict]:
+    try:
+        payload = json.loads(str(value or "[]"))
+    except json.JSONDecodeError:
+        return []
+    return payload if isinstance(payload, list) else []
+
+
+def _research_item_count(payload: list[dict], item_code: str) -> int | None:
+    if payload is None:
+        return None
+    total = 0
+    for filing in payload:
+        codes = filing.get("item_codes") or []
+        if any(str(code).strip() == item_code for code in codes):
+            total += 1
+    return total
+
+
+def _research_presentation_count(payload: list[dict]) -> int | None:
+    if payload is None:
+        return None
+    hints = ("presentation", "deck", "slides", "investor-day")
+    total = 0
+    for filing in payload:
+        combined = " ".join(
+            str(filing.get(key) or "")
+            for key in ("primary_document", "source_url")
+        ).lower()
+        if any(hint in combined for hint in hints):
+            total += 1
+    return total
+
+
+def _latest_known_hype_filing(payload: list[dict]) -> str:
+    dated = [filing for filing in payload if filing.get("filing_date")]
+    if not dated:
+        return "unknown"
+    latest = max(dated, key=lambda filing: str(filing.get("filing_date") or ""))
+    date_label = _friendly_date(str(latest.get("filing_date") or ""))
+    form = str(latest.get("form") or "").strip()
+    codes = ", ".join(str(code) for code in latest.get("item_codes") or [])
+    return " ".join(part for part in [date_label, form, codes] if part).strip() or "unknown"
+
+
 def _announcement_sort_settings() -> tuple[str, str]:
     sort_key = request.args.get("sort", "filed").strip().lower()
     direction = request.args.get("direction", "desc").strip().lower()
-    if sort_key not in {"filed", "event"}:
+    if sort_key not in {"filed", "event", "hype"}:
         sort_key = "filed"
     if direction not in {"asc", "desc"}:
         direction = "desc"
     return sort_key, direction
+
+
+def _research_sort_settings() -> tuple[str, str]:
+    sort_key = request.args.get("sort", "investor_comms").strip().lower()
+    direction = request.args.get("direction", "desc").strip().lower()
+    valid = {
+        "company", "ticker", "event_type", "ad", "id", "days", "raw",
+        "investor_comms", "item_701", "item_801", "presentation",
+        "latest", "source",
+    }
+    if sort_key not in valid:
+        sort_key = "investor_comms"
+    if direction not in {"asc", "desc"}:
+        direction = "desc"
+    return sort_key, direction
+
+
+def _research_number_sort_value(value: object) -> int | None:
+    return int(value) if value is not None else None
+
+
+def _sort_research_rows(items: list[dict], sort_key: str, direction: str) -> list[dict]:
+    def missing_last_number(item: dict, key: str) -> tuple[bool, int]:
+        value = item.get(key)
+        number = -1 if value is None else int(value)
+        return value is None, -number if direction == "desc" else number
+
+    text_keys = {
+        "company": "company_name",
+        "ticker": "ticker",
+        "event_type": "event_type",
+        "ad": "ad_date_raw",
+        "id": "id_date_raw",
+        "latest": "latest_filing",
+        "source": "source_label",
+    }
+    number_keys = {
+        "days": "days_sort",
+        "raw": "raw_hype_count_sort",
+        "investor_comms": "investor_comms_count_sort",
+        "item_701": "item_701_count_sort",
+        "item_801": "item_801_count_sort",
+        "presentation": "presentation_count_sort",
+    }
+    items.sort(key=lambda item: (item["company_name"].casefold(), item.get("id_date_raw") or ""))
+    if sort_key == "investor_comms" and direction == "desc":
+        items.sort(
+            key=lambda item: (
+                item["investor_comms_count_sort"] is None,
+                -(item["investor_comms_count_sort"] or -1),
+                item["raw_hype_count_sort"] is None,
+                -(item["raw_hype_count_sort"] or -1),
+            )
+        )
+    elif sort_key in number_keys:
+        items.sort(key=lambda item: missing_last_number(item, number_keys[sort_key]))
+    else:
+        key = text_keys[sort_key]
+        items.sort(key=lambda item: str(item.get(key) or "").casefold(), reverse=direction == "desc")
+    return items
 
 
 def _sort_announcements(items: list[dict], sort_key: str, direction: str) -> list[dict]:
@@ -347,7 +492,9 @@ def _sort_announcements(items: list[dict], sort_key: str, direction: str) -> lis
             item.get("filing_date_raw") or "",
         )
     )
-    if sort_key == "event":
+    if sort_key == "hype":
+        items.sort(key=lambda item: item.get("hype_count_sort", -1), reverse=reverse)
+    elif sort_key == "event":
         items.sort(key=lambda item: item.get("event_date_raw") or "", reverse=reverse)
     else:
         items.sort(key=lambda item: item.get("filing_date_raw") or "", reverse=reverse)
@@ -410,14 +557,19 @@ def _check_admin():
 
 def _build_admin_context(db: Database, tab: str) -> dict:
     status = _load_public_status()
+    if status.get("last_alert_company"):
+        status["last_alert_company_url"] = _company_website(status.get("last_alert_company"))
     synced_health_rows = _launchd_health_rows_from_lines(status.get("latest_log_tail") or [])
     ctx: dict = {"status": status}
     if tab == "summary":
         latest_run = synced_health_rows[0] if synced_health_rows else None
         latest_alert = db.latest_sent_alert()
+        latest_alert_dict = dict(latest_alert) if latest_alert else None
+        if latest_alert_dict:
+            latest_alert_dict["company_url"] = _company_website(latest_alert_dict["company_name"])
         ctx.update(
             announcement_count=db.investor_day_announcement_count(),
-            latest_alert=dict(latest_alert) if latest_alert else None,
+            latest_alert=latest_alert_dict,
             next_run=_next_scheduled_run(),
             latest_run_started=_friendly_datetime_str(latest_run["started"]) if latest_run else "",
             latest_run_filing_date=_friendly_date(latest_run["filing_date"]) if latest_run and latest_run["filing_date"] else "—",
@@ -429,20 +581,32 @@ def _build_admin_context(db: Database, tab: str) -> dict:
         announcements = [
             {
                 "company_name": r["company_name"],
+                "company_url": _company_website(r["company_name"]),
                 "event_type": r["event_type"] or "Investor Day",
                 "event_date": _friendly_date(r["event_date"]) if dict(r).get("event_date") else "—",
                 "event_date_raw": dict(r).get("event_date") or "",
                 "source_type": dict(r).get("source_type") or "",
-                "source": dict(r).get("form_type") or dict(r).get("source_label") or "Source",
                 "filing_date": _friendly_date(r["filing_date"]) if dict(r).get("filing_date") else "—",
                 "filing_date_raw": dict(r).get("filing_date") or "",
-                "matched_phrase": dict(r).get("matched_phrase") or "",
+                "hype_count": (
+                    int(dict(r).get("hype_count"))
+                    if dict(r).get("hype_count") is not None
+                    else None
+                ),
+                "hype_count_sort": (
+                    int(dict(r).get("hype_count"))
+                    if dict(r).get("hype_count") is not None
+                    else -1
+                ),
+                "matched_phrase": _matched_phrase_display(dict(r).get("matched_phrase")),
                 "alert_sent": bool(dict(r).get("alert_sent")),
-                "source_url": (
+                "source_url": dict(r).get("evidence_url")
+                or (
                     _sec_filing_url(r["source_url"])
                     if dict(r).get("source_type") == "EDGAR"
                     else (dict(r).get("source_url") or "")
                 ),
+                "source_link_label": dict(r).get("evidence_label") or "Source",
             }
             for r in db.investor_day_announcements()
         ]
@@ -450,6 +614,67 @@ def _build_admin_context(db: Database, tab: str) -> dict:
             announcements=_sort_announcements(announcements, sort_key, direction),
             announcement_sort=sort_key,
             announcement_direction=direction,
+        )
+    elif tab == "research":
+        sort_key, direction = _research_sort_settings()
+        research_rows = []
+        for r in db.research_hype_events():
+            row = dict(r)
+            ad_raw = row.get("announcement_date") or ""
+            id_raw = row.get("event_date") or ""
+            ad_date = _parse_date_for_delta(ad_raw)
+            id_date = _parse_date_for_delta(id_raw)
+            days = (id_date - ad_date).days if ad_date and id_date else None
+            has_hype_data = row.get("investor_comms_count") is not None
+            payload = _research_payload(row.get("detected_json")) if has_hype_data else None
+            item_701_count = _research_item_count(payload, "7.01") if payload is not None else None
+            item_801_count = _research_item_count(payload, "8.01") if payload is not None else None
+            presentation_count = (
+                _research_presentation_count(payload) if payload is not None else None
+            )
+            source_url = row.get("evidence_url") or row.get("source_url") or ""
+            source_label = row.get("evidence_label") or row.get("source_type") or "Source"
+            research_rows.append(
+                {
+                    "company_name": row.get("company_name") or "",
+                    "company_url": _company_website(row.get("company_name")),
+                    "ticker": _unknown_text(row.get("ticker")),
+                    "event_type": row.get("event_type") or "Investor Day",
+                    "ad_date": _friendly_date(str(ad_raw)) if ad_raw else "unknown",
+                    "ad_date_raw": str(ad_raw),
+                    "id_date": _friendly_date(str(id_raw)) if id_raw else "unknown",
+                    "id_date_raw": str(id_raw),
+                    "days": days if days is not None else "unknown",
+                    "days_sort": days,
+                    "raw_hype_count": "unknown",
+                    "raw_hype_count_sort": None,
+                    "investor_comms_count": (
+                        int(row["investor_comms_count"]) if has_hype_data else "unknown"
+                    ),
+                    "investor_comms_count_sort": (
+                        int(row["investor_comms_count"]) if has_hype_data else None
+                    ),
+                    "item_701_count": item_701_count if item_701_count is not None else "unknown",
+                    "item_701_count_sort": item_701_count,
+                    "item_801_count": item_801_count if item_801_count is not None else "unknown",
+                    "item_801_count_sort": item_801_count,
+                    "presentation_count": (
+                        presentation_count if presentation_count is not None else "unknown"
+                    ),
+                    "presentation_count_sort": presentation_count,
+                    "latest_filing": _latest_known_hype_filing(payload) if payload else "unknown",
+                    "source_url": source_url,
+                    "source_label": source_label,
+                }
+            )
+        ctx.update(
+            research_rows=_sort_research_rows(research_rows, sort_key, direction),
+            research_sort=sort_key,
+            research_direction=direction,
+            research_unknown_note=(
+                "Research counts are shown only where PopDay has enough data. Unknown means "
+                "the event has not been backfilled yet."
+            ),
         )
     elif tab == "rules":
         from popday.rules import ALERT_REQUIREMENTS
@@ -474,6 +699,7 @@ def _build_admin_context(db: Database, tab: str) -> dict:
         ctx["sent_alerts"] = [
             {
                 "company_name": r["company_name"],
+                "company_url": _company_website(r["company_name"]),
                 "event_type": r["event_type"] or "Investor Day",
                 "event_date": r["event_date"] or "—",
                 "sent_at": _friendly_datetime_str(r["alert_sent_timestamp"]),
@@ -498,10 +724,12 @@ def _build_admin_context(db: Database, tab: str) -> dict:
             {
                 "id": r["id"],
                 "created": _friendly_datetime_str(r["created_timestamp"]),
+                "filing_date": _friendly_date(r["filing_date"]) if dict(r).get("filing_date") else "—",
                 "status": r["status"] or "",
                 "status_display": _admin_display_text(r["status"]),
                 "company_name": r["company_name"],
-                "matched_phrase": dict(r).get("matched_phrase") or "",
+                "company_url": _company_website(r["company_name"]),
+                "matched_phrase": _matched_phrase_display(dict(r).get("matched_phrase")),
                 "event_date": _friendly_date(r["event_date"]) if dict(r).get("event_date") else "—",
                 "matched_location": _admin_display_text(dict(r).get("matched_location")),
                 "reason": _admin_display_text(dict(r).get("dismissal_reason") or "alert ready"),
@@ -519,17 +747,6 @@ def _build_admin_context(db: Database, tab: str) -> dict:
                 "hype_provisional": bool(dict(r).get("provisional")),
             }
             for r in db.recent_candidates()
-        ]
-    elif tab == "filings":
-        ctx["filings"] = [
-            {
-                "processed": _friendly_datetime_str(r["processed_timestamp"]),
-                "form_type": r["form_type"],
-                "company_name": r["company_name"],
-                "accession_number": r["accession_number"],
-                "filing_date": _friendly_date(r["filing_date"]) if dict(r).get("filing_date") else "—",
-            }
-            for r in db.recent_processed()
         ]
     return ctx
 
@@ -732,7 +949,7 @@ def admin_candidate(detection_id):
 
     return render_template(
         "admin_candidate.html",
-        row=dict(row),
+        row=dict(row) | {"company_url": _company_website(row["company_name"])},
         preview=preview,
         fetch_error=fetch_error,
         sec_url=sec_url,

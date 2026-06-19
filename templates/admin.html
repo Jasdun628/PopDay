@@ -14,6 +14,7 @@
       --panel: #ffffff;
       --panel-soft: #fbfbfa;
       --accent: #2f6f9f;
+      --link: #1267b1;
       --ok: #137333;
       --warn: #9a6700;
       --danger: #b3261e;
@@ -183,6 +184,27 @@
       vertical-align: top;
     }
     th { color: var(--muted); font-size: 12px; font-weight: 650; text-transform: uppercase; }
+    .primary-cell { color: var(--text); font-weight: 750; }
+    .secondary-cell { color: var(--muted); font-weight: 500; }
+    .company-link {
+      color: var(--link);
+      font-weight: 750;
+      text-decoration: none;
+    }
+    .company-link:hover { text-decoration: underline; }
+    .evidence-link {
+      color: var(--link);
+      font-weight: 750;
+      text-decoration: none;
+    }
+    .evidence-link:hover { text-decoration: underline; }
+    .date-strong { color: var(--text); font-weight: 650; white-space: nowrap; }
+    .date-muted { color: var(--muted); font-weight: 500; white-space: nowrap; }
+    .phrase-text { color: var(--muted); font-weight: 650; }
+    .status-good { color: var(--ok); font-weight: 750; white-space: nowrap; }
+    .unknown-text { color: var(--muted); font-weight: 500; }
+    .table-scroll { overflow-x: auto; }
+    .research-table { min-width: 1480px; }
     .sortable-head {
       align-items: center;
       display: inline-flex;
@@ -327,6 +349,20 @@
 	    {% endfor %}
 	  </nav>
 
+  {% macro research_sort_header(label, key) -%}
+    <span class="sortable-head">
+      {{ label }}
+      <span class="sort-controls">
+        <a class="sort-link {% if research_sort == key and research_direction == 'desc' %}sort-active{% endif %}"
+           aria-label="Sort {{ label }} descending"
+           href="{{ url_for('admin_tab', tab='research', sort=key, direction='desc') if is_admin else url_for('index', tab='research', sort=key, direction='desc') }}">▲</a>
+        <a class="sort-link {% if research_sort == key and research_direction == 'asc' %}sort-active{% endif %}"
+           aria-label="Sort {{ label }} ascending"
+           href="{{ url_for('admin_tab', tab='research', sort=key, direction='asc') if is_admin else url_for('index', tab='research', sort=key, direction='asc') }}">▼</a>
+      </span>
+    </span>
+  {%- endmacro %}
+
   {# ------------------------------------------------------------------ #}
   {# SUMMARY                                                             #}
   {# ------------------------------------------------------------------ #}
@@ -358,7 +394,13 @@
         <div class="health-item">
           <div class="summary-label">Last alert</div>
           {% if status.last_alert_company %}
-          <div class="summary-value">{{ status.last_alert_company }}</div>
+          <div class="summary-value">
+            {% if status.last_alert_company_url %}
+            <a href="{{ status.last_alert_company_url }}" target="_blank" rel="noopener" class="company-link">{{ status.last_alert_company }}</a>
+            {% else %}
+            {{ status.last_alert_company }}
+            {% endif %}
+          </div>
           <div class="summary-note">
             {{ status.last_alert_date or "date unknown" }}
             {% if status.days_since_last_alert is not none %}; {{ status.days_since_last_alert }} day{{ "" if status.days_since_last_alert == 1 else "s" }} ago{% endif %}
@@ -388,7 +430,14 @@
 
     <div class="status-banner">
       {% if latest_alert %}
-      <div class="status-title">{{ latest_alert.company_name }} announced {{ latest_alert.event_type or 'an Investor Day' }}</div>
+      <div class="status-title">
+        {% if latest_alert.company_url %}
+        <a href="{{ latest_alert.company_url }}" target="_blank" rel="noopener" class="company-link">{{ latest_alert.company_name }}</a>
+        {% else %}
+        {{ latest_alert.company_name }}
+        {% endif %}
+        announced {{ latest_alert.event_type or 'an Investor Day' }}
+      </div>
       <div class="status-meta">Event date: {{ latest_alert.event_date }}</div>
       {% else %}
       <div class="status-title">No qualifying EDGAR Investor Day alerts yet</div>
@@ -436,10 +485,6 @@
   <section>
     <h2>Investor Days</h2>
     <p class="page-note">Running list of qualifying Investor Day announcements PopDay has found.</p>
-    <div class="summary-card" style="margin-bottom:12px; display:inline-block; min-width:180px;">
-      <div class="summary-label">Investor Days Found</div>
-      <div class="summary-value">{{ announcements | length }}</div>
-    </div>
     {% if announcements %}
     <table>
       <thead>
@@ -458,7 +503,6 @@
               </span>
             </span>
           </th>
-          <th>Source Type</th><th>Source</th>
           <th>
             <span class="sortable-head">
               Announced / Filed
@@ -472,28 +516,48 @@
               </span>
             </span>
           </th>
-          <th>Matched Phrase</th><th>Email</th><th>Link</th>
+          <th>Source Type</th>
+          <th>
+            <span class="sortable-head">
+              Hype Count
+              <span class="sort-controls">
+                <a class="sort-link {% if announcement_sort == 'hype' and announcement_direction == 'desc' %}sort-active{% endif %}"
+                   aria-label="Sort hype count highest first"
+                   href="{{ url_for('admin_tab', tab='announcements', sort='hype', direction='desc') if is_admin else url_for('index', tab='announcements', sort='hype', direction='desc') }}">▲</a>
+                <a class="sort-link {% if announcement_sort == 'hype' and announcement_direction == 'asc' %}sort-active{% endif %}"
+                   aria-label="Sort hype count lowest first"
+                   href="{{ url_for('admin_tab', tab='announcements', sort='hype', direction='asc') if is_admin else url_for('index', tab='announcements', sort='hype', direction='asc') }}">▼</a>
+              </span>
+            </span>
+          </th>
+          <th>Matched Phrase</th><th>Email</th><th>Evidence</th>
         </tr>
       </thead>
       <tbody>
         {% for a in announcements %}
         <tr>
-          <td>{{ a.company_name }}</td>
-          <td>{{ a.event_date }}</td>
-          <td>{{ a.source_type }}</td>
-          <td>{{ a.source }}</td>
-          <td>{{ a.filing_date }}</td>
-          <td>{{ a.matched_phrase }}</td>
+          <td class="primary-cell">
+            {% if a.company_url %}
+            <a href="{{ a.company_url }}" target="_blank" rel="noopener" class="company-link">{{ a.company_name }}</a>
+            {% else %}
+            {{ a.company_name }}
+            {% endif %}
+          </td>
+          <td class="date-strong">{{ a.event_date }}</td>
+          <td class="date-muted">{{ a.filing_date }}</td>
+          <td class="secondary-cell">{{ a.source_type }}</td>
+          <td class="date-strong">{{ a.hype_count if a.hype_count is not none else "—" }}</td>
+          <td class="phrase-text">{{ a.matched_phrase }}</td>
           <td>
             {% if a.alert_sent %}
-              <span class="pill pill-ok">sent</span>
+              <span class="status-good">sent</span>
             {% else %}
               <span class="pill pill-neutral">not sent</span>
             {% endif %}
           </td>
           <td>
             {% if a.source_url %}
-            <a href="{{ a.source_url }}" target="_blank" rel="noopener" class="inline-action">Source</a>
+            <a href="{{ a.source_url }}" target="_blank" rel="noopener" class="evidence-link">{{ a.source_link_label }}</a>
             {% endif %}
           </td>
         </tr>
@@ -502,6 +566,71 @@
     </table>
     {% else %}
     <div class="empty">No qualifying Investor Day announcements stored yet.</div>
+    {% endif %}
+  </section>
+
+  {# ------------------------------------------------------------------ #}
+  {# RESEARCH / HYPE                                                     #}
+  {# ------------------------------------------------------------------ #}
+  {% elif active_tab == 'research' %}
+  <section>
+    <h2>Research / Hype</h2>
+    <p class="page-note">{{ research_unknown_note }}</p>
+    {% if research_rows %}
+    <div class="table-scroll">
+      <table class="research-table">
+        <thead>
+          <tr>
+            <th>{{ research_sort_header("Company", "company") }}</th>
+            <th>{{ research_sort_header("Ticker", "ticker") }}</th>
+            <th>{{ research_sort_header("Event type", "event_type") }}</th>
+            <th>{{ research_sort_header("AD date", "ad") }}</th>
+            <th>{{ research_sort_header("ID date", "id") }}</th>
+            <th>{{ research_sort_header("Days AD-ID", "days") }}</th>
+            <th>{{ research_sort_header("Raw Hype Count", "raw") }}</th>
+            <th>{{ research_sort_header("Investor Comms Count", "investor_comms") }}</th>
+            <th>{{ research_sort_header("8-K 7.01 Count", "item_701") }}</th>
+            <th>{{ research_sort_header("8-K 8.01 Count", "item_801") }}</th>
+            <th>{{ research_sort_header("Presentation / Deck Count", "presentation") }}</th>
+            <th>{{ research_sort_header("Latest filing AD-ID", "latest") }}</th>
+            <th>{{ research_sort_header("Source link", "source") }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in research_rows %}
+          <tr>
+            <td class="primary-cell">
+              {% if r.company_url %}
+              <a href="{{ r.company_url }}" target="_blank" rel="noopener" class="company-link">{{ r.company_name }}</a>
+              {% else %}
+              {{ r.company_name }}
+              {% endif %}
+            </td>
+            <td class="{{ 'unknown-text' if r.ticker == 'unknown' else 'secondary-cell' }}">{{ r.ticker }}</td>
+            <td>{{ r.event_type }}</td>
+            <td class="date-muted">{{ r.ad_date }}</td>
+            <td class="date-strong">{{ r.id_date }}</td>
+            <td class="{{ 'unknown-text' if r.days == 'unknown' else 'date-strong' }}">{{ r.days }}</td>
+            <td class="unknown-text">{{ r.raw_hype_count }}</td>
+            <td class="{{ 'unknown-text' if r.investor_comms_count == 'unknown' else 'date-strong' }}">{{ r.investor_comms_count }}</td>
+            <td class="{{ 'unknown-text' if r.item_701_count == 'unknown' else 'date-strong' }}">{{ r.item_701_count }}</td>
+            <td class="{{ 'unknown-text' if r.item_801_count == 'unknown' else 'date-strong' }}">{{ r.item_801_count }}</td>
+            <td class="{{ 'unknown-text' if r.presentation_count == 'unknown' else 'date-strong' }}">{{ r.presentation_count }}</td>
+            <td class="{{ 'unknown-text' if r.latest_filing == 'unknown' else 'secondary-cell' }}">{{ r.latest_filing }}</td>
+            <td>
+              {% if r.source_url %}
+              <a href="{{ r.source_url }}" target="_blank" rel="noopener" class="evidence-link">{{ r.source_label }}</a>
+              {% else %}
+              <span class="unknown-text">unknown</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty">No qualifying event announcements stored yet.</div>
     {% endif %}
   </section>
 
@@ -650,7 +779,13 @@
       <tbody>
         {% for a in sent_alerts %}
         <tr>
-          <td>{{ a.company_name }}</td>
+          <td>
+            {% if a.company_url %}
+            <a href="{{ a.company_url }}" target="_blank" rel="noopener" class="company-link">{{ a.company_name }}</a>
+            {% else %}
+            {{ a.company_name }}
+            {% endif %}
+          </td>
           <td>{{ a.event_type }}</td>
           <td>{{ a.event_date }}</td>
           <td>{{ a.sent_at }}</td>
@@ -666,8 +801,6 @@
   {# ------------------------------------------------------------------ #}
   {% elif active_tab == 'health' %}
   <section>
-    <h2>System Health</h2>
-    <p class="page-note">Recent scheduled runs and the next expected run.</p>
     <div class="summary-card" style="margin-bottom:12px; display:inline-block; min-width:320px;">
       <div class="summary-label">Next scheduled run</div>
       <div class="summary-value" style="font-size:16px;">{{ next_run|replace("UTC", "GMT") }}</div>
@@ -714,14 +847,18 @@
     <table>
       <thead>
         <tr>
-          <th>Seen</th><th>Status</th><th>Company</th><th>Phrase</th>
-          <th>Event Date</th><th>Hype</th><th>Location</th><th>Reason</th><th>Source</th>
+          <th>Filed</th><th>Status</th><th>Company</th><th>Phrase</th>
+          <th>Event Date</th><th>Hype</th>
+          <th>Location</th><th>Reason</th><th>Source</th>
         </tr>
       </thead>
       <tbody>
         {% for c in candidates %}
         <tr>
-          <td>{{ c.created }}</td>
+          <td>
+            <span class="date-strong">{{ c.filing_date }}</span>
+            <div class="status-meta">Seen {{ c.created }}</div>
+          </td>
           <td>
             {% if c.status == 'alert_candidate' %}
               <span class="pill pill-ok">{{ c.status_display }}</span>
@@ -731,9 +868,15 @@
               <span class="pill pill-neutral">{{ c.status_display }}</span>
             {% endif %}
           </td>
-          <td>{{ c.company_name }}</td>
-          <td>{{ c.matched_phrase }}</td>
-          <td>{{ c.event_date }}</td>
+          <td class="primary-cell">
+            {% if c.company_url %}
+            <a href="{{ c.company_url }}" target="_blank" rel="noopener" class="company-link">{{ c.company_name }}</a>
+            {% else %}
+            {{ c.company_name }}
+            {% endif %}
+          </td>
+          <td class="phrase-text">{{ c.matched_phrase }}</td>
+          <td class="date-strong">{{ c.event_date }}</td>
           <td>
             {% if c.hype_status %}
               <span class="pill pill-{{ c.hype_tone }}">{{ c.hype_status_display }}</span>
@@ -744,8 +887,8 @@
               <span class="pill pill-neutral">not checked</span>
             {% endif %}
           </td>
-          <td>{{ c.matched_location }}</td>
-          <td>{{ c.reason }}</td>
+          <td class="secondary-cell">{{ c.matched_location }}</td>
+          <td class="secondary-cell">{{ c.reason }}</td>
           <td>
 	            <div class="action-stack">
 	              {% if is_admin %}
@@ -754,7 +897,7 @@
 	              {% endif %}
 	              {% if c.evidence_url %}
 	              <a href="{{ c.evidence_url }}" target="_blank" rel="noopener"
-	                 class="inline-action inline-action-primary">{{ c.evidence_label }}</a>
+	                 class="evidence-link">{{ c.evidence_label }}</a>
 	              {% endif %}
 	              {% if c.sec_url %}
 	              <a href="{{ c.sec_url }}" target="_blank" rel="noopener"
@@ -762,7 +905,7 @@
 	              {% endif %}
 	              {% if c.event_url %}
 	              <a href="{{ c.event_url }}" target="_blank" rel="noopener"
-	                 class="inline-action">Company event</a>
+	                 class="evidence-link">Company event</a>
               {% endif %}
             </div>
           </td>
@@ -776,51 +919,20 @@
   </section>
 
   {# ------------------------------------------------------------------ #}
-  {# FILINGS                                                             #}
-  {# ------------------------------------------------------------------ #}
-  {% elif active_tab == 'filings' %}
-  <section>
-    <h2>Processed Filings</h2>
-    <p class="page-note">Recent SEC filings PopDay has already scanned.</p>
-    {% if filings %}
-    <table>
-      <thead>
-        <tr><th>Processed</th><th>Form</th><th>Company</th><th>Accession</th><th>Filed</th></tr>
-      </thead>
-      <tbody>
-        {% for f in filings %}
-        <tr>
-          <td>{{ f.processed }}</td>
-          <td>{{ f.form_type }}</td>
-          <td>{{ f.company_name }}</td>
-          <td>{{ f.accession_number }}</td>
-          <td>{{ f.filing_date }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-    <div class="empty">No processed filings yet.</div>
-    {% endif %}
-  </section>
-
-  {# ------------------------------------------------------------------ #}
   {# HELP                                                                #}
   {# ------------------------------------------------------------------ #}
   {% elif active_tab == 'help' %}
   <section>
     <h2>Help</h2>
-    <p class="page-note">Short explanation of the PopDay detection logic.</p>
+    <p class="page-note">What each PopDay tab is for.</p>
     <div class="manual-grid">
       {% for title, text in [
-        ("Schedule",        "launchd runs PopDay Tuesday–Saturday at 04:30 and 08:00, scanning the previous SEC business day."),
-        ("Source",          "PopDay reads SEC EDGAR daily indexes, then fetches only 8-K and 6-K filings."),
-        ("Include Rules",   "These are event phrases PopDay looks for, such as investor day or analyst day."),
-        ("Routine Context", "These phrases help explain dismissals. They are not automatic blockers."),
-        ("Date Rule",       "No future event date nearby means no alert."),
-        ("Duplicate Rule",  "Previously processed filings and already alerted events are skipped."),
-        ("Email Rule",      "Email is sent only for qualifying future event announcements."),
-        ("No Commentary",   "Alerts contain only company, event date, and SEC source link.")
+        ("Investor Days",   "Confirmed Investor Day, Analyst Day, and Capital Markets Day announcements PopDay has found. Evidence links go to the announcement document where available."),
+        ("Research / Hype", "Research view for already detected events. It shows stored Hype Count fields and uses unknown where PopDay does not yet have enough data."),
+        ("Candidates",      "Inspection view for filings PopDay examined, including dismissed false positives. It is useful for checking why something did or did not qualify."),
+        ("Schedule",        "Recent Mac Mini scanner runs and the next expected run time."),
+        ("System Health",   "Current front-door health, freshness, backup state, and latest scan facts."),
+        ("Help",            "This page.")
       ] %}
       <div class="manual-card">
         <h3>{{ title }}</h3>
@@ -834,11 +946,9 @@
   <div class="tab-footer">
     {% if active_tab == 'summary' %}This page shows the current alert state and the latest EDGAR check.
     {% elif active_tab == 'announcements' %}This page shows every qualifying Investor Day announcement PopDay has found.
-    {% elif active_tab == 'rules' %}This page controls the phrases PopDay uses when deciding what to inspect.
-    {% elif active_tab == 'recipients' %}This page controls who receives PopDay alert emails.
+    {% elif active_tab == 'research' %}This page enriches already detected event announcements with stored Hype Count research fields.
     {% elif active_tab == 'health' %}This page shows recent scheduled runs and low-level scan counts.
     {% elif active_tab == 'candidates' %}This page shows filings that matched or were dismissed, with public SEC source links.
-    {% elif active_tab == 'filings' %}This page shows recently processed SEC filings so duplicate runs can be checked.
     {% elif active_tab == 'help' %}This page briefly explains how PopDay works.
     {% endif %}
   </div>
