@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from html.parser import HTMLParser
+from urllib.parse import urljoin
 
 
 ABBREVIATIONS = (
@@ -43,6 +44,11 @@ DOC_META_RE = {
 HEADER_KEY_RE = re.compile(r"^([A-Z][A-Z0-9 .&/()-]+):\s*(.*)$")
 DOCUMENT_RE = re.compile(r"<DOCUMENT>(.*?)</DOCUMENT>", re.IGNORECASE | re.DOTALL)
 TEXT_RE = re.compile(r"<TEXT>(.*?)</TEXT>", re.IGNORECASE | re.DOTALL)
+ANCHOR_RE = re.compile(
+    r"<a\b[^>]*\bhref=[\"']?([^\"'>\s]+)[\"']?[^>]*>(.*?)</a>",
+    re.IGNORECASE | re.DOTALL,
+)
+RAW_URL_RE = re.compile(r"\bhttps?://[^\s<>\"]+", re.IGNORECASE)
 TRIGGER_DEFAULTS = ("investor day", "analyst day")
 TITLECASE_SHORT_WORDS = {"INC", "CORP", "CO", "LTD", "PLC", "LLC", "LP"}
 
@@ -79,6 +85,26 @@ def html_to_text(value: str) -> str:
             fallback = re.sub(r"<[^>]+>", " ", value or "")
             return normalize_text(fallback)
     return normalize_text(BeautifulSoup(value or "", "html.parser").get_text(" "))
+
+
+def extract_links(value: str, *, base_url: str = "") -> list[dict[str, str]]:
+    links: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for match in ANCHOR_RE.finditer(value or ""):
+        href = html.unescape(match.group(1).strip())
+        text = html_to_text(match.group(2))
+        if href.startswith("#") or href.lower().startswith(("mailto:", "javascript:")):
+            continue
+        url = urljoin(base_url, href) if base_url else href
+        if url and url not in seen:
+            links.append({"url": url, "text": text})
+            seen.add(url)
+    for match in RAW_URL_RE.finditer(html.unescape(value or "")):
+        url = match.group(0).rstrip(").,;]")
+        if url and url not in seen:
+            links.append({"url": url, "text": ""})
+            seen.add(url)
+    return links
 
 
 def _iso_date(raw: str) -> str:
@@ -235,6 +261,7 @@ def parse_sec_filing(raw: str) -> ParsedFiling:
                 "filename": metadata["filename"],
                 "description": metadata["description"],
                 "text": html_to_text(body),
+                "links": extract_links(body),
             }
         )
 

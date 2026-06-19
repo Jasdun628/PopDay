@@ -146,6 +146,11 @@ def build_alert_body(alerts: list[object], unsubscribe_link: str | None = None) 
             lines.append("KEY EXCERPT")
             lines.append(excerpt)
         lines.append("")
+        event_url = str(getattr(alert, "event_url", "") or "").strip()
+        if event_url:
+            lines.append("COMPANY EVENT / IR LINK")
+            lines.append(event_url)
+            lines.append("")
         lines.append(source_label.upper())
         lines.append(alert.filing_url)
         if index != len(alerts) - 1:
@@ -177,6 +182,8 @@ def build_alert_html(alerts: list[object], unsubscribe_link: str | None = None) 
         company_name = html.escape(str(alert.company_name))
         event_label = html.escape(str(alert.event_label))
         filing_url = html.escape(str(alert.filing_url))
+        event_url_raw = str(getattr(alert, "event_url", "") or "").strip()
+        event_url = html.escape(event_url_raw)
         parts.extend(
             [
                 "<hr style=\"border:none;border-top:1px solid #bbb;margin:18px 0 14px;\">",
@@ -198,6 +205,9 @@ def build_alert_html(alerts: list[object], unsubscribe_link: str | None = None) 
         if excerpt:
             parts.append("<div style=\"font-size:13px;font-weight:700;letter-spacing:0.04em;color:#444;\">KEY EXCERPT</div>")
             parts.append(f"<p>{html.escape(excerpt)}</p>")
+        if event_url_raw:
+            parts.append("<div style=\"font-size:13px;font-weight:700;letter-spacing:0.04em;color:#444;\">COMPANY EVENT / IR LINK</div>")
+            parts.append(f'<p><a href="{event_url}">{event_url}</a></p>')
         parts.append(f"<div style=\"font-size:13px;font-weight:700;letter-spacing:0.04em;color:#444;\">{source_label}</div>")
         parts.append(f'<p><a href="{filing_url}">{filing_url}</a></p>')
 

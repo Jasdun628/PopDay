@@ -37,6 +37,15 @@ PAST_CUES = [
     "presentation from",
 ]
 
+EVENT_LINK_HINTS = (
+    "investor",
+    "analyst",
+    "event",
+    "webcast",
+    "presentation",
+    "ir",
+)
+
 
 @dataclass(frozen=True)
 class Detection:
@@ -49,6 +58,7 @@ class Detection:
     items: list[str]
     status: str
     dismissal_reason: str | None
+    event_url: str = ""
     alert_sent: bool = False
 
     def to_record(self) -> dict[str, object]:
@@ -65,6 +75,7 @@ class Detection:
             "matched_location": self.matched_location,
             "snippet": self.snippet,
             "items_json": json_items(self.items),
+            "event_url": self.event_url,
             "status": self.status,
             "dismissal_reason": self.dismissal_reason,
             "alert_sent": int(self.alert_sent),
@@ -106,6 +117,32 @@ def _candidate_documents(parsed: ParsedFiling) -> list[tuple[str, str]]:
     if parsed.cover_text and parsed.cover_text not in seen:
         documents.append(("cover_page", parsed.cover_text))
     return documents
+
+
+def _best_event_url(parsed: ParsedFiling) -> str:
+    best_url = ""
+    best_score = -1
+    for document in parsed.documents:
+        doc_type = str(document.get("type") or "").upper()
+        description = str(document.get("description") or "").lower()
+        doc_score = 2 if doc_type.startswith("EX-99") or "press release" in description else 0
+        for link in document.get("links") or []:
+            url = str(link.get("url") or "").strip()
+            text = str(link.get("text") or "").strip()
+            if not url.lower().startswith(("http://", "https://")):
+                continue
+            combined = f"{text} {url}".lower()
+            score = doc_score
+            if "sec.gov" in combined:
+                score -= 3
+            if any(hint in combined for hint in EVENT_LINK_HINTS):
+                score += 4
+            if "webcast" in combined or "events" in combined:
+                score += 2
+            if score > best_score:
+                best_score = score
+                best_url = url
+    return best_url if best_score >= 3 else ""
 
 
 def _best_event_signal(
@@ -180,6 +217,7 @@ def detect_in_parsed_filing(
                 matched_location=matched_location,
                 snippet=snippet,
                 items=items,
+                event_url=_best_event_url(parsed),
                 status="alert_candidate",
                 dismissal_reason=None,
             )
@@ -197,6 +235,7 @@ def detect_in_parsed_filing(
             matched_location=None,
             snippet=best_nugget(parsed, triggers=tuple(include_phrases)),
             items=items,
+            event_url=_best_event_url(parsed),
             status="dismissed",
             dismissal_reason=dismissal_reason,
         )

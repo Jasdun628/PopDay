@@ -33,6 +33,7 @@ class Alert:
     filing_url: str
     source_label: str = "Source"
     snippet: str = ""
+    event_url: str = ""
     hype_status: str = ""
     hype_count: int | None = None
     hype_provisional: bool = False
@@ -83,6 +84,7 @@ def _alert_from_detection(detection_id: int, detection: object) -> Alert:
         filing_url=detection.filing.filing_url,
         source_label="SEC filing",
         snippet=str(detection.snippet or ""),
+        event_url=str(getattr(detection, "event_url", "") or ""),
     )
 
 
@@ -95,6 +97,7 @@ def _alert_from_known(row: object) -> Alert:
         filing_url=str(row["source_url"]),
         source_label=str(row["source_label"] or "Source"),
         snippet="",
+        event_url="",
         hype_status="",
         hype_count=None,
         hype_provisional=False,
@@ -110,6 +113,7 @@ def _alert_from_sent_row(row: object) -> Alert:
         filing_url=str(row["source_url"]),
         source_label=str(row["source_label"] or "Source"),
         snippet=str(row["snippet"] or ""),
+        event_url=str(row["event_url"] or ""),
         hype_status=str(row["hype_status"] or ""),
         hype_count=int(row["qualifying_count"]) if row["qualifying_count"] is not None else None,
         hype_provisional=bool(row["provisional"]) if row["provisional"] is not None else False,

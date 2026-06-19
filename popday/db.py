@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS detections (
     matched_location TEXT,
     snippet TEXT,
     items_json TEXT NOT NULL DEFAULT '[]',
+    event_url TEXT,
     status TEXT NOT NULL,
     dismissal_reason TEXT,
     alert_sent INTEGER NOT NULL DEFAULT 0,
@@ -133,6 +134,8 @@ class Database:
             self.conn.execute(
                 "ALTER TABLE detections ADD COLUMN items_json TEXT NOT NULL DEFAULT '[]'"
             )
+        if "event_url" not in detection_columns:
+            self.conn.execute("ALTER TABLE detections ADD COLUMN event_url TEXT")
         hype_columns = {
             row["name"] for row in self.conn.execute("PRAGMA table_info(hype_tracking)").fetchall()
         }
@@ -296,6 +299,7 @@ class Database:
             """
             SELECT d.id, d.created_timestamp, d.company_name, d.form_type, d.filing_date, d.event_type, d.event_date,
                    d.matched_phrase, d.matched_location, d.status, d.dismissal_reason, d.filing_url,
+                   d.event_url,
                    h.qualifying_count, h.hype_status, h.hype_definition_version, h.provisional
             FROM detections d
             LEFT JOIN hype_tracking h ON h.candidate_id = d.id
@@ -317,7 +321,7 @@ class Database:
             """
             SELECT id, accession_number, company_name, cik, form_type, filing_date, filing_url,
                    event_type, event_date, matched_phrase, matched_location, snippet, items_json, status,
-                   dismissal_reason, alert_sent, created_timestamp
+                   dismissal_reason, event_url, alert_sent, created_timestamp
             FROM detections
             WHERE id = ?
             """,
@@ -366,7 +370,7 @@ class Database:
         detection_rows = self.conn.execute(
             """
             SELECT d.id, d.company_name, d.event_type, d.event_date, d.filing_url AS source_url,
-                   'SEC filing' AS source_label, snippet, alert_sent_timestamp,
+                   'SEC filing' AS source_label, snippet, d.event_url, alert_sent_timestamp,
                    h.qualifying_count, h.hype_status, h.provisional
             FROM detections d
             LEFT JOIN hype_tracking h ON h.candidate_id = d.id
@@ -381,7 +385,7 @@ class Database:
         known_rows = self.conn.execute(
             """
             SELECT id, company_name, event_type, event_date, source_url,
-                   source_label, '' AS snippet, alert_sent_timestamp,
+                   source_label, '' AS snippet, '' AS event_url, alert_sent_timestamp,
                    NULL AS qualifying_count, NULL AS hype_status, NULL AS provisional
             FROM known_announcements
             WHERE alert_sent = 1 AND alert_sent_timestamp = ?

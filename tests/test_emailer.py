@@ -12,6 +12,7 @@ class Alert:
     event_date: date = date(2026, 9, 15)
     filing_url: str = "https://www.sec.gov/Archives/example.txt"
     source_label: str = "SEC filing"
+    event_url: str = ""
     snippet: str = (
         "Harmonic also announced it will host an Investor Day event in New York City "
         "on September 15, 2026, offering a detailed look at the company's core "
@@ -47,6 +48,14 @@ class EmailerTests(unittest.TestCase):
 
         self.assertIn("Harmonic also announced it will host", body)
         self.assertNotIn("MAIN NUGGET\nized", body)
+
+    def test_alert_body_includes_company_event_link_when_found(self):
+        alert = Alert(event_url="https://investor.example.com/events/investor-day")
+
+        body = build_alert_body([alert])
+
+        self.assertIn("COMPANY EVENT / IR LINK", body)
+        self.assertIn("https://investor.example.com/events/investor-day", body)
 
 
 if __name__ == "__main__":
