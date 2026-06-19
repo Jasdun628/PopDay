@@ -593,6 +593,8 @@ def admin_index():
 
 @app.route("/admin/<tab>")
 def admin_tab(tab):
+    if tab == "candidates":
+        return _render_main_ui("candidates", is_admin=False)
     auth = _check_admin()
     if auth is not None:
         return auth
