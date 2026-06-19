@@ -3,6 +3,7 @@ set -euo pipefail
 
 SOURCE_REPO="${POPDAY_SOURCE_REPO:-/Users/jasondunne/Documents/PopDay}"
 RUNTIME_DB_PATH="${POPDAY_RUNTIME_DB_PATH:-/Users/jasondunne/PopDayRuntime/popday.sqlite3}"
+RUNTIME_DIR="${POPDAY_RUNTIME_DIR:-/Users/jasondunne/PopDayRuntime}"
 STATUS_PATH="${POPDAY_STATUS_PATH:-/Users/jasondunne/PopDayRuntime/status/popday_status.json}"
 PYTHONANYWHERE_SSH_TARGET="${PYTHONANYWHERE_SSH_TARGET:-Jasdun@ssh.pythonanywhere.com}"
 PYTHONANYWHERE_APP_DIR="${PYTHONANYWHERE_APP_DIR:-/home/Jasdun/popday}"
@@ -18,6 +19,8 @@ if [[ ! -f "$RUNTIME_DB_PATH" ]]; then
 fi
 
 "$PYTHON_BIN" scripts/backup_popday_runtime.py --reason "pre PythonAnywhere development deploy"
+"$PYTHON_BIN" -m py_compile popday.py popday/*.py
+POPDAY_RUNTIME_DIR="$RUNTIME_DIR" PYTHON_BIN="$PYTHON_BIN" bash scripts/sync_runtime_code_from_repo.sh
 "$PYTHON_BIN" scripts/generate_status_json.py \
   --output "$STATUS_PATH" \
   --source-repo "$SOURCE_REPO" \

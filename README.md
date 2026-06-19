@@ -102,12 +102,25 @@ Known company-news announcements can also be stored in the Investor Days list an
 
 ## Email Output
 
-For one alert:
+For one alert, PopDay now sends a richer plain-text and HTML email:
 
 ```text
 Subject: PopDay alert: Investor Day announced
 
-Company X has announced an Investor Day on 1 April 2028.
+POPDAY ALERT
+============
+
+PopDay found 1 new investor-event announcement.
+
+Company: Company X
+Event:   Investor Day
+Date:    1st April 2028
+
+MAIN NUGGET
+Company X will host an Investor Day on 1 April 2028...
+
+KEY EXCERPT
+The clean announcement excerpt from the press-release exhibit.
 
 Source:
 https://www.sec.gov/...

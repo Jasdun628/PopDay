@@ -34,7 +34,10 @@ def _excerpt_sentences(value: str) -> list[str]:
     text = _normalize_excerpt(value)
     if not text:
         return []
-    return [part.strip() for part in re.split(r"(?<=[.!?])\s+", text) if part.strip()]
+    sentences = [part.strip() for part in re.split(r"(?<=[.!?])\s+", text) if part.strip()]
+    if sentences and sentences[0][:1].islower():
+        sentences = sentences[1:]
+    return sentences
 
 
 def _trim_sentence(value: str, limit: int = 220) -> str:
@@ -43,6 +46,25 @@ def _trim_sentence(value: str, limit: int = 220) -> str:
         return text
     clipped = text[:limit].rsplit(" ", 1)[0].rstrip(",;:-")
     return f"{clipped}..."
+
+
+def _focus_announcement_sentence(sentence: str) -> str:
+    text = _normalize_excerpt(sentence)
+    lowered = text.lower()
+    starts: list[int] = []
+    for cue in ("also announced", "announced it will", "announced that it will", "will host", "will hold"):
+        idx = lowered.find(cue)
+        if idx != -1:
+            starts.append(idx)
+    if not starts:
+        return text
+    start = min(starts)
+    prefix = text[:start].rstrip()
+    if prefix:
+        words = prefix.split()
+        if words:
+            start = max(0, start - len(words[-1]) - 1)
+    return text[start:].strip(" ,;:-")
 
 
 def _main_nugget(alert: object) -> str:
@@ -59,9 +81,9 @@ def _main_nugget(alert: object) -> str:
     for sentence in _excerpt_sentences(snippet):
         lowered = sentence.lower()
         if event_label and event_label in lowered:
-            return _trim_sentence(sentence)
+            return _trim_sentence(_focus_announcement_sentence(sentence))
         if any(cue in lowered for cue in cue_phrases):
-            return _trim_sentence(sentence)
+            return _trim_sentence(_focus_announcement_sentence(sentence))
     return ""
 
 

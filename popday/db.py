@@ -365,7 +365,7 @@ class Database:
 
         detection_rows = self.conn.execute(
             """
-            SELECT id, company_name, event_type, event_date, filing_url AS source_url,
+            SELECT d.id, d.company_name, d.event_type, d.event_date, d.filing_url AS source_url,
                    'SEC filing' AS source_label, snippet, alert_sent_timestamp,
                    h.qualifying_count, h.hype_status, h.provisional
             FROM detections d
