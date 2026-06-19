@@ -32,7 +32,8 @@ class EmailerTests(unittest.TestCase):
         self.assertIn("MAIN NUGGET", body)
         self.assertIn("KEY EXCERPT", body)
         self.assertIn("core technologies, innovation and growth outlook", body)
-        self.assertIn("Disclosure activity: quiet (provisional)", body)
+        self.assertNotIn("Disclosure activity", body)
+        self.assertNotIn("voluntary filings since announcement", body)
 
     def test_alert_body_drops_leading_fragment(self):
         alert = Alert(

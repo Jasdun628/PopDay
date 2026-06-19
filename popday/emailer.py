@@ -99,18 +99,6 @@ def _key_excerpt(alert: object, max_sentences: int = 3, limit: int = 420) -> str
     return f"{clipped}..."
 
 
-def _disclosure_activity_line(alert: object) -> str:
-    hype_status = str(getattr(alert, "hype_status", "") or "").strip()
-    hype_count = getattr(alert, "hype_count", None)
-    if not hype_status or hype_status == "pending" or hype_count is None:
-        return ""
-    filing_word = "filing" if int(hype_count) == 1 else "filings"
-    label = hype_status.replace("_", " ")
-    if bool(getattr(alert, "hype_provisional", False)):
-        label = f"{label} (provisional)"
-    return f"Disclosure activity: {label} ({hype_count} voluntary {filing_word} since announcement)"
-
-
 def build_alert_body(alerts: list[object], unsubscribe_link: str | None = None) -> str:
     lines: list[str] = []
     alert_count = len(alerts)
@@ -132,9 +120,6 @@ def build_alert_body(alerts: list[object], unsubscribe_link: str | None = None) 
         lines.append(f"Company: {alert.company_name}")
         lines.append(f"Event:   {alert.event_label}")
         lines.append(f"Date:    {event_date}")
-        disclosure_line = _disclosure_activity_line(alert)
-        if disclosure_line:
-            lines.append(disclosure_line)
         nugget = _main_nugget(alert)
         if nugget:
             lines.append("")
@@ -193,9 +178,6 @@ def build_alert_html(alerts: list[object], unsubscribe_link: str | None = None) 
                 f"<strong>Date:</strong> {html.escape(event_date)}",
             ]
         )
-        disclosure_line = _disclosure_activity_line(alert)
-        if disclosure_line:
-            parts.append(f"<br><strong>Disclosure activity:</strong> {html.escape(disclosure_line.split(': ', 1)[1])}")
         parts.append("</p>")
         nugget = _main_nugget(alert)
         if nugget:
