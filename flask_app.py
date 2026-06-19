@@ -212,6 +212,16 @@ def _status_age_note(updated_at: datetime | None) -> str:
     return f"{age_days} day{'s' if age_days != 1 else ''} ago."
 
 
+def _stale_front_door_summary(updated_at: datetime, *, broken: bool) -> str:
+    age = _status_age_note(updated_at).rstrip(".")
+    level = "BROKEN" if broken else "STALE"
+    return (
+        f"{level}: PopDay is not current. "
+        f"The browser is showing data last refreshed {age}; "
+        "Codex needs to refresh the Mac Mini to PythonAnywhere copy."
+    )
+
+
 def _level_class(level: object) -> str:
     normalized = str(level or "unknown").strip().lower()
     if normalized in {"live", "healthy"}:
@@ -274,19 +284,16 @@ def _load_public_status() -> dict:
 
     if age_hours > 42:
         level = "BROKEN"
-        status["health"]["summary"] = (
-            f"BROKEN: last Mac Mini sync was more than 42 hours ago. "
-            f"Last received: {_friendly_datetime_value(updated_at.isoformat())}."
-        )
+        status["health"]["summary"] = _stale_front_door_summary(updated_at, broken=True)
     elif age_hours > 18 and level == "LIVE":
         level = "STALE"
-        status["health"]["summary"] = (
-            f"STALE: last Mac Mini sync was more than 18 hours ago. "
-            f"Last received: {_friendly_datetime_value(updated_at.isoformat())}."
-        )
+        status["health"]["summary"] = _stale_front_door_summary(updated_at, broken=False)
 
     status["public_level"] = "LIVE / HEALTHY" if level == "LIVE" else level
     status["level_class"] = _level_class(level)
+    status["front_door_note"] = (
+        "This is the PopDay browser front door. If it is stale, Codex should refresh it."
+    )
     status["generated_at_display"] = _friendly_datetime_value(status.get("generated_at"))
     status["status_file_updated_at_display"] = _friendly_datetime_value(updated_at.isoformat())
     status["status_file_age_note"] = _status_age_note(updated_at)

@@ -40,6 +40,8 @@ def main() -> int:
     check("rules tab hidden", "Rules" not in front, failures)
     check("email alerts management link", "Email Alerts" in front and "/admin/recipients" in front, failures)
     check("health strip", "Scanner health" in front, failures)
+    front_text = plain_text(front)
+    check("front door current", "PopDay is not current" not in front_text, failures)
 
     candidates = fetch("?tab=candidates&v=verify")
     candidates_text = plain_text(candidates)

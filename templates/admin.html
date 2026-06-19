@@ -340,7 +340,7 @@
         <div>
           <div class="summary-label">Scanner health</div>
           <div class="health-title">{{ status.health.summary }}</div>
-          <p>{{ status.architecture_note }}</p>
+          <p>{{ status.front_door_note }}</p>
         </div>
         <span class="health-badge health-badge-{{ status.level_class }}">{{ status.public_level }}</span>
       </div>
@@ -351,7 +351,7 @@
           <div class="summary-note">Filing date: {{ status.filing_date_scanned or "unknown" }}</div>
         </div>
         <div class="health-item">
-          <div class="summary-label">Last sync</div>
+          <div class="summary-label">Browser freshness</div>
           <div class="summary-value">{{ status.status_file_updated_at_display }}</div>
           <div class="summary-note">{{ status.status_file_age_note }}</div>
         </div>
