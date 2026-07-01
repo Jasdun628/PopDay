@@ -39,6 +39,15 @@ def _abbrev_month_year(value) -> str:
     return f"{_MONTH_ABBR[value.month]} {value.year}"
 
 
+# Weekday abbreviations Jason prefers: Weds (not Wed), Thurs, Tues, etc.
+_WEEKDAY_ABBR = ("Mon", "Tues", "Weds", "Thurs", "Fri", "Sat", "Sun")
+
+
+def _abbrev_weekday(value) -> str:
+    """Abbreviated weekday, e.g. 'Weds'."""
+    return _WEEKDAY_ABBR[value.weekday()]
+
+
 def _friendly_date(value: str) -> str:
     if not value:
         return ""
@@ -193,7 +202,7 @@ def _friendly_datetime_str(value: str) -> str:
         return value
     day = parsed.day
     return (
-        f"{parsed.strftime('%A')} {day}{_day_suffix(day)} "
+        f"{_abbrev_weekday(parsed)} {day}{_day_suffix(day)} "
         f"{_abbrev_month_year(parsed)} {parsed.strftime('%H:%M %Z')}"
     )
 
@@ -210,7 +219,7 @@ def _friendly_source_datetime_str(value: str) -> str:
         zone = "ET"
     day = parsed.day
     return (
-        f"{parsed.strftime('%A')} {day}{_day_suffix(day)} "
+        f"{_abbrev_weekday(parsed)} {day}{_day_suffix(day)} "
         f"{_abbrev_month_year(parsed)} {parsed.strftime('%H:%M')} {zone}".strip()
     )
 
@@ -234,7 +243,7 @@ def _friendly_datetime_value(value: object) -> str:
     local = parsed.astimezone()
     day = local.day
     return (
-        f"{local.strftime('%A')} {day}{_day_suffix(day)} "
+        f"{_abbrev_weekday(local)} {day}{_day_suffix(day)} "
         f"{_abbrev_month_year(local)} {local.strftime('%H:%M %Z')}"
     )
 
@@ -568,11 +577,11 @@ def _next_scheduled_run() -> str:
             if candidate > now:
                 d = candidate.day
                 return (
-                    f"{candidate.strftime('%A')} {d}{_day_suffix(d)} "
+                    f"{_abbrev_weekday(candidate)} {d}{_day_suffix(d)} "
                     f"{_abbrev_month_year(candidate)} {candidate.strftime('%H:%M %Z')}"
                 )
     d = now.day
-    return f"{now.strftime('%A')} {d}{_day_suffix(d)} {_abbrev_month_year(now)} {now.strftime('%H:%M %Z')}"
+    return f"{_abbrev_weekday(now)} {d}{_day_suffix(d)} {_abbrev_month_year(now)} {now.strftime('%H:%M %Z')}"
 
 
 def _launchd_health_rows_from_lines(lines: list[str]) -> list[dict]:

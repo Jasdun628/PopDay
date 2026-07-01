@@ -138,7 +138,9 @@
 </div>
 {% endmacro %}
 
-{% macro price_reaction_table(rows) %}
+{% macro help_pop(pid, term, text) %}<button type="button" class="th-help" popovertarget="{{ pid }}" aria-label="What is {{ term }}?">?</button><div popover id="{{ pid }}" class="th-tip"><strong>{{ term }}</strong>{{ text }}</div>{% endmacro %}
+
+{% macro price_reaction_table(rows, scope) %}
 <div class="table-scroll">
   <table class="price-reaction-table">
     <colgroup>
@@ -153,16 +155,16 @@
         <th>Company</th>
         <th>Ticker</th>
         <th>Event Date</th>
-        <th>Filed / Accepted <span class="th-help" title="When the SEC accepted the filing — the precise acceptance timestamp where known, otherwise the filing date. If accepted at or after 4pm ET, the reaction day becomes the next trading day.">?</span></th>
-        <th>Reaction Day <span class="th-help" title="First trading session on or after the announcement. If the filing was accepted at or after 4pm ET, this is the next trading day.">?</span></th>
-        <th>Previous Close <span class="th-help" title="Closing price on the trading day immediately before the reaction day.">?</span></th>
-        <th>Reaction Close <span class="th-help" title="Closing price on the reaction day.">?</span></th>
-        <th>Move <span class="th-help" title="Percentage change from Previous Close to Reaction Close.">?</span></th>
-        <th>Intraday Range <span class="th-help" title="Reaction-day high minus low, shown as a percentage of the Previous Close.">?</span></th>
-        <th>Latest Close <span class="th-help" title="Most recent available daily close. Its date is shown beneath the price.">?</span></th>
-        <th>Interval Return <span class="th-help" title="Percentage change from Previous Close to Latest Close.">?</span></th>
-        <th>Daily Volatility <span class="th-help" title="Sample standard deviation of daily close-to-close returns from the Previous Close day through the Latest Close.">?</span></th>
-        <th>Status <span class="th-help" title="Data status for this row (e.g. Ok), with the price source used and when it was last refreshed.">?</span></th>
+        <th>Filed / Accepted {{ help_pop(scope ~ "-filed", "Filed / Accepted", "When the SEC accepted the filing. PopDay shows the precise acceptance timestamp where it is known, otherwise the filing date. A filing accepted at or after 4pm ET can only be reacted to the next trading day, so the reaction day shifts forward.") }}</th>
+        <th>Reaction Day {{ help_pop(scope ~ "-reactday", "Reaction Day", "The first trading session the market could respond to the announcement — the trading day on or after the filing was accepted. If it was accepted at or after 4pm ET, this is the next trading day.") }}</th>
+        <th>Previous Close {{ help_pop(scope ~ "-prevclose", "Previous Close", "The share price at the close of the trading day immediately before the reaction day. It is the baseline the move is measured against.") }}</th>
+        <th>Reaction Close {{ help_pop(scope ~ "-reactclose", "Reaction Close", "The share price at the close of the reaction day itself.") }}</th>
+        <th>Move {{ help_pop(scope ~ "-move", "Move", "The percentage change from the Previous Close to the Reaction Close — how far the stock moved on the first day the market could react.") }}</th>
+        <th>Intraday Range {{ help_pop(scope ~ "-intraday", "Intraday Range", "How wide the stock traded on the reaction day: the day's high minus its low, shown as a percentage of the Previous Close. A bigger number means a more volatile session.") }}</th>
+        <th>Latest Close {{ help_pop(scope ~ "-latest", "Latest Close", "The most recent daily closing price PopDay has on file for this stock. The date of that close is shown beneath the price.") }}</th>
+        <th>Interval Return {{ help_pop(scope ~ "-interval", "Interval Return", "The percentage change from the Previous Close to the Latest Close — the cumulative move over the whole window since the announcement.") }}</th>
+        <th>Daily Volatility {{ help_pop(scope ~ "-vol", "Daily Volatility", "How choppy the stock has been over the window: the standard deviation of its daily close-to-close percentage returns, from the Previous Close day through the Latest Close. Higher means bigger day-to-day swings.") }}</th>
+        <th>Status {{ help_pop(scope ~ "-status", "Status", "Whether PopDay could build a full row of data (for example 'Ok'), along with the price source used and when the figures were last refreshed.") }}</th>
       </tr>
     </thead>
     <tbody>
@@ -421,21 +423,37 @@
     .number-cell { font-weight: 650; white-space: nowrap; }
     .th-help {
       align-items: center;
+      background: transparent;
       border: 1px solid var(--line);
       border-radius: 50%;
       color: var(--muted);
-      cursor: help;
+      cursor: pointer;
       display: inline-flex;
+      font-family: inherit;
       font-size: 10px;
       font-weight: 700;
-      height: 14px;
+      height: 15px;
       justify-content: center;
       margin-left: 4px;
+      padding: 0;
       text-transform: none;
       vertical-align: middle;
-      width: 14px;
+      width: 15px;
     }
-    .th-help:hover { border-color: var(--muted); color: var(--text); }
+    .th-help:hover { background: var(--panel-soft); border-color: var(--muted); color: var(--text); }
+    .th-tip {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 500;
+      line-height: 1.5;
+      max-width: 320px;
+      padding: 14px 16px;
+      text-transform: none;
+    }
+    .th-tip strong { display: block; font-size: 14px; margin-bottom: 5px; }
     .sortable-head {
       align-items: center;
       display: inline-flex;
@@ -767,18 +785,18 @@
   {% elif active_tab == 'price_reaction' %}
   <section>
     <h2>Price Reaction</h2>
-    <p class="page-note">Cached daily market data for qualifying announcements. These are latest available daily closes, not live tick prices. Split into Upcoming and Legacy by Investor Day date.</p>
+    <p class="page-note">Cached daily market data for qualifying announcements. These are latest available daily closes, not live tick prices.</p>
     {% if price_reaction_rows %}
     <h3 class="split-heading split-heading-first">Upcoming</h3>
     {% if upcoming_price_reaction_rows %}
-      {{ price_reaction_table(upcoming_price_reaction_rows) }}
+      {{ price_reaction_table(upcoming_price_reaction_rows, "up") }}
     {% else %}
       <div class="empty">No upcoming Price Reaction rows stored yet.</div>
     {% endif %}
 
     <h3 class="split-heading">Legacy</h3>
     {% if legacy_price_reaction_rows %}
-      {{ price_reaction_table(legacy_price_reaction_rows) }}
+      {{ price_reaction_table(legacy_price_reaction_rows, "leg") }}
     {% else %}
       <div class="empty">No legacy Price Reaction rows stored yet.</div>
     {% endif %}

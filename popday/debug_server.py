@@ -475,9 +475,25 @@ def _day_suffix(day: int) -> str:
     return {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
 
 
+# Abbreviations Jason prefers: Sept (not September), Weds (not Wednesday), etc.
+_MONTH_ABBR = (
+    "", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sept", "Oct", "Nov", "Dec",
+)
+_WEEKDAY_ABBR = ("Mon", "Tues", "Weds", "Thurs", "Fri", "Sat", "Sun")
+
+
+def _abbrev_month_year(value) -> str:
+    return f"{_MONTH_ABBR[value.month]} {value.year}"
+
+
+def _abbrev_weekday(value) -> str:
+    return _WEEKDAY_ABBR[value.weekday()]
+
+
 def _friendly_date(value: datetime) -> str:
     day = value.day
-    return f"{day}{_day_suffix(day)} {value.strftime('%B %Y')}"
+    return f"{day}{_day_suffix(day)} {_abbrev_month_year(value)}"
 
 
 def _friendly_datetime(value: str) -> str:
@@ -489,16 +505,16 @@ def _friendly_datetime(value: str) -> str:
         return value
     day = parsed.day
     return (
-        f"{parsed.strftime('%A')} {day}{_day_suffix(day)} "
-        f"{parsed.strftime('%B %Y')} {parsed.strftime('%H:%M %Z')}"
+        f"{_abbrev_weekday(parsed)} {day}{_day_suffix(day)} "
+        f"{_abbrev_month_year(parsed)} {parsed.strftime('%H:%M %Z')}"
     )
 
 
 def _friendly_dt(value: datetime) -> str:
     day = value.day
     return (
-        f"{value.strftime('%A')} {day}{_day_suffix(day)} "
-        f"{value.strftime('%B %Y')} {value.strftime('%H:%M %Z')}"
+        f"{_abbrev_weekday(value)} {day}{_day_suffix(day)} "
+        f"{_abbrev_month_year(value)} {value.strftime('%H:%M %Z')}"
     )
 
 
