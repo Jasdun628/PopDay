@@ -726,13 +726,27 @@ def _build_admin_context(db: Database, tab: str, *, company_websites: dict[str, 
                     "source_label": source_label,
                 }
             )
+        sorted_research_rows = _sort_research_rows(research_rows, sort_key, direction)
+        upcoming_research_rows = [
+            item for item in sorted_research_rows if _is_upcoming_announcement(
+                {"event_date_raw": item.get("id_date_raw") or ""}
+            )
+        ]
+        legacy_research_rows = [
+            item for item in sorted_research_rows if not _is_upcoming_announcement(
+                {"event_date_raw": item.get("id_date_raw") or ""}
+            )
+        ]
         ctx.update(
-            research_rows=_sort_research_rows(research_rows, sort_key, direction),
+            research_rows=sorted_research_rows,
+            upcoming_research_rows=upcoming_research_rows,
+            legacy_research_rows=legacy_research_rows,
             research_sort=sort_key,
             research_direction=direction,
             research_unknown_note=(
                 "Research counts are shown only where PopDay has enough data. Unknown means "
-                "the event has not been backfilled yet."
+                "the event has not been backfilled yet. Upcoming means the Investor Day has "
+                "not passed; Legacy means it has passed."
             ),
         )
     elif tab == "price_reaction":

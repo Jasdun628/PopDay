@@ -71,6 +71,60 @@
   </tbody>
 </table>
 {% endmacro %}
+{% macro research_hype_table(rows) %}
+<div class="table-scroll">
+  <table class="research-table">
+    <thead>
+      <tr>
+        <th>{{ research_sort_header("Company", "company") }}</th>
+        <th>{{ research_sort_header("Ticker", "ticker") }}</th>
+        <th>{{ research_sort_header("Event type", "event_type") }}</th>
+        <th>{{ research_sort_header("AD date", "ad") }}</th>
+        <th>{{ research_sort_header("ID date", "id") }}</th>
+        <th>{{ research_sort_header("Days AD-ID", "days") }}</th>
+        <th>{{ research_sort_header("Raw Hype Count", "raw") }}</th>
+        <th>{{ research_sort_header("Investor Comms Count", "investor_comms") }}</th>
+        <th>{{ research_sort_header("8-K 7.01 Count", "item_701") }}</th>
+        <th>{{ research_sort_header("8-K 8.01 Count", "item_801") }}</th>
+        <th>{{ research_sort_header("Presentation / Deck Count", "presentation") }}</th>
+        <th>{{ research_sort_header("Latest filing AD-ID", "latest") }}</th>
+        <th>{{ research_sort_header("Source link", "source") }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td class="primary-cell">
+          {% if r.company_url %}
+          <a href="{{ r.company_url }}" target="_blank" rel="noopener" class="company-link">{{ r.company_name }}</a>
+          {% else %}
+          {{ r.company_name }}
+          {% endif %}
+        </td>
+        <td class="{{ 'unknown-text' if r.ticker == 'unknown' else 'secondary-cell' }}">{{ r.ticker }}</td>
+        <td>{{ r.event_type }}</td>
+        <td class="date-muted">{{ r.ad_date }}</td>
+        <td class="date-strong">{{ r.id_date }}</td>
+        <td class="{{ 'unknown-text' if r.days == 'unknown' else 'date-strong' }}">{{ r.days }}</td>
+        <td class="unknown-text">{{ r.raw_hype_count }}</td>
+        <td class="{{ 'unknown-text' if r.investor_comms_count == 'unknown' else 'date-strong' }}">{{ r.investor_comms_count }}</td>
+        <td class="{{ 'unknown-text' if r.item_701_count == 'unknown' else 'date-strong' }}">{{ r.item_701_count }}</td>
+        <td class="{{ 'unknown-text' if r.item_801_count == 'unknown' else 'date-strong' }}">{{ r.item_801_count }}</td>
+        <td class="{{ 'unknown-text' if r.presentation_count == 'unknown' else 'date-strong' }}">{{ r.presentation_count }}</td>
+        <td class="{{ 'unknown-text' if r.latest_filing == 'unknown' else 'secondary-cell' }}">{{ r.latest_filing }}</td>
+        <td>
+          {% if r.source_url %}
+          <a href="{{ r.source_url }}" target="_blank" rel="noopener" class="evidence-link">{{ r.source_label }}</a>
+          {% else %}
+          <span class="unknown-text">unknown</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endmacro %}
 <!doctype html>
 <html lang="en">
 <head>
@@ -599,58 +653,19 @@
     <h2>Research / Hype</h2>
     <p class="page-note">{{ research_unknown_note }}</p>
     {% if research_rows %}
-    <div class="table-scroll">
-      <table class="research-table">
-        <thead>
-          <tr>
-            <th>{{ research_sort_header("Company", "company") }}</th>
-            <th>{{ research_sort_header("Ticker", "ticker") }}</th>
-            <th>{{ research_sort_header("Event type", "event_type") }}</th>
-            <th>{{ research_sort_header("AD date", "ad") }}</th>
-            <th>{{ research_sort_header("ID date", "id") }}</th>
-            <th>{{ research_sort_header("Days AD-ID", "days") }}</th>
-            <th>{{ research_sort_header("Raw Hype Count", "raw") }}</th>
-            <th>{{ research_sort_header("Investor Comms Count", "investor_comms") }}</th>
-            <th>{{ research_sort_header("8-K 7.01 Count", "item_701") }}</th>
-            <th>{{ research_sort_header("8-K 8.01 Count", "item_801") }}</th>
-            <th>{{ research_sort_header("Presentation / Deck Count", "presentation") }}</th>
-            <th>{{ research_sort_header("Latest filing AD-ID", "latest") }}</th>
-            <th>{{ research_sort_header("Source link", "source") }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for r in research_rows %}
-          <tr>
-            <td class="primary-cell">
-              {% if r.company_url %}
-              <a href="{{ r.company_url }}" target="_blank" rel="noopener" class="company-link">{{ r.company_name }}</a>
-              {% else %}
-              {{ r.company_name }}
-              {% endif %}
-            </td>
-            <td class="{{ 'unknown-text' if r.ticker == 'unknown' else 'secondary-cell' }}">{{ r.ticker }}</td>
-            <td>{{ r.event_type }}</td>
-            <td class="date-muted">{{ r.ad_date }}</td>
-            <td class="date-strong">{{ r.id_date }}</td>
-            <td class="{{ 'unknown-text' if r.days == 'unknown' else 'date-strong' }}">{{ r.days }}</td>
-            <td class="unknown-text">{{ r.raw_hype_count }}</td>
-            <td class="{{ 'unknown-text' if r.investor_comms_count == 'unknown' else 'date-strong' }}">{{ r.investor_comms_count }}</td>
-            <td class="{{ 'unknown-text' if r.item_701_count == 'unknown' else 'date-strong' }}">{{ r.item_701_count }}</td>
-            <td class="{{ 'unknown-text' if r.item_801_count == 'unknown' else 'date-strong' }}">{{ r.item_801_count }}</td>
-            <td class="{{ 'unknown-text' if r.presentation_count == 'unknown' else 'date-strong' }}">{{ r.presentation_count }}</td>
-            <td class="{{ 'unknown-text' if r.latest_filing == 'unknown' else 'secondary-cell' }}">{{ r.latest_filing }}</td>
-            <td>
-              {% if r.source_url %}
-              <a href="{{ r.source_url }}" target="_blank" rel="noopener" class="evidence-link">{{ r.source_label }}</a>
-              {% else %}
-              <span class="unknown-text">unknown</span>
-              {% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
+    <h3 class="split-heading split-heading-first">Upcoming</h3>
+    {% if upcoming_research_rows %}
+      {{ research_hype_table(upcoming_research_rows) }}
+    {% else %}
+      <div class="empty">No upcoming Research / Hype rows stored yet.</div>
+    {% endif %}
+
+    <h3 class="split-heading">Legacy</h3>
+    {% if legacy_research_rows %}
+      {{ research_hype_table(legacy_research_rows) }}
+    {% else %}
+      <div class="empty">No legacy Research / Hype rows stored yet.</div>
+    {% endif %}
     {% else %}
     <div class="empty">No qualifying event announcements stored yet.</div>
     {% endif %}
@@ -1016,7 +1031,7 @@
       {% for title, text in [
         ("Investor Days",       "Confirmed Investor Day, Analyst Day, and Capital Markets Day announcements PopDay has found. The list is split into Upcoming events and Legacy events."),
         ("Evidence",            "Evidence links open the announcement document PopDay used, usually the exhibit or filing page that contains the actual event announcement."),
-        ("Research / Hype",     "Research view for already detected events. It shows stored Hype Count fields and uses unknown where PopDay does not yet have enough data."),
+        ("Research / Hype",     "Research view for already detected events. It is split into Upcoming and Legacy using the Investor Day date, and shows unknown where PopDay does not yet have enough data."),
         ("Price Reaction",      "Cached daily market-data view for confirmed announcements. It shows previous close, reaction-day move, latest available close, interval return, and transparent daily volatility."),
         ("Scan Log",            "Inspection view for filings PopDay examined, including dismissed false positives. It is useful for checking why something did or did not qualify."),
         ("Schedule",            "Recent Mac Mini scanner runs and the next expected run time."),

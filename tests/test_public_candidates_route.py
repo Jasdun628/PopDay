@@ -251,6 +251,73 @@ class PublicCandidatesRouteTests(unittest.TestCase):
             self.assertIn("Investor Comms Count", html)
             self.assertNotIn("/admin/login", response.request.path)
 
+    def test_research_hype_split_upcoming_above_legacy(self):
+        with tempfile.NamedTemporaryFile(suffix=".sqlite3") as db_file:
+            os.environ["POPDAY_DB_PATH"] = db_file.name
+            os.environ["POPDAY_ADMIN_PASSWORD"] = "test-password"
+            from popday.db import Database
+            from flask_app import app
+
+            db = Database(db_file.name)
+            try:
+                db.conn.executemany(
+                    """
+                    INSERT INTO detections
+                    (accession_number, company_name, cik, form_type, filing_date, filing_url,
+                     event_type, event_date, matched_phrase, matched_location, snippet, status,
+                     dismissal_reason, created_timestamp)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        (
+                            "legacy-research-route",
+                            "Legacy Research Co",
+                            "0000000005",
+                            "8-K",
+                            "20200102",
+                            "https://www.sec.gov/legacy-research-route.htm",
+                            "Investor Day",
+                            "2020-01-15",
+                            "investor day",
+                            "press_release",
+                            "Legacy Research Co hosted an Investor Day.",
+                            "alert_candidate",
+                            None,
+                            "2020-01-02T01:00:00+00:00",
+                        ),
+                        (
+                            "upcoming-research-route",
+                            "Upcoming Research Co",
+                            "0000000006",
+                            "8-K",
+                            "20990102",
+                            "https://www.sec.gov/upcoming-research-route.htm",
+                            "Investor Day",
+                            "2099-01-15",
+                            "investor day",
+                            "press_release",
+                            "Upcoming Research Co will host an Investor Day.",
+                            "alert_candidate",
+                            None,
+                            "2099-01-02T01:00:00+00:00",
+                        ),
+                    ],
+                )
+                db.conn.commit()
+            finally:
+                db.close()
+
+            client = app.test_client()
+            response = client.get("/?tab=research")
+            html = response.get_data(as_text=True)
+
+            self.assertEqual(response.status_code, 200)
+            upcoming_heading = html.find('<h3 class="split-heading split-heading-first">Upcoming</h3>')
+            legacy_heading = html.find('<h3 class="split-heading">Legacy</h3>')
+            self.assertLess(upcoming_heading, html.find("Upcoming Research Co"))
+            self.assertLess(html.find("Upcoming Research Co"), legacy_heading)
+            self.assertLess(legacy_heading, html.find("Legacy Research Co"))
+
     def test_public_price_reaction_tab_renders_cached_view(self):
         with tempfile.NamedTemporaryFile(suffix=".sqlite3") as db_file:
             os.environ["POPDAY_DB_PATH"] = db_file.name

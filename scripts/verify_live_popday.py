@@ -81,6 +81,7 @@ def main() -> int:
     research = fetch("?tab=research&v=verify")
     research_text = plain_text(research)
     check("research tab", "Research / Hype" in research_text, failures)
+    check("research upcoming legacy sections", research_text.find("Upcoming") < research_text.find("Legacy"), failures)
     check(
         "research hype columns",
         all(

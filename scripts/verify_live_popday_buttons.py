@@ -45,6 +45,8 @@ PUBLIC_TABS = (
         (
             "Research / Hype",
             "Research counts are shown only where PopDay has enough data",
+            "Upcoming",
+            "Legacy",
             "Raw Hype Count",
             "Investor Comms Count",
         ),
