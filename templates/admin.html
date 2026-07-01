@@ -1,5 +1,10 @@
 {% macro investor_days_table(rows, is_admin, announcement_sort, announcement_direction) %}
-<table>
+<table class="split-table">
+  <colgroup>
+    <col style="width: 22%"><col style="width: 14%"><col style="width: 13%">
+    <col style="width: 13%"><col style="width: 10%"><col style="width: 14%">
+    <col style="width: 14%">
+  </colgroup>
   <thead>
     <tr>
       <th>Company</th>
@@ -74,6 +79,13 @@
 {% macro research_hype_table(rows) %}
 <div class="table-scroll">
   <table class="research-table">
+    <colgroup>
+      <col style="width: 180px"><col style="width: 80px"><col style="width: 120px">
+      <col style="width: 110px"><col style="width: 110px"><col style="width: 90px">
+      <col style="width: 110px"><col style="width: 130px"><col style="width: 100px">
+      <col style="width: 100px"><col style="width: 140px"><col style="width: 120px">
+      <col style="width: 90px">
+    </colgroup>
     <thead>
       <tr>
         <th>{{ research_sort_header("Company", "company") }}</th>
@@ -118,6 +130,66 @@
           {% else %}
           <span class="unknown-text">unknown</span>
           {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endmacro %}
+
+{% macro price_reaction_table(rows) %}
+<div class="table-scroll">
+  <table class="price-reaction-table">
+    <colgroup>
+      <col style="width: 160px"><col style="width: 70px"><col style="width: 100px">
+      <col style="width: 200px"><col style="width: 100px"><col style="width: 85px">
+      <col style="width: 85px"><col style="width: 75px"><col style="width: 90px">
+      <col style="width: 100px"><col style="width: 85px"><col style="width: 90px">
+      <col style="width: 80px">
+    </colgroup>
+    <thead>
+      <tr>
+        <th>Company</th>
+        <th>Ticker</th>
+        <th>Event Date</th>
+        <th>Filed / Accepted <span class="th-help" title="When the SEC accepted the filing — the precise acceptance timestamp where known, otherwise the filing date. If accepted at or after 4pm ET, the reaction day becomes the next trading day.">?</span></th>
+        <th>Reaction Day <span class="th-help" title="First trading session on or after the announcement. If the filing was accepted at or after 4pm ET, this is the next trading day.">?</span></th>
+        <th>Previous Close <span class="th-help" title="Closing price on the trading day immediately before the reaction day.">?</span></th>
+        <th>Reaction Close <span class="th-help" title="Closing price on the reaction day.">?</span></th>
+        <th>Move <span class="th-help" title="Percentage change from Previous Close to Reaction Close.">?</span></th>
+        <th>Intraday Range <span class="th-help" title="Reaction-day high minus low, shown as a percentage of the Previous Close.">?</span></th>
+        <th>Latest Close <span class="th-help" title="Most recent available daily close. Its date is shown beneath the price.">?</span></th>
+        <th>Interval Return <span class="th-help" title="Percentage change from Previous Close to Latest Close.">?</span></th>
+        <th>Daily Volatility <span class="th-help" title="Sample standard deviation of daily close-to-close returns from the Previous Close day through the Latest Close.">?</span></th>
+        <th>Status <span class="th-help" title="Data status for this row (e.g. Ok), with the price source used and when it was last refreshed.">?</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td class="primary-cell">
+          {% if r.company_url %}
+          <a href="{{ r.company_url }}" target="_blank" rel="noopener" class="company-link">{{ r.company_name }}</a>
+          {% else %}
+          {{ r.company_name }}
+          {% endif %}
+        </td>
+        <td class="{{ 'unknown-text' if r.ticker == 'unknown' else 'secondary-cell' }}">{{ r.ticker }}</td>
+        <td class="date-strong">{{ r.event_date }}</td>
+        <td class="{{ 'unknown-text' if r.accepted == 'unknown' and r.filing_date == 'unknown' else 'secondary-cell' }}">{{ r.accepted if r.accepted != 'unknown' else r.filing_date }}</td>
+        <td class="{{ 'unknown-text' if r.reaction_date == 'unknown' else 'date-strong' }}">{{ r.reaction_date }}</td>
+        <td class="number-cell">{{ r.previous_close }}</td>
+        <td class="number-cell">{{ r.reaction_close }}</td>
+        <td class="number-cell">{{ r.announcement_move_pct }}</td>
+        <td class="number-cell">{{ r.intraday_range_pct }}</td>
+        <td class="number-cell">{{ r.latest_close }}<div class="status-meta">{{ r.latest_close_date }}</div></td>
+        <td class="number-cell">{{ r.interval_return_pct }}</td>
+        <td class="number-cell">{{ r.interval_daily_volatility_pct }}</td>
+        <td class="{{ 'status-good' if r.status == 'Ok' else 'secondary-cell' }}">
+          {{ r.status }}
+          {% if r.notes %}<div class="status-meta">{{ r.notes }}</div>{% endif %}
+          <div class="status-meta">{{ r.source }}; refreshed {{ r.updated }}</div>
         </td>
       </tr>
       {% endfor %}
@@ -343,9 +415,27 @@
     .status-good { color: var(--ok); font-weight: 750; white-space: nowrap; }
     .unknown-text { color: var(--muted); font-weight: 500; }
     .table-scroll { overflow-x: auto; }
-    .research-table { min-width: 1480px; }
-    .price-reaction-table { min-width: 1320px; }
+    .split-table { table-layout: fixed; }
+    .research-table { min-width: 1480px; table-layout: fixed; }
+    .price-reaction-table { min-width: 1320px; table-layout: fixed; }
     .number-cell { font-weight: 650; white-space: nowrap; }
+    .th-help {
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 50%;
+      color: var(--muted);
+      cursor: help;
+      display: inline-flex;
+      font-size: 10px;
+      font-weight: 700;
+      height: 14px;
+      justify-content: center;
+      margin-left: 4px;
+      text-transform: none;
+      vertical-align: middle;
+      width: 14px;
+    }
+    .th-help:hover { border-color: var(--muted); color: var(--text); }
     .sortable-head {
       align-items: center;
       display: inline-flex;
@@ -677,60 +767,21 @@
   {% elif active_tab == 'price_reaction' %}
   <section>
     <h2>Price Reaction</h2>
-    <p class="page-note">Cached daily market data for qualifying announcements. These are latest available daily closes, not live tick prices.</p>
+    <p class="page-note">Cached daily market data for qualifying announcements. These are latest available daily closes, not live tick prices. Split into Upcoming and Legacy by Investor Day date.</p>
     {% if price_reaction_rows %}
-    <div class="table-scroll">
-      <table class="price-reaction-table">
-        <thead>
-          <tr>
-            <th>Company</th>
-            <th>Ticker</th>
-            <th>Event Date</th>
-            <th>Announced / Filed</th>
-            <th>Accepted</th>
-            <th>Reaction Day</th>
-            <th>Previous Close</th>
-            <th>Reaction Close</th>
-            <th>Move</th>
-            <th>Intraday Range</th>
-            <th>Latest Close</th>
-            <th>Interval Return</th>
-            <th>Daily Volatility</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for r in price_reaction_rows %}
-          <tr>
-            <td class="primary-cell">
-              {% if r.company_url %}
-              <a href="{{ r.company_url }}" target="_blank" rel="noopener" class="company-link">{{ r.company_name }}</a>
-              {% else %}
-              {{ r.company_name }}
-              {% endif %}
-            </td>
-            <td class="{{ 'unknown-text' if r.ticker == 'unknown' else 'secondary-cell' }}">{{ r.ticker }}</td>
-            <td class="date-strong">{{ r.event_date }}</td>
-            <td class="date-muted">{{ r.filing_date }}</td>
-            <td class="{{ 'unknown-text' if r.accepted == 'unknown' else 'secondary-cell' }}">{{ r.accepted }}</td>
-            <td class="{{ 'unknown-text' if r.reaction_date == 'unknown' else 'date-strong' }}">{{ r.reaction_date }}</td>
-            <td class="number-cell">{{ r.previous_close }}</td>
-            <td class="number-cell">{{ r.reaction_close }}</td>
-            <td class="number-cell">{{ r.announcement_move_pct }}</td>
-            <td class="number-cell">{{ r.intraday_range_pct }}</td>
-            <td class="number-cell">{{ r.latest_close }}<div class="status-meta">{{ r.latest_close_date }}</div></td>
-            <td class="number-cell">{{ r.interval_return_pct }}</td>
-            <td class="number-cell">{{ r.interval_daily_volatility_pct }}</td>
-            <td class="{{ 'status-good' if r.status == 'Ok' else 'secondary-cell' }}">
-              {{ r.status }}
-              {% if r.notes %}<div class="status-meta">{{ r.notes }}</div>{% endif %}
-              <div class="status-meta">{{ r.source }}; refreshed {{ r.updated }}</div>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
+    <h3 class="split-heading split-heading-first">Upcoming</h3>
+    {% if upcoming_price_reaction_rows %}
+      {{ price_reaction_table(upcoming_price_reaction_rows) }}
+    {% else %}
+      <div class="empty">No upcoming Price Reaction rows stored yet.</div>
+    {% endif %}
+
+    <h3 class="split-heading">Legacy</h3>
+    {% if legacy_price_reaction_rows %}
+      {{ price_reaction_table(legacy_price_reaction_rows) }}
+    {% else %}
+      <div class="empty">No legacy Price Reaction rows stored yet.</div>
+    {% endif %}
     {% else %}
     <div class="empty">No cached Price Reaction rows yet.</div>
     {% endif %}
@@ -1032,7 +1083,7 @@
         ("Investor Days",       "Confirmed Investor Day, Analyst Day, and Capital Markets Day announcements PopDay has found. The list is split into Upcoming events and Legacy events."),
         ("Evidence",            "Evidence links open the announcement document PopDay used, usually the exhibit or filing page that contains the actual event announcement."),
         ("Research / Hype",     "Research view for already detected events. It is split into Upcoming and Legacy using the Investor Day date, and shows unknown where PopDay does not yet have enough data."),
-        ("Price Reaction",      "Cached daily market-data view for confirmed announcements. It shows previous close, reaction-day move, latest available close, interval return, and transparent daily volatility."),
+        ("Price Reaction",      "Cached daily market-data view for confirmed announcements, split into Upcoming and Legacy by Investor Day date. It shows previous close, reaction-day move, latest available close, interval return, and transparent daily volatility."),
         ("Scan Log",            "Inspection view for filings PopDay examined, including dismissed false positives. It is useful for checking why something did or did not qualify."),
         ("Schedule",            "Recent Mac Mini scanner runs and the next expected run time."),
         ("System Health",       "Current front-door health, freshness, backup state, and latest scan facts."),

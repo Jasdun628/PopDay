@@ -135,8 +135,8 @@ class PublicCandidatesRouteTests(unittest.TestCase):
             self.assertNotIn("<th>Email</th>", html)
             self.assertLess(html.find("<th>Company</th>"), html.find("<th>Evidence</th>"))
             self.assertLess(html.find("<th>Evidence</th>"), html.find("Event Date"))
-            self.assertLess(html.find("Exhibit 99.1"), html.find("15th September 2026"))
-            self.assertLess(html.find("15th September 2026"), html.find('<td class="secondary-cell">EDGAR</td>'))
+            self.assertLess(html.find("Exhibit 99.1"), html.find("15th Sept 2026"))
+            self.assertLess(html.find("15th Sept 2026"), html.find('<td class="secondary-cell">EDGAR</td>'))
 
     def test_investor_days_split_upcoming_above_legacy(self):
         with tempfile.NamedTemporaryFile(suffix=".sqlite3") as db_file:

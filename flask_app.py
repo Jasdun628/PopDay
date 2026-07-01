@@ -27,6 +27,18 @@ def _day_suffix(day: int) -> str:
     return {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
 
 
+# Month abbreviations Jason prefers: Sept (never September), Sep is not used.
+_MONTH_ABBR = (
+    "", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sept", "Oct", "Nov", "Dec",
+)
+
+
+def _abbrev_month_year(value) -> str:
+    """Abbreviated month + year, e.g. 'Sept 2026'."""
+    return f"{_MONTH_ABBR[value.month]} {value.year}"
+
+
 def _friendly_date(value: str) -> str:
     if not value:
         return ""
@@ -36,7 +48,7 @@ def _friendly_date(value: str) -> str:
     except ValueError:
         return value
     day = parsed.day
-    return f"{day}{_day_suffix(day)} {parsed.strftime('%B %Y')}"
+    return f"{day}{_day_suffix(day)} {_abbrev_month_year(parsed)}"
 
 
 def _sec_filing_url(filing_url: str) -> str:
@@ -182,7 +194,7 @@ def _friendly_datetime_str(value: str) -> str:
     day = parsed.day
     return (
         f"{parsed.strftime('%A')} {day}{_day_suffix(day)} "
-        f"{parsed.strftime('%B %Y')} {parsed.strftime('%H:%M %Z')}"
+        f"{_abbrev_month_year(parsed)} {parsed.strftime('%H:%M %Z')}"
     )
 
 
@@ -199,7 +211,7 @@ def _friendly_source_datetime_str(value: str) -> str:
     day = parsed.day
     return (
         f"{parsed.strftime('%A')} {day}{_day_suffix(day)} "
-        f"{parsed.strftime('%B %Y')} {parsed.strftime('%H:%M')} {zone}".strip()
+        f"{_abbrev_month_year(parsed)} {parsed.strftime('%H:%M')} {zone}".strip()
     )
 
 
@@ -223,7 +235,7 @@ def _friendly_datetime_value(value: object) -> str:
     day = local.day
     return (
         f"{local.strftime('%A')} {day}{_day_suffix(day)} "
-        f"{local.strftime('%B %Y')} {local.strftime('%H:%M %Z')}"
+        f"{_abbrev_month_year(local)} {local.strftime('%H:%M %Z')}"
     )
 
 
@@ -557,10 +569,10 @@ def _next_scheduled_run() -> str:
                 d = candidate.day
                 return (
                     f"{candidate.strftime('%A')} {d}{_day_suffix(d)} "
-                    f"{candidate.strftime('%B %Y')} {candidate.strftime('%H:%M %Z')}"
+                    f"{_abbrev_month_year(candidate)} {candidate.strftime('%H:%M %Z')}"
                 )
     d = now.day
-    return f"{now.strftime('%A')} {d}{_day_suffix(d)} {now.strftime('%B %Y')} {now.strftime('%H:%M %Z')}"
+    return f"{now.strftime('%A')} {d}{_day_suffix(d)} {_abbrev_month_year(now)} {now.strftime('%H:%M %Z')}"
 
 
 def _launchd_health_rows_from_lines(lines: list[str]) -> list[dict]:
@@ -750,11 +762,12 @@ def _build_admin_context(db: Database, tab: str, *, company_websites: dict[str, 
             ),
         )
     elif tab == "price_reaction":
-        ctx["price_reaction_rows"] = [
+        price_reaction_rows = [
             {
                 "company_name": r["company_name"],
                 "company_url": _company_website(r["company_name"], company_websites),
                 "ticker": _unknown_text(r["ticker"]),
+                "event_date_raw": dict(r).get("event_date") or "",
                 "event_date": _friendly_date(r["event_date"]) if dict(r).get("event_date") else "unknown",
                 "filing_date": _friendly_date(r["filing_date"]) if dict(r).get("filing_date") else "unknown",
                 "accepted": _friendly_source_datetime_str(r["acceptance_datetime"]) if dict(r).get("acceptance_datetime") else "unknown",
@@ -773,6 +786,13 @@ def _build_admin_context(db: Database, tab: str, *, company_websites: dict[str, 
                 "updated": _friendly_datetime_str(r["price_data_timestamp"]) if dict(r).get("price_data_timestamp") else "unknown",
             }
             for r in db.price_reaction_rows()
+        ]
+        ctx["price_reaction_rows"] = price_reaction_rows
+        ctx["upcoming_price_reaction_rows"] = [
+            item for item in price_reaction_rows if _is_upcoming_announcement(item)
+        ]
+        ctx["legacy_price_reaction_rows"] = [
+            item for item in price_reaction_rows if not _is_upcoming_announcement(item)
         ]
     elif tab == "rules":
         from popday.rules import ALERT_REQUIREMENTS

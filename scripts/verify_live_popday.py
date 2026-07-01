@@ -115,6 +115,11 @@ def main() -> int:
         ),
         failures,
     )
+    check(
+        "price reaction upcoming legacy sections",
+        price_text.find("Upcoming") < price_text.find("Legacy"),
+        failures,
+    )
 
     announcements = fetch("?tab=announcements&v=verify")
     text = plain_text(announcements)

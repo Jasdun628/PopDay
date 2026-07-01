@@ -39,5 +39,12 @@ def extract_future_date(text: str, run_date: date) -> date | None:
     return min(candidates) if candidates else None
 
 
+# Abbreviated months per Jason's house style: Sept (never September), not Sep.
+_MONTH_ABBR = (
+    "", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sept", "Oct", "Nov", "Dec",
+)
+
+
 def format_human_date(value: date) -> str:
-    return value.strftime("%-d %B %Y")
+    return f"{value.day} {_MONTH_ABBR[value.month]} {value.year}"
