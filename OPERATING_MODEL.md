@@ -158,16 +158,15 @@ There is one PopDay interface.
 
 The main tabs are:
 
-- Summary
 - Investor Days
-- Rules
-- Email Alerts
+- Research / Hype
+- Price Reaction
+- Scan Log
+- Schedule
 - System Health
-- Candidates
-- Filings
 - Help
 
-The Summary tab starts with a health strip showing:
+The System Health tab starts with a health strip showing:
 
 - LIVE / HEALTHY / STALE / BROKEN
 - last Mac Mini scan
@@ -178,6 +177,20 @@ The Summary tab starts with a health strip showing:
 - latest scan facts
 
 Admin controls and recipient emails stay behind admin sign-in. Public tab views should be safe and read-only.
+
+## Daily Help Manual Rule
+
+Update the public Help tab once per day during active PopDay work.
+
+The Help tab must:
+
+- match the current public tab titles
+- add any new user-visible feature shipped that day
+- remove stale, unused, or renamed sections
+- explain only the current workflow, not old internal history
+- be deployed and live-verified when changed
+
+Treat stale Help text as a product bug, not a documentation nicety.
 
 ## Browser-First Rule
 
