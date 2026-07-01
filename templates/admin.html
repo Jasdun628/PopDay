@@ -139,16 +139,15 @@
 <div class="table-scroll">
   <table class="price-reaction-table">
     <colgroup>
-      <col style="width: 165px"><col style="width: 65px"><col style="width: 135px">
-      <col style="width: 120px"><col style="width: 150px"><col style="width: 130px">
-      <col style="width: 100px"><col style="width: 100px"><col style="width: 85px">
-      <col style="width: 110px"><col style="width: 115px"><col style="width: 105px">
-      <col style="width: 110px"><col style="width: 140px">
+      <col style="width: 185px"><col style="width: 135px"><col style="width: 120px">
+      <col style="width: 150px"><col style="width: 130px"><col style="width: 100px">
+      <col style="width: 100px"><col style="width: 85px"><col style="width: 110px">
+      <col style="width: 115px"><col style="width: 105px"><col style="width: 110px">
+      <col style="width: 140px">
     </colgroup>
     <thead>
       <tr>
         <th>Company</th>
-        <th>Ticker</th>
         <th>Event Date</th>
         <th><span class="tip-head" data-tip="The share price at the close of the actual Investor Day (the first trading day on or after the event date). Green means the stock rose that day (a pop); red means it fell (a tank). The smaller figure is that day's move. Blank for upcoming events that have not happened yet.">Investor Day Close</span></th>
         <th><span class="tip-head" data-tip="When the SEC accepted the filing. PopDay shows the precise acceptance timestamp where it is known, otherwise the filing date. A filing accepted at or after 4pm ET can only be reacted to the next trading day, so the reaction day shifts forward.">Filed / Accepted</span></th>
@@ -172,10 +171,10 @@
           {% else %}
           {{ r.company_name }}
           {% endif %}
+          {% if r.ticker and r.ticker != 'unknown' %}<div class="ticker-sub"><a href="https://finance.yahoo.com/quote/{{ r.ticker }}" target="_blank" rel="noopener">{{ r.ticker }}</a></div>{% endif %}
         </td>
-        <td class="{{ 'unknown-text' if r.ticker == 'unknown' else 'secondary-cell' }}">{{ r.ticker }}</td>
         <td class="date-strong">{{ r.event_date }}</td>
-        <td class="{{ 'move-up' if r.event_day_direction == 'up' else ('move-down' if r.event_day_direction == 'down' else 'number-cell') }}">{{ r.event_day_close }}{% if r.event_day_move_pct %}<div class="status-meta">{{ r.event_day_move_pct }}</div>{% endif %}</td>
+        <td class="{{ 'move-up' if r.event_day_direction == 'up' else ('move-down' if r.event_day_direction == 'down' else 'number-cell') }}">{{ r.event_day_close }}{% if r.event_day_move_pct %}<div class="move-sub">{{ r.event_day_move_pct }}</div>{% endif %}</td>
         <td class="{{ 'unknown-text' if r.accepted == 'unknown' and r.filing_date == 'unknown' else 'secondary-cell' }}">{% if r.accepted != 'unknown' %}{{ r.accepted }}{% if r.accepted_time %}<div class="status-meta">{{ r.accepted_time }}</div>{% endif %}{% else %}{{ r.filing_date }}{% endif %}</td>
         <td class="{{ 'unknown-text' if r.reaction_date == 'unknown' else 'date-strong' }}">{{ r.reaction_date }}</td>
         <td class="number-cell">{{ r.previous_close }}</td>
@@ -194,8 +193,8 @@
     </tbody>
     <tfoot>
       <tr class="total-row">
-        <td colspan="11" class="total-label">Average interval return</td>
-        <td class="number-cell">{{ average }}</td>
+        <td colspan="10" class="total-label">Average interval return</td>
+        <td class="number-cell {% if average.startswith('+') %}move-up{% elif average.startswith('-') %}move-down{% endif %}">{{ average }}</td>
         <td colspan="2"></td>
       </tr>
     </tfoot>
@@ -420,11 +419,15 @@
     .status-good { color: var(--ok); font-weight: 750; white-space: nowrap; }
     .move-up { color: var(--ok); font-weight: 750; white-space: nowrap; }
     .move-down { color: var(--danger); font-weight: 750; white-space: nowrap; }
+    .move-sub { font-size: 12px; font-weight: 650; margin-top: 3px; }
+    .ticker-sub { font-size: 11px; margin-top: 3px; }
+    .ticker-sub a { color: var(--muted); font-weight: 650; letter-spacing: 0.3px; text-decoration: none; }
+    .ticker-sub a:hover { color: var(--link); text-decoration: underline; }
     .unknown-text { color: var(--muted); font-weight: 500; }
     .table-scroll { overflow-x: auto; }
     .split-table { table-layout: fixed; }
     .research-table { min-width: 1375px; table-layout: fixed; }
-    .price-reaction-table { min-width: 1510px; table-layout: fixed; }
+    .price-reaction-table { min-width: 1585px; table-layout: fixed; }
     .number-cell { font-weight: 650; white-space: nowrap; }
     .tip-head { border-bottom: 1px dotted var(--muted); cursor: help; }
     .total-row td { border-top: 2px solid var(--line); }
