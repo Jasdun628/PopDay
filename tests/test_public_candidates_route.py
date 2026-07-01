@@ -448,9 +448,9 @@ class PublicCandidatesRouteTests(unittest.TestCase):
                 self.assertIn(f"<h3>{label}</h3>", html)
             for before, after in zip(labels, labels[1:]):
                 self.assertLess(html.find(f"<h3>{before}</h3>"), html.find(f"<h3>{after}</h3>"))
-            self.assertIn("Upcoming events and Legacy events", html)
+            self.assertIn("split into Upcoming and Legacy", html)
             self.assertIn("Cached daily market-data view", html)
-            self.assertIn("total interval return", html)
+            self.assertIn("average interval return", html)
             self.assertNotIn("<h3>Evidence</h3>", html)
             self.assertNotIn("<h3>Acceptance Time</h3>", html)
             self.assertNotIn("Processed Filings", html)
