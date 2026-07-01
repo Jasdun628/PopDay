@@ -24,6 +24,10 @@ class ConfigTests(unittest.TestCase):
             config.company_websites["HARMONIC INC."],
             "https://www.harmonicinc.com/",
         )
+        self.assertEqual(
+            config.company_websites["Barnes & Noble Education, Inc."],
+            "https://bned.com/",
+        )
         self.assertEqual(config.company_websites["Example Co"], "https://example.com/")
 
 

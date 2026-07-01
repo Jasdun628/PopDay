@@ -12,6 +12,7 @@ from typing import Any
 DEFAULT_USER_AGENT = "PopDay/0.1 contact@example.com"
 
 DEFAULT_COMPANY_WEBSITES = {
+    "Barnes & Noble Education, Inc.": "https://bned.com/",
     "Climb Global Solutions, Inc.": "https://www.climbglobalsolutions.com/",
     "HARMONIC INC.": "https://www.harmonicinc.com/",
     "Radian Group Inc.": "https://www.radian.com/",

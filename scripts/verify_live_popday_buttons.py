@@ -123,6 +123,30 @@ class NavLinkParser(HTMLParser):
             self._current_text.append(data)
 
 
+class AnchorParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self._current_href: str | None = None
+        self._current_text: list[str] = []
+        self.links: list[tuple[str, str]] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "a":
+            self._current_href = dict(attrs).get("href")
+            self._current_text = []
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "a" and self._current_href is not None:
+            text = html_lib.unescape(normalize_text("".join(self._current_text)))
+            self.links.append((text, self._current_href))
+            self._current_href = None
+            self._current_text = []
+
+    def handle_data(self, data: str) -> None:
+        if self._current_href is not None:
+            self._current_text.append(data)
+
+
 def fetch(url: str) -> tuple[str, str, int]:
     request = urllib.request.Request(
         url,
@@ -154,6 +178,30 @@ def nav_links(html: str) -> dict[str, str]:
     parser = NavLinkParser()
     parser.feed(html)
     return {label: href for label, href in parser.links if label and href}
+
+
+def all_links(markup: str) -> dict[str, list[str]]:
+    parser = AnchorParser()
+    parser.feed(markup)
+    links: dict[str, list[str]] = {}
+    for label, href in parser.links:
+        if label and href:
+            links.setdefault(label, []).append(href)
+    return links
+
+
+def unlinked_investor_day_companies(markup: str) -> list[str]:
+    unlinked: list[str] = []
+    cells = re.findall(
+        r'<td class="primary-cell">\s*(.*?)\s*</td>',
+        markup,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    for cell in cells:
+        text = plain_text(cell)
+        if text and "<a " not in cell.lower():
+            unlinked.append(text)
+    return unlinked
 
 
 def check(name: str, ok: bool, failures: list[str], detail: str = "") -> None:
@@ -203,6 +251,14 @@ def check_public_tabs(base_url: str, failures: list[str]) -> None:
         )
         for required in tab.required_text:
             check(f"{tab.label} shows {required}", required in text, failures)
+        if tab.expected_tab == "announcements":
+            unlinked = unlinked_investor_day_companies(html)
+            check(
+                "Investor Days company names are linked",
+                not unlinked,
+                failures,
+                f"unlinked: {', '.join(unlinked)}" if unlinked else "",
+            )
 
 
 def check_email_alert_boundary(base_url: str, failures: list[str]) -> None:
@@ -231,6 +287,32 @@ def check_expected_companies(base_url: str, companies: list[str], failures: list
         check(f"Investor Days includes {company}", company in text, failures)
 
 
+def check_expected_company_links(
+    base_url: str,
+    company_links: list[str],
+    failures: list[str],
+) -> None:
+    if not company_links:
+        return
+    html, final_url, status = fetch(urllib.parse.urljoin(base_url, "/?tab=announcements"))
+    text = plain_text(html)
+    links = all_links(html)
+    check("expected-company-link page loads", status == 200, failures, final_url)
+    for value in company_links:
+        if "=" not in value:
+            check(f"expected company link argument {value}", False, failures, "use Company=URL")
+            continue
+        company, expected_url = [part.strip() for part in value.split("=", 1)]
+        company_hrefs = links.get(company, [])
+        check(f"Investor Days includes {company}", company in text, failures)
+        check(
+            f"Investor Days links {company}",
+            expected_url in company_hrefs,
+            failures,
+            f"expected {expected_url}; found {company_hrefs or 'no link'}",
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Verify PopDay's live public buttons and admin boundary."
@@ -242,6 +324,12 @@ def main() -> int:
         default=[],
         help="Company name that must appear on the live Investor Days tab.",
     )
+    parser.add_argument(
+        "--expect-company-link",
+        action="append",
+        default=[],
+        help="Company=URL pair that must appear as a live Investor Days hyperlink.",
+    )
     args = parser.parse_args()
 
     base_url = args.base_url.rstrip("/") + "/"
@@ -250,6 +338,7 @@ def main() -> int:
     check_public_tabs(base_url, failures)
     check_email_alert_boundary(base_url, failures)
     check_expected_companies(base_url, args.expect_company, failures)
+    check_expected_company_links(base_url, args.expect_company_link, failures)
 
     if failures:
         print("PopDay live button verification failed:", file=sys.stderr)
