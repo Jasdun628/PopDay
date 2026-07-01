@@ -48,6 +48,20 @@ def _abbrev_weekday(value) -> str:
     return _WEEKDAY_ABBR[value.weekday()]
 
 
+_PRICE_SOURCE_LABELS = {
+    "yahoo_chart_daily_json": "Yahoo (daily)",
+    "stooq_csv": "Stooq (daily)",
+}
+
+
+def _price_source_label(value: object) -> str:
+    """Friendly, short label for the price data source."""
+    raw = str(value or "").strip()
+    if not raw:
+        return "unknown"
+    return _PRICE_SOURCE_LABELS.get(raw, raw)
+
+
 def _friendly_date(value: str) -> str:
     if not value:
         return ""
@@ -222,6 +236,23 @@ def _friendly_source_datetime_str(value: str) -> str:
         f"{_abbrev_weekday(parsed)} {day}{_day_suffix(day)} "
         f"{_abbrev_month_year(parsed)} {parsed.strftime('%H:%M')} {zone}".strip()
     )
+
+
+def _friendly_source_datetime_parts(value: str) -> tuple[str, str]:
+    """Split an EDGAR acceptance datetime into (date line, time line)."""
+    if not value:
+        return "", ""
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return value, ""
+    zone = parsed.tzname() or ""
+    if zone in {"UTC-04:00", "UTC-05:00"}:
+        zone = "ET"
+    day = parsed.day
+    date_line = f"{_abbrev_weekday(parsed)} {day}{_day_suffix(day)} {_abbrev_month_year(parsed)}"
+    time_line = f"{parsed.strftime('%H:%M')} {zone}".strip()
+    return date_line, time_line
 
 
 def _parse_datetime(value: object) -> datetime | None:
@@ -779,7 +810,8 @@ def _build_admin_context(db: Database, tab: str, *, company_websites: dict[str, 
                 "event_date_raw": dict(r).get("event_date") or "",
                 "event_date": _friendly_date(r["event_date"]) if dict(r).get("event_date") else "unknown",
                 "filing_date": _friendly_date(r["filing_date"]) if dict(r).get("filing_date") else "unknown",
-                "accepted": _friendly_source_datetime_str(r["acceptance_datetime"]) if dict(r).get("acceptance_datetime") else "unknown",
+                "accepted": (_friendly_source_datetime_parts(r["acceptance_datetime"])[0] if dict(r).get("acceptance_datetime") else "unknown"),
+                "accepted_time": (_friendly_source_datetime_parts(r["acceptance_datetime"])[1] if dict(r).get("acceptance_datetime") else ""),
                 "reaction_date": _friendly_date(r["reaction_date"]) if dict(r).get("reaction_date") else "unknown",
                 "previous_close": _money_text(r["previous_close"]),
                 "reaction_close": _money_text(r["reaction_close"]),
@@ -791,7 +823,7 @@ def _build_admin_context(db: Database, tab: str, *, company_websites: dict[str, 
                 "interval_daily_volatility_pct": _pct_text(r["interval_daily_volatility_pct"]),
                 "status": _admin_display_text(r["status"]),
                 "notes": r["notes"] or "",
-                "source": r["price_data_source"] or "unknown",
+                "source": _price_source_label(r["price_data_source"]),
                 "updated": _friendly_datetime_str(r["price_data_timestamp"]) if dict(r).get("price_data_timestamp") else "unknown",
             }
             for r in db.price_reaction_rows()

@@ -143,26 +143,26 @@
   <table class="price-reaction-table">
     <colgroup>
       <col style="width: 165px"><col style="width: 65px"><col style="width: 135px">
-      <col style="width: 205px"><col style="width: 130px"><col style="width: 100px">
+      <col style="width: 150px"><col style="width: 130px"><col style="width: 100px">
       <col style="width: 100px"><col style="width: 85px"><col style="width: 110px">
       <col style="width: 115px"><col style="width: 105px"><col style="width: 110px">
-      <col style="width: 90px">
+      <col style="width: 140px">
     </colgroup>
     <thead>
       <tr>
         <th>Company</th>
         <th>Ticker</th>
         <th>Event Date</th>
-        <th><span class="tip-head" title="When the SEC accepted the filing. PopDay shows the precise acceptance timestamp where it is known, otherwise the filing date. A filing accepted at or after 4pm ET can only be reacted to the next trading day, so the reaction day shifts forward.">Filed / Accepted</span></th>
-        <th><span class="tip-head" title="The first trading session the market could respond to the announcement — the trading day on or after the filing was accepted. If it was accepted at or after 4pm ET, this is the next trading day.">Reaction Day</span></th>
-        <th><span class="tip-head" title="The share price at the close of the trading day immediately before the reaction day. It is the baseline the move is measured against.">Previous Close</span></th>
-        <th><span class="tip-head" title="The share price at the close of the reaction day itself.">Reaction Close</span></th>
-        <th><span class="tip-head" title="The percentage change from the Previous Close to the Reaction Close — how far the stock moved on the first day the market could react.">Move</span></th>
-        <th><span class="tip-head" title="How wide the stock traded on the reaction day: the day's high minus its low, shown as a percentage of the Previous Close. A bigger number means a more volatile session.">Intraday Range</span></th>
-        <th><span class="tip-head" title="The most recent daily closing price PopDay has on file for this stock. The date of that close is shown beneath the price.">Latest Close</span></th>
-        <th><span class="tip-head" title="The percentage change from the Previous Close to the Latest Close — the cumulative move over the whole window since the announcement.">Interval Return</span></th>
-        <th><span class="tip-head" title="How choppy the stock has been over the window: the standard deviation of its daily close-to-close percentage returns, from the Previous Close day through the Latest Close. Higher means bigger day-to-day swings.">Daily Volatility</span></th>
-        <th><span class="tip-head" title="Whether PopDay could build a full row of data (for example 'Ok'), along with the price source used and when the figures were last refreshed.">Status</span></th>
+        <th><span class="tip-head" data-tip="When the SEC accepted the filing. PopDay shows the precise acceptance timestamp where it is known, otherwise the filing date. A filing accepted at or after 4pm ET can only be reacted to the next trading day, so the reaction day shifts forward.">Filed / Accepted</span></th>
+        <th><span class="tip-head" data-tip="The first trading session the market could respond to the announcement — the trading day on or after the filing was accepted. If it was accepted at or after 4pm ET, this is the next trading day.">Reaction Day</span></th>
+        <th><span class="tip-head" data-tip="The share price at the close of the trading day immediately before the reaction day. It is the baseline the move is measured against.">Previous Close</span></th>
+        <th><span class="tip-head" data-tip="The share price at the close of the reaction day itself.">Reaction Close</span></th>
+        <th><span class="tip-head" data-tip="The percentage change from the Previous Close to the Reaction Close — how far the stock moved on the first day the market could react.">Move</span></th>
+        <th><span class="tip-head" data-tip="How wide the stock traded on the reaction day: the day's high minus its low, shown as a percentage of the Previous Close. A bigger number means a more volatile session.">Intraday Range</span></th>
+        <th><span class="tip-head" data-tip="The most recent daily closing price PopDay has on file for this stock. The date of that close is shown beneath the price.">Latest Close</span></th>
+        <th><span class="tip-head" data-tip="The percentage change from the Previous Close to the Latest Close — the cumulative move over the whole window since the announcement.">Interval Return</span></th>
+        <th><span class="tip-head" data-tip="How choppy the stock has been over the window: the standard deviation of its daily close-to-close percentage returns, from the Previous Close day through the Latest Close. Higher means bigger day-to-day swings.">Daily Volatility</span></th>
+        <th><span class="tip-head" data-tip="Whether PopDay could build a full row of data (for example 'Ok'), along with the price source used and when the figures were last refreshed.">Status</span></th>
       </tr>
     </thead>
     <tbody>
@@ -177,7 +177,7 @@
         </td>
         <td class="{{ 'unknown-text' if r.ticker == 'unknown' else 'secondary-cell' }}">{{ r.ticker }}</td>
         <td class="date-strong">{{ r.event_date }}</td>
-        <td class="{{ 'unknown-text' if r.accepted == 'unknown' and r.filing_date == 'unknown' else 'secondary-cell' }}">{{ r.accepted if r.accepted != 'unknown' else r.filing_date }}</td>
+        <td class="{{ 'unknown-text' if r.accepted == 'unknown' and r.filing_date == 'unknown' else 'secondary-cell' }}">{% if r.accepted != 'unknown' %}{{ r.accepted }}{% if r.accepted_time %}<div class="status-meta">{{ r.accepted_time }}</div>{% endif %}{% else %}{{ r.filing_date }}{% endif %}</td>
         <td class="{{ 'unknown-text' if r.reaction_date == 'unknown' else 'date-strong' }}">{{ r.reaction_date }}</td>
         <td class="number-cell">{{ r.previous_close }}</td>
         <td class="number-cell">{{ r.reaction_close }}</td>
@@ -277,7 +277,7 @@
       padding: 20px;
     }
     .status-title { font-size: 26px; font-weight: 750; line-height: 1.2; }
-    .status-meta { color: var(--muted); margin-top: 6px; }
+    .status-meta { color: var(--muted); margin-top: 6px; overflow-wrap: anywhere; }
     .health-strip {
       background: var(--panel);
       border: 1px solid var(--line);
@@ -417,19 +417,36 @@
     .table-scroll { overflow-x: auto; }
     .split-table { table-layout: fixed; }
     .research-table { min-width: 1520px; table-layout: fixed; }
-    .price-reaction-table { min-width: 1515px; table-layout: fixed; }
+    .price-reaction-table { min-width: 1510px; table-layout: fixed; }
     .number-cell { font-weight: 650; white-space: nowrap; }
     .tip-head { border-bottom: 1px dotted var(--muted); cursor: help; }
+    .tip-pop {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 500;
+      line-height: 1.5;
+      max-width: 320px;
+      padding: 12px 14px;
+      pointer-events: none;
+      position: fixed;
+      text-transform: none;
+      z-index: 1000;
+    }
+    .tip-pop[hidden] { display: none; }
     .sortable-head {
-      align-items: center;
-      display: inline-flex;
-      gap: 8px;
-      white-space: nowrap;
+      white-space: normal;
     }
     .sort-controls {
       display: inline-flex;
       gap: 3px;
+      margin-left: 6px;
       text-transform: none;
+      vertical-align: middle;
+      white-space: nowrap;
     }
     .sort-link {
       border: 1px solid var(--line);
@@ -1093,5 +1110,42 @@
     {% endif %}
   </div>
 </main>
+<script>
+  // Column-heading helper: show the definition on hover, and pin it open on click.
+  // The popup is fixed-position on <body>, so the table's horizontal scroll can't clip it.
+  (function () {
+    var tip = document.createElement('div');
+    tip.className = 'tip-pop';
+    tip.hidden = true;
+    tip.setAttribute('role', 'tooltip');
+    document.body.appendChild(tip);
+    var pinned = null;
+
+    function place(el) {
+      var text = el.getAttribute('data-tip');
+      if (!text) return;
+      tip.textContent = text;
+      tip.hidden = false;
+      var r = el.getBoundingClientRect();
+      var left = Math.min(r.left, window.innerWidth - tip.offsetWidth - 12);
+      tip.style.left = Math.max(12, left) + 'px';
+      tip.style.top = (r.bottom + 8) + 'px';
+    }
+    function hide() { tip.hidden = true; }
+
+    document.querySelectorAll('.tip-head').forEach(function (el) {
+      el.addEventListener('mouseenter', function () { if (!pinned) place(el); });
+      el.addEventListener('mouseleave', function () { if (!pinned) hide(); });
+      el.addEventListener('click', function (e) {
+        e.stopPropagation();
+        if (pinned === el) { pinned = null; hide(); }
+        else { pinned = el; place(el); }
+      });
+    });
+    document.addEventListener('click', function () { if (pinned) { pinned = null; hide(); } });
+    window.addEventListener('scroll', function () { pinned = null; hide(); }, true);
+    window.addEventListener('resize', function () { pinned = null; hide(); });
+  })();
+</script>
 </body>
 </html>
