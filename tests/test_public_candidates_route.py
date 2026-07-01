@@ -86,6 +86,55 @@ class PublicCandidatesRouteTests(unittest.TestCase):
             self.assertIn('href="https://www.harmonicinc.com/"', html)
             self.assertIn(">HARMONIC INC.</a>", html)
 
+    def test_investor_days_table_hides_email_and_places_source_type_after_evidence(self):
+        with tempfile.NamedTemporaryFile(suffix=".sqlite3") as db_file:
+            os.environ["POPDAY_DB_PATH"] = db_file.name
+            os.environ["POPDAY_ADMIN_PASSWORD"] = "test-password"
+            from popday.db import Database
+            from flask_app import app
+
+            db = Database(db_file.name)
+            try:
+                db.conn.execute(
+                    """
+                    INSERT INTO detections
+                    (accession_number, company_name, cik, form_type, filing_date, filing_url,
+                     event_type, event_date, matched_phrase, matched_location, snippet, status,
+                     dismissal_reason, evidence_url, evidence_label, created_timestamp)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        "column-order-route",
+                        "Column Order Co",
+                        "0000000002",
+                        "8-K",
+                        "20260617",
+                        "https://www.sec.gov/column-order-route.htm",
+                        "Investor Day",
+                        "2026-09-15",
+                        "investor day",
+                        "press_release",
+                        "Column Order Co will host an Investor Day.",
+                        "alert_candidate",
+                        None,
+                        "https://www.sec.gov/exhibit-991.htm",
+                        "Exhibit 99.1",
+                        "2026-06-17T01:00:00+00:00",
+                    ),
+                )
+                db.conn.commit()
+            finally:
+                db.close()
+
+            client = app.test_client()
+            response = client.get("/?tab=announcements")
+            html = response.get_data(as_text=True)
+
+            self.assertEqual(response.status_code, 200)
+            self.assertNotIn("<th>Email</th>", html)
+            self.assertLess(html.find("<th>Evidence</th>"), html.find("<th>Source Type</th>"))
+            self.assertLess(html.find("Exhibit 99.1"), html.find('<td class="secondary-cell">EDGAR</td>'))
+
     def test_public_research_hype_tab_renders(self):
         with tempfile.NamedTemporaryFile(suffix=".sqlite3") as db_file:
             os.environ["POPDAY_DB_PATH"] = db_file.name

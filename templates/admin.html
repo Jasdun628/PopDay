@@ -516,7 +516,6 @@
               </span>
             </span>
           </th>
-          <th>Source Type</th>
           <th>
             <span class="sortable-head">
               Hype Count
@@ -530,7 +529,7 @@
               </span>
             </span>
           </th>
-          <th>Matched Phrase</th><th>Email</th><th>Evidence</th>
+          <th>Matched Phrase</th><th>Evidence</th><th>Source Type</th>
         </tr>
       </thead>
       <tbody>
@@ -545,21 +544,14 @@
           </td>
           <td class="date-strong">{{ a.event_date }}</td>
           <td class="date-muted">{{ a.filing_date }}</td>
-          <td class="secondary-cell">{{ a.source_type }}</td>
           <td class="date-strong">{{ a.hype_count if a.hype_count is not none else "—" }}</td>
           <td class="phrase-text">{{ a.matched_phrase }}</td>
-          <td>
-            {% if a.alert_sent %}
-              <span class="status-good">sent</span>
-            {% else %}
-              <span class="pill pill-neutral">not sent</span>
-            {% endif %}
-          </td>
           <td>
             {% if a.source_url %}
             <a href="{{ a.source_url }}" target="_blank" rel="noopener" class="evidence-link">{{ a.source_link_label }}</a>
             {% endif %}
           </td>
+          <td class="secondary-cell">{{ a.source_type }}</td>
         </tr>
         {% endfor %}
       </tbody>

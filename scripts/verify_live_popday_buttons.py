@@ -259,6 +259,14 @@ def check_public_tabs(base_url: str, failures: list[str]) -> None:
                 failures,
                 f"unlinked: {', '.join(unlinked)}" if unlinked else "",
             )
+            check("Investor Days Email column removed", "<th>Email</th>" not in html, failures)
+            check(
+                "Investor Days Evidence before Source Type",
+                html.find("<th>Evidence</th>") != -1
+                and html.find("<th>Source Type</th>") != -1
+                and html.find("<th>Evidence</th>") < html.find("<th>Source Type</th>"),
+                failures,
+            )
 
 
 def check_email_alert_boundary(base_url: str, failures: list[str]) -> None:
