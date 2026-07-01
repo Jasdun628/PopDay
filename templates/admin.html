@@ -146,20 +146,27 @@
       <col style="width: 140px">
     </colgroup>
     <thead>
+      <tr class="group-row">
+        <th colspan="3" class="grp grp-event">The event</th>
+        <th colspan="2" class="grp grp-announce grp-start">The announcement</th>
+        <th colspan="4" class="grp grp-reaction grp-start">First-day reaction</th>
+        <th colspan="3" class="grp grp-since grp-start">Since then</th>
+        <th class="grp grp-status grp-start">Status</th>
+      </tr>
       <tr>
         <th>Company</th>
         <th>Event Date</th>
         <th><span class="tip-head" data-tip="The share price at the close of the actual Investor Day (the first trading day on or after the event date). Green means the stock rose that day (a pop); red means it fell (a tank). The smaller figure is that day's move. Blank for upcoming events that have not happened yet.">Investor Day Close</span></th>
-        <th><span class="tip-head" data-tip="When the SEC accepted the filing. PopDay shows the precise acceptance timestamp where it is known, otherwise the filing date. A filing accepted at or after 4pm ET can only be reacted to the next trading day, so the reaction day shifts forward.">Filed / Accepted</span></th>
+        <th class="grp-start"><span class="tip-head" data-tip="When the SEC accepted the filing. PopDay shows the precise acceptance timestamp where it is known, otherwise the filing date. A filing accepted at or after 4pm ET can only be reacted to the next trading day, so the reaction day shifts forward.">Filed / Accepted</span></th>
         <th><span class="tip-head" data-tip="The first trading session the market could respond to the announcement — the trading day on or after the filing was accepted. If it was accepted at or after 4pm ET, this is the next trading day.">Reaction Day</span></th>
-        <th><span class="tip-head" data-tip="The share price at the close of the trading day immediately before the reaction day. It is the baseline the move is measured against.">Previous Close</span></th>
+        <th class="grp-start"><span class="tip-head" data-tip="The share price at the close of the trading day immediately before the reaction day. It is the baseline the move is measured against.">Previous Close</span></th>
         <th><span class="tip-head" data-tip="The share price at the close of the reaction day itself.">Reaction Close</span></th>
         <th><span class="tip-head" data-tip="The percentage change from the Previous Close to the Reaction Close — how far the stock moved on the first day the market could react.">Move</span></th>
         <th><span class="tip-head" data-tip="How wide the stock traded on the reaction day: the day's high minus its low, shown as a percentage of the Previous Close. A bigger number means a more volatile session.">Intraday Range</span></th>
-        <th><span class="tip-head" data-tip="The most recent daily closing price PopDay has on file for this stock. The date of that close is shown beneath the price.">Latest Close</span></th>
+        <th class="grp-start"><span class="tip-head" data-tip="The most recent daily closing price PopDay has on file for this stock. The date of that close is shown beneath the price.">Latest Close</span></th>
         <th><span class="tip-head" data-tip="The percentage change from the Previous Close to the Latest Close — the cumulative move over the whole window since the announcement.">Interval Return</span></th>
         <th><span class="tip-head" data-tip="How choppy the stock has been over the measurement window — that window runs from the day before the reaction day (the Previous Close) through to the Latest Close. It is the standard deviation of the daily close-to-close percentage returns across those trading days; a higher number means bigger day-to-day swings.">Daily Volatility</span></th>
-        <th><span class="tip-head" data-tip="Whether PopDay could build a full row of data for this announcement (for example 'Ok'), or a short note explaining why data is missing.">Status</span></th>
+        <th class="grp-start"><span class="tip-head" data-tip="Whether PopDay could build a full row of data for this announcement (for example 'Ok'), or a short note explaining why data is missing.">Status</span></th>
       </tr>
     </thead>
     <tbody>
@@ -175,16 +182,16 @@
         </td>
         <td class="date-strong">{{ r.event_date }}</td>
         <td class="{{ 'move-up' if r.event_day_direction == 'up' else ('move-down' if r.event_day_direction == 'down' else 'number-cell') }}">{{ r.event_day_close }}{% if r.event_day_move_pct %}<div class="move-sub">{{ r.event_day_move_pct }}</div>{% endif %}</td>
-        <td class="{{ 'unknown-text' if r.accepted == 'unknown' and r.filing_date == 'unknown' else 'secondary-cell' }}">{% if r.accepted != 'unknown' %}{{ r.accepted }}{% if r.accepted_time %}<div class="status-meta">{{ r.accepted_time }}</div>{% endif %}{% else %}{{ r.filing_date }}{% endif %}</td>
+        <td class="grp-start {{ 'unknown-text' if r.accepted == 'unknown' and r.filing_date == 'unknown' else 'secondary-cell' }}">{% if r.accepted != 'unknown' %}{{ r.accepted }}{% if r.accepted_time %}<div class="status-meta">{{ r.accepted_time }}</div>{% endif %}{% else %}{{ r.filing_date }}{% endif %}</td>
         <td class="{{ 'unknown-text' if r.reaction_date == 'unknown' else 'date-strong' }}">{{ r.reaction_date }}</td>
-        <td class="number-cell">{{ r.previous_close }}</td>
+        <td class="number-cell grp-start">{{ r.previous_close }}</td>
         <td class="number-cell">{{ r.reaction_close }}</td>
         <td class="number-cell">{{ r.announcement_move_pct }}</td>
         <td class="number-cell">{{ r.intraday_range_pct }}</td>
-        <td class="number-cell">{{ r.latest_close }}<div class="status-meta">{{ r.latest_close_date }}</div></td>
+        <td class="number-cell grp-start">{{ r.latest_close }}<div class="status-meta">{{ r.latest_close_date }}</div></td>
         <td class="number-cell">{{ r.interval_return_pct }}</td>
         <td class="number-cell">{{ r.interval_daily_volatility_pct }}</td>
-        <td class="{{ 'status-good' if r.status == 'Ok' else 'secondary-cell' }}">
+        <td class="grp-start {{ 'status-good' if r.status == 'Ok' else 'secondary-cell' }}">
           {{ r.status }}
           {% if r.notes %}<div class="status-meta">{{ r.notes }}</div>{% endif %}
         </td>
@@ -193,7 +200,7 @@
     </tbody>
     <tfoot>
       <tr class="total-row">
-        <td colspan="10" class="total-label">Average interval return</td>
+        <td colspan="10" class="total-label {% if average.startswith('+') %}move-up{% elif average.startswith('-') %}move-down{% endif %}">Average interval return</td>
         <td class="number-cell {% if average.startswith('+') %}move-up{% elif average.startswith('-') %}move-down{% endif %}">{{ average }}</td>
         <td colspan="2"></td>
       </tr>
@@ -431,7 +438,21 @@
     .number-cell { font-weight: 650; white-space: nowrap; }
     .tip-head { border-bottom: 1px dotted var(--muted); cursor: help; }
     .total-row td { border-top: 2px solid var(--line); }
-    .total-label { color: var(--muted); font-weight: 750; text-align: right; }
+    .total-label { font-weight: 750; text-align: right; }
+    .group-row th {
+      border-bottom: 0.5px solid var(--line);
+      font-size: 12px;
+      font-weight: 700;
+      padding: 6px 10px;
+      text-align: left;
+      text-transform: none;
+    }
+    .grp-event { background: #e6f1fb; color: #0c447c; }
+    .grp-announce { background: #f1efe8; color: #2c2c2a; }
+    .grp-reaction { background: #faeeda; color: #633806; }
+    .grp-since { background: #e1f5ee; color: #085041; }
+    .grp-status { background: #f1efe8; color: #2c2c2a; }
+    .grp-start { border-left: 2px dotted #bdbcb2; }
     .tip-pop {
       background: var(--panel);
       border: 1px solid var(--line);
