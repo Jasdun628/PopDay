@@ -39,17 +39,24 @@ def main() -> int:
     check("front title", "<title>PopDay</title>" in front, failures)
     check(
         "public tabs",
-        all(tab in front for tab in ["System Health", "Investor Days", "Research / Hype", "Schedule", "Scan Log", "Help"])
+        all(tab in front for tab in ["System Health", "Investor Days", "Research / Hype", "Price Reaction", "Schedule", "Scan Log", "Help"])
         and "Filings" not in nav_text(front),
         failures,
     )
     check(
         "schedule before system health",
         nav_text(front).find("Research / Hype")
+        < nav_text(front).find("Price Reaction")
         < nav_text(front).find("Scan Log")
         < nav_text(front).find("Schedule")
         < nav_text(front).find("System Health")
         < nav_text(front).find("Help"),
+        failures,
+    )
+    check(
+        "price reaction before scan log",
+        nav_text(front).find("Price Reaction")
+        < nav_text(front).find("Scan Log"),
         failures,
     )
     check("rules tab hidden", "Rules" not in front, failures)
@@ -85,6 +92,24 @@ def main() -> int:
                 "8-K 8.01 Count",
                 "Presentation / Deck Count",
                 "Latest filing AD-ID",
+            ]
+        ),
+        failures,
+    )
+
+    price_reaction = fetch("?tab=price_reaction&v=verify")
+    price_text = plain_text(price_reaction)
+    check("price reaction tab", "Price Reaction" in price_text, failures)
+    check(
+        "price reaction cache labels",
+        all(
+            label in price_text
+            for label in [
+                "Cached daily market data",
+                "Previous Close",
+                "Reaction Close",
+                "Daily Volatility",
+                "Interval Return",
             ]
         ),
         failures,

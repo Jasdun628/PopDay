@@ -34,7 +34,8 @@ class PublicCandidatesRouteTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertIn("Running list of qualifying Investor Day announcements", html)
             self.assertLess(html.find("Investor Days"), html.find("Research / Hype"))
-            self.assertLess(html.find("Research / Hype"), html.find("Scan Log"))
+            self.assertLess(html.find("Research / Hype"), html.find("Price Reaction"))
+            self.assertLess(html.find("Price Reaction"), html.find("Scan Log"))
             self.assertLess(html.find("Scan Log"), html.find("Schedule"))
             self.assertLess(html.find("Schedule"), html.find("System Health"))
             self.assertLess(html.find("System Health"), html.find("Help"))
@@ -250,6 +251,60 @@ class PublicCandidatesRouteTests(unittest.TestCase):
             self.assertIn("Investor Comms Count", html)
             self.assertNotIn("/admin/login", response.request.path)
 
+    def test_public_price_reaction_tab_renders_cached_view(self):
+        with tempfile.NamedTemporaryFile(suffix=".sqlite3") as db_file:
+            os.environ["POPDAY_DB_PATH"] = db_file.name
+            os.environ["POPDAY_ADMIN_PASSWORD"] = "test-password"
+            from popday.db import Database
+            from flask_app import app
+
+            db = Database(db_file.name)
+            try:
+                db.upsert_price_reaction(
+                    {
+                        "announcement_key": "detections:1",
+                        "source_table": "detections",
+                        "source_id": 1,
+                        "company_name": "Price Route Co",
+                        "cik": "0000000001",
+                        "ticker": "PRCE",
+                        "event_date": "2026-09-15",
+                        "filing_date": "20260617",
+                        "acceptance_datetime": "2026-06-17T15:30:00-04:00",
+                        "reaction_date": "2026-06-17",
+                        "previous_close_date": "2026-06-16",
+                        "previous_close": 10.0,
+                        "reaction_open": 10.1,
+                        "reaction_high": 10.8,
+                        "reaction_low": 9.9,
+                        "reaction_close": 10.5,
+                        "announcement_move_pct": 5.0,
+                        "intraday_range_pct": 9.0,
+                        "latest_close_date": "2026-06-30",
+                        "latest_close": 11.0,
+                        "interval_return_pct": 10.0,
+                        "interval_daily_volatility_pct": 1.25,
+                        "price_data_source": "stooq_daily_csv",
+                        "price_data_timestamp": "2026-07-01T08:00:00+00:00",
+                        "status": "ok",
+                        "notes": None,
+                    }
+                )
+            finally:
+                db.close()
+
+            client = app.test_client()
+            response = client.get("/?tab=price_reaction")
+            html = response.get_data(as_text=True)
+
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("Price Reaction", html)
+            self.assertIn("Cached daily market data", html)
+            self.assertIn("Price Route Co", html)
+            self.assertIn("Previous Close", html)
+            self.assertIn("Daily Volatility", html)
+            self.assertIn("+5.00%", html)
+
     def test_public_help_matches_current_tabs(self):
         with tempfile.NamedTemporaryFile(suffix=".sqlite3") as db_file:
             os.environ["POPDAY_DB_PATH"] = db_file.name
@@ -275,7 +330,7 @@ class PublicCandidatesRouteTests(unittest.TestCase):
                 self.assertIn(label, html)
             self.assertIn("Upcoming events and Legacy events", html)
             self.assertIn("after-market announcements", html)
-            self.assertIn("Not live yet", html)
+            self.assertIn("Cached daily market-data view", html)
             self.assertNotIn("Processed Filings", html)
             self.assertNotIn("Include Rules", html)
             self.assertNotIn("No Commentary", html)

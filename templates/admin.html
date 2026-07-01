@@ -290,6 +290,8 @@
     .unknown-text { color: var(--muted); font-weight: 500; }
     .table-scroll { overflow-x: auto; }
     .research-table { min-width: 1480px; }
+    .price-reaction-table { min-width: 1320px; }
+    .number-cell { font-weight: 650; white-space: nowrap; }
     .sortable-head {
       align-items: center;
       display: inline-flex;
@@ -655,6 +657,71 @@
   </section>
 
   {# ------------------------------------------------------------------ #}
+  {# PRICE REACTION                                                      #}
+  {# ------------------------------------------------------------------ #}
+  {% elif active_tab == 'price_reaction' %}
+  <section>
+    <h2>Price Reaction</h2>
+    <p class="page-note">Cached daily market data for qualifying announcements. These are latest available daily closes, not live tick prices.</p>
+    {% if price_reaction_rows %}
+    <div class="table-scroll">
+      <table class="price-reaction-table">
+        <thead>
+          <tr>
+            <th>Company</th>
+            <th>Ticker</th>
+            <th>Event Date</th>
+            <th>Announced / Filed</th>
+            <th>Accepted</th>
+            <th>Reaction Day</th>
+            <th>Previous Close</th>
+            <th>Reaction Close</th>
+            <th>Move</th>
+            <th>Intraday Range</th>
+            <th>Latest Close</th>
+            <th>Interval Return</th>
+            <th>Daily Volatility</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in price_reaction_rows %}
+          <tr>
+            <td class="primary-cell">
+              {% if r.company_url %}
+              <a href="{{ r.company_url }}" target="_blank" rel="noopener" class="company-link">{{ r.company_name }}</a>
+              {% else %}
+              {{ r.company_name }}
+              {% endif %}
+            </td>
+            <td class="{{ 'unknown-text' if r.ticker == 'unknown' else 'secondary-cell' }}">{{ r.ticker }}</td>
+            <td class="date-strong">{{ r.event_date }}</td>
+            <td class="date-muted">{{ r.filing_date }}</td>
+            <td class="{{ 'unknown-text' if r.accepted == 'unknown' else 'secondary-cell' }}">{{ r.accepted }}</td>
+            <td class="{{ 'unknown-text' if r.reaction_date == 'unknown' else 'date-strong' }}">{{ r.reaction_date }}</td>
+            <td class="number-cell">{{ r.previous_close }}</td>
+            <td class="number-cell">{{ r.reaction_close }}</td>
+            <td class="number-cell">{{ r.announcement_move_pct }}</td>
+            <td class="number-cell">{{ r.intraday_range_pct }}</td>
+            <td class="number-cell">{{ r.latest_close }}<div class="status-meta">{{ r.latest_close_date }}</div></td>
+            <td class="number-cell">{{ r.interval_return_pct }}</td>
+            <td class="number-cell">{{ r.interval_daily_volatility_pct }}</td>
+            <td class="{{ 'status-good' if r.status == 'Ok' else 'secondary-cell' }}">
+              {{ r.status }}
+              {% if r.notes %}<div class="status-meta">{{ r.notes }}</div>{% endif %}
+              <div class="status-meta">{{ r.source }}; refreshed {{ r.updated }}</div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty">No cached Price Reaction rows yet.</div>
+    {% endif %}
+  </section>
+
+  {# ------------------------------------------------------------------ #}
   {# RULES                                                               #}
   {# ------------------------------------------------------------------ #}
   {% elif active_tab == 'rules' %}
@@ -950,11 +1017,11 @@
         ("Investor Days",       "Confirmed Investor Day, Analyst Day, and Capital Markets Day announcements PopDay has found. The list is split into Upcoming events and Legacy events."),
         ("Evidence",            "Evidence links open the announcement document PopDay used, usually the exhibit or filing page that contains the actual event announcement."),
         ("Research / Hype",     "Research view for already detected events. It shows stored Hype Count fields and uses unknown where PopDay does not yet have enough data."),
+        ("Price Reaction",      "Cached daily market-data view for confirmed announcements. It shows previous close, reaction-day move, latest available close, interval return, and transparent daily volatility."),
         ("Scan Log",            "Inspection view for filings PopDay examined, including dismissed false positives. It is useful for checking why something did or did not qualify."),
         ("Schedule",            "Recent Mac Mini scanner runs and the next expected run time."),
         ("System Health",       "Current front-door health, freshness, backup state, and latest scan facts."),
-        ("Acceptance Time",     "PopDay now stores EDGAR acceptance time where available. This matters because after-market announcements should usually be measured against the next trading day."),
-        ("Price Reaction",      "Not live yet. This is the planned tab for free cached price reaction measures, including previous close, latest available price, announcement-day move, and transparent volatility.")
+        ("Acceptance Time",     "PopDay stores EDGAR acceptance time where available. This matters because after-market announcements should usually be measured against the next trading day.")
       ] %}
       <div class="manual-card">
         <h3>{{ title }}</h3>
@@ -969,6 +1036,7 @@
     {% if active_tab == 'summary' %}This page shows the current alert state and the latest EDGAR check.
     {% elif active_tab == 'announcements' %}This page shows every qualifying Investor Day announcement PopDay has found.
     {% elif active_tab == 'research' %}This page enriches already detected event announcements with stored Hype Count research fields.
+    {% elif active_tab == 'price_reaction' %}This page shows cached daily price reaction measures for qualifying announcements.
     {% elif active_tab == 'health' %}This page shows recent scheduled runs and low-level scan counts.
     {% elif active_tab == 'candidates' %}This page shows filings that matched or were dismissed, with public SEC source links.
     {% elif active_tab == 'help' %}This page briefly explains how PopDay works.

@@ -53,6 +53,13 @@ def backfill_acceptance(args: argparse.Namespace) -> int:
     return 0
 
 
+def refresh_price_reaction(args: argparse.Namespace) -> int:
+    if not args.skip_backup:
+        run([sys.executable, "scripts/backup_popday_runtime.py", "--reason", "pre price reaction refresh"])
+    run([sys.executable, "scripts/refresh_price_reaction.py", "--db-path", str(args.db_path)])
+    return 0
+
+
 def _runtime_con(db_path: Path) -> sqlite3.Connection:
     con = sqlite3.connect(str(db_path))
     con.row_factory = sqlite3.Row
@@ -143,6 +150,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Do not create the normal runtime backup before writing.",
     )
     backfill_parser.set_defaults(func=backfill_acceptance)
+
+    price_parser = subparsers.add_parser(
+        "refresh-price-reaction",
+        help="Refresh cached daily Price Reaction rows for qualifying announcements.",
+    )
+    price_parser.add_argument("--db-path", type=Path, default=RUNTIME_DB)
+    price_parser.add_argument(
+        "--skip-backup",
+        action="store_true",
+        help="Do not create the normal runtime backup before writing.",
+    )
+    price_parser.set_defaults(func=refresh_price_reaction)
 
     runtime_parser = subparsers.add_parser("runtime-summary", help="Summarize Mac Mini runtime DB.")
     runtime_parser.add_argument("--db-path", type=Path, default=RUNTIME_DB)

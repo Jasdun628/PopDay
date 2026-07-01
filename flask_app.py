@@ -149,6 +149,7 @@ def unsubscribe():
 ADMIN_TABS = [
     ("announcements", "Investor Days"),
     ("research", "Research / Hype"),
+    ("price_reaction", "Price Reaction"),
     ("rules", "Rules"),
     ("recipients", "Email Alerts"),
     ("candidates", "Scan Log"),
@@ -160,6 +161,7 @@ ADMIN_TABS = [
 PUBLIC_TABS = [
     ("announcements", "Investor Days"),
     ("research", "Research / Hype"),
+    ("price_reaction", "Price Reaction"),
     ("candidates", "Scan Log"),
     ("health", "Schedule"),
     ("summary", "System Health"),
@@ -181,6 +183,23 @@ def _friendly_datetime_str(value: str) -> str:
     return (
         f"{parsed.strftime('%A')} {day}{_day_suffix(day)} "
         f"{parsed.strftime('%B %Y')} {parsed.strftime('%H:%M %Z')}"
+    )
+
+
+def _friendly_source_datetime_str(value: str) -> str:
+    if not value:
+        return ""
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return value
+    zone = parsed.tzname() or ""
+    if zone in {"UTC-04:00", "UTC-05:00"}:
+        zone = "ET"
+    day = parsed.day
+    return (
+        f"{parsed.strftime('%A')} {day}{_day_suffix(day)} "
+        f"{parsed.strftime('%B %Y')} {parsed.strftime('%H:%M')} {zone}".strip()
     )
 
 
@@ -362,6 +381,24 @@ def _parse_date_for_delta(value: object) -> date | None:
 def _unknown_text(value: object) -> str:
     text = str(value or "").strip()
     return text or "unknown"
+
+
+def _money_text(value: object) -> str:
+    if value is None or value == "":
+        return "unknown"
+    try:
+        return f"${float(value):,.2f}"
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _pct_text(value: object) -> str:
+    if value is None or value == "":
+        return "unknown"
+    try:
+        return f"{float(value):+.2f}%"
+    except (TypeError, ValueError):
+        return str(value)
 
 
 def _research_payload(value: object) -> list[dict]:
@@ -698,6 +735,31 @@ def _build_admin_context(db: Database, tab: str, *, company_websites: dict[str, 
                 "the event has not been backfilled yet."
             ),
         )
+    elif tab == "price_reaction":
+        ctx["price_reaction_rows"] = [
+            {
+                "company_name": r["company_name"],
+                "company_url": _company_website(r["company_name"], company_websites),
+                "ticker": _unknown_text(r["ticker"]),
+                "event_date": _friendly_date(r["event_date"]) if dict(r).get("event_date") else "unknown",
+                "filing_date": _friendly_date(r["filing_date"]) if dict(r).get("filing_date") else "unknown",
+                "accepted": _friendly_source_datetime_str(r["acceptance_datetime"]) if dict(r).get("acceptance_datetime") else "unknown",
+                "reaction_date": _friendly_date(r["reaction_date"]) if dict(r).get("reaction_date") else "unknown",
+                "previous_close": _money_text(r["previous_close"]),
+                "reaction_close": _money_text(r["reaction_close"]),
+                "announcement_move_pct": _pct_text(r["announcement_move_pct"]),
+                "intraday_range_pct": _pct_text(r["intraday_range_pct"]),
+                "latest_close_date": _friendly_date(r["latest_close_date"]) if dict(r).get("latest_close_date") else "unknown",
+                "latest_close": _money_text(r["latest_close"]),
+                "interval_return_pct": _pct_text(r["interval_return_pct"]),
+                "interval_daily_volatility_pct": _pct_text(r["interval_daily_volatility_pct"]),
+                "status": _admin_display_text(r["status"]),
+                "notes": r["notes"] or "",
+                "source": r["price_data_source"] or "unknown",
+                "updated": _friendly_datetime_str(r["price_data_timestamp"]) if dict(r).get("price_data_timestamp") else "unknown",
+            }
+            for r in db.price_reaction_rows()
+        ]
     elif tab == "rules":
         from popday.rules import ALERT_REQUIREMENTS
         ctx["rules"] = [dict(r) for r in db.rules()]

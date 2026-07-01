@@ -50,6 +50,17 @@ PUBLIC_TABS = (
         ),
     ),
     PublicTab(
+        "Price Reaction",
+        "price_reaction",
+        (
+            "Price Reaction",
+            "Cached daily market data",
+            "Previous Close",
+            "Daily Volatility",
+            "Interval Return",
+        ),
+    ),
+    PublicTab(
         "Scan Log",
         "candidates",
         (

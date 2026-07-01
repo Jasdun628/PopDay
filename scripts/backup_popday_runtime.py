@@ -45,7 +45,14 @@ def _copy_tree(src: Path, dst: Path, copied: list[tuple[Path, Path, int]]) -> No
 def _sqlite_counts(db_path: Path) -> list[str]:
     if not db_path.exists():
         return [f"{db_path}: missing"]
-    tables = ["processed_filings", "detections", "known_announcements", "alert_recipients", "rules"]
+    tables = [
+        "processed_filings",
+        "detections",
+        "known_announcements",
+        "price_reactions",
+        "alert_recipients",
+        "rules",
+    ]
     rows: list[str] = []
     con = sqlite3.connect(db_path)
     try:

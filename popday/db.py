@@ -97,6 +97,35 @@ CREATE TABLE IF NOT EXISTS hype_tracking (
     last_checked TEXT,
     detected_json TEXT
 );
+
+CREATE TABLE IF NOT EXISTS price_reactions (
+    announcement_key TEXT PRIMARY KEY,
+    source_table TEXT NOT NULL,
+    source_id INTEGER,
+    company_name TEXT NOT NULL,
+    cik TEXT,
+    ticker TEXT,
+    event_date TEXT,
+    filing_date TEXT,
+    acceptance_datetime TEXT,
+    reaction_date TEXT,
+    previous_close_date TEXT,
+    previous_close REAL,
+    reaction_open REAL,
+    reaction_high REAL,
+    reaction_low REAL,
+    reaction_close REAL,
+    announcement_move_pct REAL,
+    intraday_range_pct REAL,
+    latest_close_date TEXT,
+    latest_close REAL,
+    interval_return_pct REAL,
+    interval_daily_volatility_pct REAL,
+    price_data_source TEXT,
+    price_data_timestamp TEXT,
+    status TEXT NOT NULL,
+    notes TEXT
+);
 """
 
 
@@ -546,7 +575,9 @@ class Database:
     def investor_day_announcements(self) -> list[dict[str, Any]]:
         rows = self.conn.execute(
             """
-            SELECT d.company_name, d.event_type, d.event_date, d.form_type, d.filing_date,
+            SELECT d.id AS source_id, 'detections' AS source_table,
+                   d.company_name, d.cik, d.ticker, d.event_type, d.event_date,
+                   d.form_type, d.filing_date,
                    d.acceptance_datetime, d.filing_url AS source_url, d.evidence_url, d.evidence_label,
                    d.accession_number, d.matched_phrase, d.matched_location, d.alert_sent,
                    d.alert_sent_timestamp, d.created_timestamp, 'EDGAR' AS source_type,
@@ -561,7 +592,8 @@ class Database:
         ).fetchall()
         known_rows = self.conn.execute(
             """
-            SELECT company_name, event_type, event_date, NULL AS form_type,
+            SELECT id AS source_id, 'known_announcements' AS source_table,
+                   company_name, NULL AS cik, NULL AS ticker, event_type, event_date, NULL AS form_type,
                    announcement_date AS filing_date, NULL AS acceptance_datetime,
                    source_url, NULL AS accession_number,
                    source_url AS evidence_url, source_label AS evidence_label,
@@ -600,6 +632,69 @@ class Database:
             key=lambda row: (row["event_date"] or "", row["created_timestamp"] or ""),
             reverse=True,
         )
+
+    def upsert_price_reaction(self, row: dict[str, Any]) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO price_reactions
+            (announcement_key, source_table, source_id, company_name, cik, ticker,
+             event_date, filing_date, acceptance_datetime, reaction_date, previous_close_date,
+             previous_close, reaction_open, reaction_high, reaction_low, reaction_close,
+             announcement_move_pct, intraday_range_pct, latest_close_date, latest_close,
+             interval_return_pct, interval_daily_volatility_pct, price_data_source,
+             price_data_timestamp, status, notes)
+            VALUES
+            (:announcement_key, :source_table, :source_id, :company_name, :cik, :ticker,
+             :event_date, :filing_date, :acceptance_datetime, :reaction_date, :previous_close_date,
+             :previous_close, :reaction_open, :reaction_high, :reaction_low, :reaction_close,
+             :announcement_move_pct, :intraday_range_pct, :latest_close_date, :latest_close,
+             :interval_return_pct, :interval_daily_volatility_pct, :price_data_source,
+             :price_data_timestamp, :status, :notes)
+            ON CONFLICT(announcement_key) DO UPDATE SET
+                source_table = excluded.source_table,
+                source_id = excluded.source_id,
+                company_name = excluded.company_name,
+                cik = excluded.cik,
+                ticker = excluded.ticker,
+                event_date = excluded.event_date,
+                filing_date = excluded.filing_date,
+                acceptance_datetime = excluded.acceptance_datetime,
+                reaction_date = excluded.reaction_date,
+                previous_close_date = excluded.previous_close_date,
+                previous_close = excluded.previous_close,
+                reaction_open = excluded.reaction_open,
+                reaction_high = excluded.reaction_high,
+                reaction_low = excluded.reaction_low,
+                reaction_close = excluded.reaction_close,
+                announcement_move_pct = excluded.announcement_move_pct,
+                intraday_range_pct = excluded.intraday_range_pct,
+                latest_close_date = excluded.latest_close_date,
+                latest_close = excluded.latest_close,
+                interval_return_pct = excluded.interval_return_pct,
+                interval_daily_volatility_pct = excluded.interval_daily_volatility_pct,
+                price_data_source = excluded.price_data_source,
+                price_data_timestamp = excluded.price_data_timestamp,
+                status = excluded.status,
+                notes = excluded.notes
+            """,
+            row,
+        )
+        self.conn.commit()
+
+    def price_reaction_rows(self) -> list[sqlite3.Row]:
+        return self.conn.execute(
+            """
+            SELECT announcement_key, source_table, source_id, company_name, cik, ticker,
+                   event_date, filing_date, acceptance_datetime, reaction_date,
+                   previous_close_date, previous_close, reaction_open, reaction_high,
+                   reaction_low, reaction_close, announcement_move_pct, intraday_range_pct,
+                   latest_close_date, latest_close, interval_return_pct,
+                   interval_daily_volatility_pct, price_data_source, price_data_timestamp,
+                   status, notes
+            FROM price_reactions
+            ORDER BY COALESCE(filing_date, '') DESC, company_name
+            """
+        ).fetchall()
 
     def investor_day_announcement_count(self) -> int:
         return len(self.investor_day_announcements())

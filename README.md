@@ -74,6 +74,7 @@ python3 scripts/popday_ops.py runtime-summary
 python3 scripts/popday_ops.py verify-live
 python3 scripts/popday_ops.py deploy
 python3 scripts/popday_ops.py backfill-acceptance
+python3 scripts/popday_ops.py refresh-price-reaction
 python3 scripts/popday_ops.py check-pythonanywhere-db
 ```
 
@@ -91,8 +92,8 @@ python3 scripts/verify_live_popday_buttons.py
 
 `verify_live_popday_buttons.py` is the public button smoke test. It opens the
 live public front door, follows the public navigation links for Investor Days,
-Research / Hype, Scan Log, Schedule, System Health, and Help, and confirms the
-Email Alerts page redirects signed-out users to login.
+Research / Hype, Price Reaction, Scan Log, Schedule, System Health, and Help,
+and confirms the Email Alerts page redirects signed-out users to login.
 
 After the scripts pass, use the in-app browser to click the affected live
 button/tab and inspect the visible result. A user-facing PopDay change is not
