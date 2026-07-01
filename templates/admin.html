@@ -83,24 +83,22 @@
       <col style="width: 180px"><col style="width: 80px"><col style="width: 120px">
       <col style="width: 125px"><col style="width: 125px"><col style="width: 95px">
       <col style="width: 110px"><col style="width: 130px"><col style="width: 100px">
-      <col style="width: 100px"><col style="width: 140px"><col style="width: 120px">
-      <col style="width: 90px">
+      <col style="width: 100px"><col style="width: 120px"><col style="width: 90px">
     </colgroup>
     <thead>
       <tr>
         <th>{{ research_sort_header("Company", "company") }}</th>
-        <th>{{ research_sort_header("Ticker", "ticker") }}</th>
-        <th>{{ research_sort_header("Event type", "event_type") }}</th>
+        <th>Ticker</th>
+        <th>Event type</th>
         <th>{{ research_sort_header("AD date", "ad") }}</th>
         <th>{{ research_sort_header("ID date", "id") }}</th>
         <th>{{ research_sort_header("Days AD-ID", "days") }}</th>
         <th>{{ research_sort_header("Raw Hype Count", "raw") }}</th>
         <th>{{ research_sort_header("Investor Comms Count", "investor_comms") }}</th>
-        <th>{{ research_sort_header("8-K 7.01 Count", "item_701") }}</th>
-        <th>{{ research_sort_header("8-K 8.01 Count", "item_801") }}</th>
-        <th>{{ research_sort_header("Presentation / Deck Count", "presentation") }}</th>
-        <th>{{ research_sort_header("Latest filing AD-ID", "latest") }}</th>
-        <th>{{ research_sort_header("Source link", "source") }}</th>
+        <th>8-K 7.01 Count</th>
+        <th>8-K 8.01 Count</th>
+        <th>Latest filing AD-ID</th>
+        <th>Source link</th>
       </tr>
     </thead>
     <tbody>
@@ -122,7 +120,6 @@
         <td class="{{ 'unknown-text' if r.investor_comms_count == 'unknown' else 'date-strong' }}">{{ r.investor_comms_count }}</td>
         <td class="{{ 'unknown-text' if r.item_701_count == 'unknown' else 'date-strong' }}">{{ r.item_701_count }}</td>
         <td class="{{ 'unknown-text' if r.item_801_count == 'unknown' else 'date-strong' }}">{{ r.item_801_count }}</td>
-        <td class="{{ 'unknown-text' if r.presentation_count == 'unknown' else 'date-strong' }}">{{ r.presentation_count }}</td>
         <td class="{{ 'unknown-text' if r.latest_filing == 'unknown' else 'secondary-cell' }}">{{ r.latest_filing }}</td>
         <td>
           {% if r.source_url %}
@@ -138,7 +135,7 @@
 </div>
 {% endmacro %}
 
-{% macro price_reaction_table(rows) %}
+{% macro price_reaction_table(rows, total) %}
 <div class="table-scroll">
   <table class="price-reaction-table">
     <colgroup>
@@ -162,7 +159,7 @@
         <th><span class="tip-head" data-tip="The most recent daily closing price PopDay has on file for this stock. The date of that close is shown beneath the price.">Latest Close</span></th>
         <th><span class="tip-head" data-tip="The percentage change from the Previous Close to the Latest Close — the cumulative move over the whole window since the announcement.">Interval Return</span></th>
         <th><span class="tip-head" data-tip="How choppy the stock has been over the window: the standard deviation of its daily close-to-close percentage returns, from the Previous Close day through the Latest Close. Higher means bigger day-to-day swings.">Daily Volatility</span></th>
-        <th><span class="tip-head" data-tip="Whether PopDay could build a full row of data (for example 'Ok'), along with the price source used and when the figures were last refreshed.">Status</span></th>
+        <th><span class="tip-head" data-tip="Whether PopDay could build a full row of data for this announcement (for example 'Ok'), or a short note explaining why data is missing.">Status</span></th>
       </tr>
     </thead>
     <tbody>
@@ -189,11 +186,17 @@
         <td class="{{ 'status-good' if r.status == 'Ok' else 'secondary-cell' }}">
           {{ r.status }}
           {% if r.notes %}<div class="status-meta">{{ r.notes }}</div>{% endif %}
-          <div class="status-meta">{{ r.source }}; refreshed {{ r.updated }}</div>
         </td>
       </tr>
       {% endfor %}
     </tbody>
+    <tfoot>
+      <tr class="total-row">
+        <td colspan="10" class="total-label">Total interval return</td>
+        <td class="number-cell">{{ total }}</td>
+        <td colspan="2"></td>
+      </tr>
+    </tfoot>
   </table>
 </div>
 {% endmacro %}
@@ -416,10 +419,12 @@
     .unknown-text { color: var(--muted); font-weight: 500; }
     .table-scroll { overflow-x: auto; }
     .split-table { table-layout: fixed; }
-    .research-table { min-width: 1520px; table-layout: fixed; }
+    .research-table { min-width: 1375px; table-layout: fixed; }
     .price-reaction-table { min-width: 1510px; table-layout: fixed; }
     .number-cell { font-weight: 650; white-space: nowrap; }
     .tip-head { border-bottom: 1px dotted var(--muted); cursor: help; }
+    .total-row td { border-top: 2px solid var(--line); }
+    .total-label { color: var(--muted); font-weight: 750; text-align: right; }
     .tip-pop {
       background: var(--panel);
       border: 1px solid var(--line);
@@ -438,7 +443,10 @@
     }
     .tip-pop[hidden] { display: none; }
     .sortable-head {
-      white-space: normal;
+      align-items: flex-start;
+      display: inline-flex;
+      flex-direction: column;
+      gap: 3px;
     }
     .sort-controls {
       display: inline-flex;
@@ -451,11 +459,11 @@
     .sort-link {
       border: 1px solid var(--line);
       color: var(--muted);
-      font-size: 9px;
+      font-size: 7px;
       font-weight: 750;
       line-height: 1;
-      min-width: 16px;
-      padding: 3px 0;
+      min-width: 12px;
+      padding: 2px 0;
       text-align: center;
       text-decoration: none;
     }
@@ -772,14 +780,14 @@
     {% if price_reaction_rows %}
     <h3 class="split-heading split-heading-first">Upcoming</h3>
     {% if upcoming_price_reaction_rows %}
-      {{ price_reaction_table(upcoming_price_reaction_rows) }}
+      {{ price_reaction_table(upcoming_price_reaction_rows, upcoming_price_reaction_total) }}
     {% else %}
       <div class="empty">No upcoming Price Reaction rows stored yet.</div>
     {% endif %}
 
     <h3 class="split-heading">Legacy</h3>
     {% if legacy_price_reaction_rows %}
-      {{ price_reaction_table(legacy_price_reaction_rows) }}
+      {{ price_reaction_table(legacy_price_reaction_rows, legacy_price_reaction_total) }}
     {% else %}
       <div class="empty">No legacy Price Reaction rows stored yet.</div>
     {% endif %}

@@ -62,6 +62,14 @@ def _price_source_label(value: object) -> str:
     return _PRICE_SOURCE_LABELS.get(raw, raw)
 
 
+def _interval_return_total(rows) -> str:
+    """Summed interval return across a group of Price Reaction rows."""
+    values = [row["interval_return_raw"] for row in rows if row.get("interval_return_raw") is not None]
+    if not values:
+        return "—"
+    return _pct_text(sum(values))
+
+
 def _friendly_date(value: str) -> str:
     if not value:
         return ""
@@ -135,7 +143,7 @@ def _prepare_row(row: dict, today: date) -> dict:
 
 @app.route("/")
 def index():
-    return _render_main_ui(request.args.get("tab", "announcements"), is_admin=False)
+    return _render_main_ui(request.args.get("tab", "price_reaction"), is_admin=False)
 
 
 @app.route("/status")
@@ -182,9 +190,9 @@ def unsubscribe():
 # ---------------------------------------------------------------------------
 
 ADMIN_TABS = [
+    ("price_reaction", "Price Reaction"),
     ("announcements", "Investor Days"),
     ("research", "Research / Hype"),
-    ("price_reaction", "Price Reaction"),
     ("rules", "Rules"),
     ("recipients", "Email Alerts"),
     ("candidates", "Scan Log"),
@@ -194,9 +202,9 @@ ADMIN_TABS = [
 ]
 
 PUBLIC_TABS = [
+    ("price_reaction", "Price Reaction"),
     ("announcements", "Investor Days"),
     ("research", "Research / Hype"),
-    ("price_reaction", "Price Reaction"),
     ("candidates", "Scan Log"),
     ("health", "Schedule"),
     ("summary", "System Health"),
@@ -820,6 +828,7 @@ def _build_admin_context(db: Database, tab: str, *, company_websites: dict[str, 
                 "latest_close_date": _friendly_date(r["latest_close_date"]) if dict(r).get("latest_close_date") else "unknown",
                 "latest_close": _money_text(r["latest_close"]),
                 "interval_return_pct": _pct_text(r["interval_return_pct"]),
+                "interval_return_raw": r["interval_return_pct"],
                 "interval_daily_volatility_pct": _pct_text(r["interval_daily_volatility_pct"]),
                 "status": _admin_display_text(r["status"]),
                 "notes": r["notes"] or "",
@@ -828,13 +837,13 @@ def _build_admin_context(db: Database, tab: str, *, company_websites: dict[str, 
             }
             for r in db.price_reaction_rows()
         ]
+        upcoming_pr = [item for item in price_reaction_rows if _is_upcoming_announcement(item)]
+        legacy_pr = [item for item in price_reaction_rows if not _is_upcoming_announcement(item)]
         ctx["price_reaction_rows"] = price_reaction_rows
-        ctx["upcoming_price_reaction_rows"] = [
-            item for item in price_reaction_rows if _is_upcoming_announcement(item)
-        ]
-        ctx["legacy_price_reaction_rows"] = [
-            item for item in price_reaction_rows if not _is_upcoming_announcement(item)
-        ]
+        ctx["upcoming_price_reaction_rows"] = upcoming_pr
+        ctx["legacy_price_reaction_rows"] = legacy_pr
+        ctx["upcoming_price_reaction_total"] = _interval_return_total(upcoming_pr)
+        ctx["legacy_price_reaction_total"] = _interval_return_total(legacy_pr)
     elif tab == "rules":
         from popday.rules import ALERT_REQUIREMENTS
         ctx["rules"] = [dict(r) for r in db.rules()]

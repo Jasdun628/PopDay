@@ -21,7 +21,7 @@ class PublicCandidatesRouteTests(unittest.TestCase):
             "https://example.com/",
         )
 
-    def test_front_door_opens_investor_days_view(self):
+    def test_front_door_opens_price_reaction_view(self):
         with tempfile.NamedTemporaryFile(suffix=".sqlite3") as db_file:
             os.environ["POPDAY_DB_PATH"] = db_file.name
             os.environ["POPDAY_ADMIN_PASSWORD"] = "test-password"
@@ -32,14 +32,17 @@ class PublicCandidatesRouteTests(unittest.TestCase):
             html = response.get_data(as_text=True)
 
             self.assertEqual(response.status_code, 200)
-            self.assertIn("Running list of qualifying Investor Day announcements", html)
+            self.assertIn("Cached daily market data", html)
+            self.assertLess(html.find("Price Reaction"), html.find("Investor Days"))
             self.assertLess(html.find("Investor Days"), html.find("Research / Hype"))
-            self.assertLess(html.find("Research / Hype"), html.find("Price Reaction"))
-            self.assertLess(html.find("Price Reaction"), html.find("Scan Log"))
+            self.assertLess(html.find("Research / Hype"), html.find("Scan Log"))
             self.assertLess(html.find("Scan Log"), html.find("Schedule"))
             self.assertLess(html.find("Schedule"), html.find("System Health"))
             self.assertLess(html.find("System Health"), html.find("Help"))
             self.assertNotIn(">Filings<", html)
+
+            investor_days = client.get("/?tab=announcements").get_data(as_text=True)
+            self.assertIn("Running list of qualifying Investor Day announcements", investor_days)
 
     def test_qualifying_company_name_links_to_main_website(self):
         with tempfile.NamedTemporaryFile(suffix=".sqlite3") as db_file:
@@ -80,7 +83,7 @@ class PublicCandidatesRouteTests(unittest.TestCase):
                 db.close()
 
             client = app.test_client()
-            response = client.get("/")
+            response = client.get("/?tab=announcements")
             html = response.get_data(as_text=True)
 
             self.assertEqual(response.status_code, 200)
