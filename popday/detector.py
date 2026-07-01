@@ -290,6 +290,54 @@ def _best_event_signal(
     return best_phrase, best_location, best_snippet, best_event_date, best_evidence_url, best_evidence_label
 
 
+def _best_tbd_signal(
+    parsed: ParsedFiling,
+    filing_url: str,
+    include_phrases: list[str],
+) -> tuple[str, str, str, str, str] | None:
+    """A strong future investor-event announcement that names no concrete date yet.
+
+    Only fires on press-release text with a clear announcement cue (e.g. "to hold",
+    "will host") and no past/replay language, so a dateless "we plan to hold an
+    Investor Day" is surfaced as date-TBD rather than silently dropped.
+    """
+    nugget = best_nugget(parsed, triggers=tuple(include_phrases))
+    best: tuple[str, str, str, str, str] | None = None
+    best_score = -1
+    for document in _candidate_documents(parsed, filing_url):
+        if document["location"] != "press_release":
+            continue
+        text = document["text"]
+        lowered = text.lower()
+        for phrase in include_phrases:
+            if phrase not in lowered:
+                continue
+            for sentence in split_sentences(text):
+                normalized = re.sub(r"\s+", " ", sentence).strip()
+                if not normalized or phrase not in normalized.lower():
+                    continue
+                context = normalized.lower()
+                if not _has_any(context, ANNOUNCEMENT_CUES):
+                    continue
+                if _has_any(context, PAST_CUES):
+                    continue
+                score = 0
+                if normalized == nugget:
+                    score += 4
+                if len(normalized) <= 300:
+                    score += 1
+                if score > best_score:
+                    best_score = score
+                    best = (
+                        phrase,
+                        "press_release",
+                        nugget or normalized,
+                        document["evidence_url"],
+                        document["evidence_label"],
+                    )
+    return best
+
+
 def detect_in_parsed_filing(
     filing: Filing,
     parsed: ParsedFiling,
@@ -324,6 +372,28 @@ def detect_in_parsed_filing(
 
     body_text = " ".join(document["text"] for document in _candidate_documents(parsed, filing.filing_url)).lower()
     has_phrase = any(phrase in body_text for phrase in include_phrases)
+
+    if has_phrase:
+        tbd = _best_tbd_signal(parsed, filing.filing_url, include_phrases)
+        if tbd:
+            phrase, location, snippet, evidence_url, evidence_label = tbd
+            return [
+                Detection(
+                    filing=filing,
+                    event_type=_event_type(phrase),
+                    event_date=None,
+                    matched_phrase=phrase,
+                    matched_location=location,
+                    snippet=snippet,
+                    items=items,
+                    event_url=_best_event_url(parsed),
+                    evidence_url=evidence_url,
+                    evidence_label=evidence_label,
+                    status="alert_candidate_tbd",
+                    dismissal_reason=None,
+                )
+            ]
+
     dismissal_reason = "missing_future_event_date" if has_phrase else "no_qualifying_phrase_found"
     return [
         Detection(

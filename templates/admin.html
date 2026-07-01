@@ -135,7 +135,7 @@
 </div>
 {% endmacro %}
 
-{% macro price_reaction_table(rows, total) %}
+{% macro price_reaction_table(rows, average) %}
 <div class="table-scroll">
   <table class="price-reaction-table">
     <colgroup>
@@ -192,8 +192,8 @@
     </tbody>
     <tfoot>
       <tr class="total-row">
-        <td colspan="10" class="total-label">Total interval return</td>
-        <td class="number-cell">{{ total }}</td>
+        <td colspan="10" class="total-label">Average interval return</td>
+        <td class="number-cell">{{ average }}</td>
         <td colspan="2"></td>
       </tr>
     </tfoot>
@@ -780,14 +780,14 @@
     {% if price_reaction_rows %}
     <h3 class="split-heading split-heading-first">Upcoming</h3>
     {% if upcoming_price_reaction_rows %}
-      {{ price_reaction_table(upcoming_price_reaction_rows, upcoming_price_reaction_total) }}
+      {{ price_reaction_table(upcoming_price_reaction_rows, upcoming_price_reaction_avg) }}
     {% else %}
       <div class="empty">No upcoming Price Reaction rows stored yet.</div>
     {% endif %}
 
     <h3 class="split-heading">Legacy</h3>
     {% if legacy_price_reaction_rows %}
-      {{ price_reaction_table(legacy_price_reaction_rows, legacy_price_reaction_total) }}
+      {{ price_reaction_table(legacy_price_reaction_rows, legacy_price_reaction_avg) }}
     {% else %}
       <div class="empty">No legacy Price Reaction rows stored yet.</div>
     {% endif %}

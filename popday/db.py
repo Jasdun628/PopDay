@@ -584,10 +584,12 @@ class Database:
                    'SEC filing' AS source_label, h.qualifying_count AS hype_count
             FROM detections d
             LEFT JOIN hype_tracking h ON h.candidate_id = d.id
-            WHERE d.status = 'alert_candidate'
-              AND d.event_type IS NOT NULL
-              AND d.event_date IS NOT NULL
-            ORDER BY d.event_date DESC, d.created_timestamp DESC
+            WHERE d.event_type IS NOT NULL
+              AND (
+                (d.status = 'alert_candidate' AND d.event_date IS NOT NULL)
+                OR d.status = 'alert_candidate_tbd'
+              )
+            ORDER BY d.event_date IS NULL, d.event_date DESC, d.created_timestamp DESC
             """
         ).fetchall()
         known_rows = self.conn.execute(

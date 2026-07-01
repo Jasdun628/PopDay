@@ -44,6 +44,52 @@ class PublicCandidatesRouteTests(unittest.TestCase):
             investor_days = client.get("/?tab=announcements").get_data(as_text=True)
             self.assertIn("Running list of qualifying Investor Day announcements", investor_days)
 
+    def test_date_tbd_investor_day_appears_under_upcoming(self):
+        with tempfile.NamedTemporaryFile(suffix=".sqlite3") as db_file:
+            os.environ["POPDAY_DB_PATH"] = db_file.name
+            os.environ["POPDAY_ADMIN_PASSWORD"] = "test-password"
+            from popday.db import Database
+            from flask_app import app
+
+            db = Database(db_file.name)
+            try:
+                db.conn.execute(
+                    """
+                    INSERT INTO detections
+                    (accession_number, company_name, cik, form_type, filing_date, filing_url,
+                     event_type, event_date, matched_phrase, matched_location, snippet, status,
+                     dismissal_reason, created_timestamp)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        "dynatrace-tbd",
+                        "Dynatrace, Inc.",
+                        "0001773383",
+                        "8-K",
+                        "2026-07-01",
+                        "https://www.sec.gov/dynatrace-tbd.txt",
+                        "Investor Day",
+                        None,
+                        "investor day",
+                        "press_release",
+                        "Dynatrace to Hold Investor Day following Q2 results.",
+                        "alert_candidate_tbd",
+                        None,
+                        "2026-07-01T01:00:00+00:00",
+                    ),
+                )
+                db.conn.commit()
+            finally:
+                db.close()
+
+            client = app.test_client()
+            html = client.get("/?tab=announcements").get_data(as_text=True)
+
+            self.assertIn("Date TBD", html)
+            self.assertIn("Dynatrace, Inc.", html)
+            self.assertLess(html.find("Upcoming"), html.find("Dynatrace, Inc."))
+            self.assertLess(html.find("Dynatrace, Inc."), html.find("Legacy"))
+
     def test_qualifying_company_name_links_to_main_website(self):
         with tempfile.NamedTemporaryFile(suffix=".sqlite3") as db_file:
             os.environ["POPDAY_DB_PATH"] = db_file.name

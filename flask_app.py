@@ -62,12 +62,12 @@ def _price_source_label(value: object) -> str:
     return _PRICE_SOURCE_LABELS.get(raw, raw)
 
 
-def _interval_return_total(rows) -> str:
-    """Summed interval return across a group of Price Reaction rows."""
+def _interval_return_average(rows) -> str:
+    """Average (mean) interval return across a group of Price Reaction rows."""
     values = [row["interval_return_raw"] for row in rows if row.get("interval_return_raw") is not None]
     if not values:
         return "—"
-    return _pct_text(sum(values))
+    return _pct_text(sum(values) / len(values))
 
 
 def _friendly_date(value: str) -> str:
@@ -693,8 +693,9 @@ def _build_admin_context(db: Database, tab: str, *, company_websites: dict[str, 
                 "company_name": r["company_name"],
                 "company_url": _company_website(r["company_name"], company_websites),
                 "event_type": r["event_type"] or "Investor Day",
-                "event_date": _friendly_date(r["event_date"]) if dict(r).get("event_date") else "—",
+                "event_date": _friendly_date(r["event_date"]) if dict(r).get("event_date") else "Date TBD",
                 "event_date_raw": dict(r).get("event_date") or "",
+                "is_tbd": not dict(r).get("event_date"),
                 "source_type": dict(r).get("source_type") or "",
                 "filing_date": _friendly_date(r["filing_date"]) if dict(r).get("filing_date") else "—",
                 "filing_date_raw": dict(r).get("filing_date") or "",
@@ -721,11 +722,15 @@ def _build_admin_context(db: Database, tab: str, *, company_websites: dict[str, 
             for r in db.investor_day_announcements()
         ]
         sorted_announcements = _sort_announcements(announcements, sort_key, direction)
+        # A date-TBD announcement is a future event with no firm date yet, so it belongs
+        # under Upcoming rather than Legacy.
         upcoming_announcements = [
-            item for item in sorted_announcements if _is_upcoming_announcement(item)
+            item for item in sorted_announcements
+            if item.get("is_tbd") or _is_upcoming_announcement(item)
         ]
         legacy_announcements = [
-            item for item in sorted_announcements if not _is_upcoming_announcement(item)
+            item for item in sorted_announcements
+            if not item.get("is_tbd") and not _is_upcoming_announcement(item)
         ]
         ctx.update(
             announcements=sorted_announcements,
@@ -842,8 +847,8 @@ def _build_admin_context(db: Database, tab: str, *, company_websites: dict[str, 
         ctx["price_reaction_rows"] = price_reaction_rows
         ctx["upcoming_price_reaction_rows"] = upcoming_pr
         ctx["legacy_price_reaction_rows"] = legacy_pr
-        ctx["upcoming_price_reaction_total"] = _interval_return_total(upcoming_pr)
-        ctx["legacy_price_reaction_total"] = _interval_return_total(legacy_pr)
+        ctx["upcoming_price_reaction_avg"] = _interval_return_average(upcoming_pr)
+        ctx["legacy_price_reaction_avg"] = _interval_return_average(legacy_pr)
     elif tab == "rules":
         from popday.rules import ALERT_REQUIREMENTS
         ctx["rules"] = [dict(r) for r in db.rules()]

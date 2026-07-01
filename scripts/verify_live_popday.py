@@ -111,7 +111,7 @@ def main() -> int:
                 "Reaction Close",
                 "Daily Volatility",
                 "Interval Return",
-                "Total interval return",
+                "Average interval return",
             ]
         ),
         failures,
