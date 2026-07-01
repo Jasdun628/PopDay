@@ -261,6 +261,9 @@ def compute_price_reaction(
         "latest_close": None,
         "interval_return_pct": None,
         "interval_daily_volatility_pct": None,
+        "event_day_close_date": None,
+        "event_day_close": None,
+        "event_day_move_pct": None,
         "price_data_source": price_data_source,
         "price_data_timestamp": timestamp or utc_now(),
         "status": "ok",
@@ -281,6 +284,11 @@ def compute_price_reaction(
         return base | {"status": "missing_previous_close", "notes": "No previous trading close found."}
     latest_bar = bars[-1]
     interval_bars = [bar for bar in bars if previous_bar.date <= bar.date <= latest_bar.date]
+    # Close on the actual Investor Day (first trading day on/after the event date). Only
+    # available once the event has happened; upcoming events leave these None.
+    event_day = _parse_date(announcement.get("event_date"))
+    event_day_bar = _first_bar_on_or_after(bars, event_day) if event_day else None
+    event_day_prev = _last_bar_before(bars, event_day_bar.date) if event_day_bar else None
     return base | {
         "reaction_date": reaction_bar.date.isoformat(),
         "previous_close_date": previous_bar.date.isoformat(),
@@ -299,6 +307,12 @@ def compute_price_reaction(
         "latest_close": latest_bar.close,
         "interval_return_pct": _pct(latest_bar.close, previous_bar.close),
         "interval_daily_volatility_pct": _daily_return_volatility_pct(interval_bars),
+        "event_day_close_date": event_day_bar.date.isoformat() if event_day_bar else None,
+        "event_day_close": event_day_bar.close if event_day_bar else None,
+        "event_day_move_pct": (
+            _pct(event_day_bar.close, event_day_prev.close)
+            if event_day_bar and event_day_prev else None
+        ),
         "status": "ok",
     }
 

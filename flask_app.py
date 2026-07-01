@@ -828,6 +828,12 @@ def _build_admin_context(db: Database, tab: str, *, company_websites: dict[str, 
                 "reaction_date": _friendly_date(r["reaction_date"]) if dict(r).get("reaction_date") else "unknown",
                 "previous_close": _money_text(r["previous_close"]),
                 "reaction_close": _money_text(r["reaction_close"]),
+                "event_day_close": _money_text(r["event_day_close"]) if dict(r).get("event_day_close") is not None else "—",
+                "event_day_move_pct": _pct_text(r["event_day_move_pct"]) if dict(r).get("event_day_move_pct") is not None else "",
+                "event_day_direction": (
+                    "up" if (dict(r).get("event_day_move_pct") or 0) > 0
+                    else ("down" if (dict(r).get("event_day_move_pct") or 0) < 0 else "")
+                ),
                 "announcement_move_pct": _pct_text(r["announcement_move_pct"]),
                 "intraday_range_pct": _pct_text(r["intraday_range_pct"]),
                 "latest_close_date": _friendly_date(r["latest_close_date"]) if dict(r).get("latest_close_date") else "unknown",

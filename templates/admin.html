@@ -140,16 +140,17 @@
   <table class="price-reaction-table">
     <colgroup>
       <col style="width: 165px"><col style="width: 65px"><col style="width: 135px">
-      <col style="width: 150px"><col style="width: 130px"><col style="width: 100px">
-      <col style="width: 100px"><col style="width: 85px"><col style="width: 110px">
-      <col style="width: 115px"><col style="width: 105px"><col style="width: 110px">
-      <col style="width: 140px">
+      <col style="width: 120px"><col style="width: 150px"><col style="width: 130px">
+      <col style="width: 100px"><col style="width: 100px"><col style="width: 85px">
+      <col style="width: 110px"><col style="width: 115px"><col style="width: 105px">
+      <col style="width: 110px"><col style="width: 140px">
     </colgroup>
     <thead>
       <tr>
         <th>Company</th>
         <th>Ticker</th>
         <th>Event Date</th>
+        <th><span class="tip-head" data-tip="The share price at the close of the actual Investor Day (the first trading day on or after the event date). Green means the stock rose that day (a pop); red means it fell (a tank). The smaller figure is that day's move. Blank for upcoming events that have not happened yet.">Investor Day Close</span></th>
         <th><span class="tip-head" data-tip="When the SEC accepted the filing. PopDay shows the precise acceptance timestamp where it is known, otherwise the filing date. A filing accepted at or after 4pm ET can only be reacted to the next trading day, so the reaction day shifts forward.">Filed / Accepted</span></th>
         <th><span class="tip-head" data-tip="The first trading session the market could respond to the announcement — the trading day on or after the filing was accepted. If it was accepted at or after 4pm ET, this is the next trading day.">Reaction Day</span></th>
         <th><span class="tip-head" data-tip="The share price at the close of the trading day immediately before the reaction day. It is the baseline the move is measured against.">Previous Close</span></th>
@@ -158,7 +159,7 @@
         <th><span class="tip-head" data-tip="How wide the stock traded on the reaction day: the day's high minus its low, shown as a percentage of the Previous Close. A bigger number means a more volatile session.">Intraday Range</span></th>
         <th><span class="tip-head" data-tip="The most recent daily closing price PopDay has on file for this stock. The date of that close is shown beneath the price.">Latest Close</span></th>
         <th><span class="tip-head" data-tip="The percentage change from the Previous Close to the Latest Close — the cumulative move over the whole window since the announcement.">Interval Return</span></th>
-        <th><span class="tip-head" data-tip="How choppy the stock has been over the window: the standard deviation of its daily close-to-close percentage returns, from the Previous Close day through the Latest Close. Higher means bigger day-to-day swings.">Daily Volatility</span></th>
+        <th><span class="tip-head" data-tip="How choppy the stock has been over the measurement window — that window runs from the day before the reaction day (the Previous Close) through to the Latest Close. It is the standard deviation of the daily close-to-close percentage returns across those trading days; a higher number means bigger day-to-day swings.">Daily Volatility</span></th>
         <th><span class="tip-head" data-tip="Whether PopDay could build a full row of data for this announcement (for example 'Ok'), or a short note explaining why data is missing.">Status</span></th>
       </tr>
     </thead>
@@ -174,6 +175,7 @@
         </td>
         <td class="{{ 'unknown-text' if r.ticker == 'unknown' else 'secondary-cell' }}">{{ r.ticker }}</td>
         <td class="date-strong">{{ r.event_date }}</td>
+        <td class="{{ 'move-up' if r.event_day_direction == 'up' else ('move-down' if r.event_day_direction == 'down' else 'number-cell') }}">{{ r.event_day_close }}{% if r.event_day_move_pct %}<div class="status-meta">{{ r.event_day_move_pct }}</div>{% endif %}</td>
         <td class="{{ 'unknown-text' if r.accepted == 'unknown' and r.filing_date == 'unknown' else 'secondary-cell' }}">{% if r.accepted != 'unknown' %}{{ r.accepted }}{% if r.accepted_time %}<div class="status-meta">{{ r.accepted_time }}</div>{% endif %}{% else %}{{ r.filing_date }}{% endif %}</td>
         <td class="{{ 'unknown-text' if r.reaction_date == 'unknown' else 'date-strong' }}">{{ r.reaction_date }}</td>
         <td class="number-cell">{{ r.previous_close }}</td>
@@ -192,7 +194,7 @@
     </tbody>
     <tfoot>
       <tr class="total-row">
-        <td colspan="10" class="total-label">Average interval return</td>
+        <td colspan="11" class="total-label">Average interval return</td>
         <td class="number-cell">{{ average }}</td>
         <td colspan="2"></td>
       </tr>
@@ -416,6 +418,8 @@
     .date-muted { color: var(--muted); font-weight: 500; white-space: nowrap; }
     .phrase-text { color: var(--muted); font-weight: 650; }
     .status-good { color: var(--ok); font-weight: 750; white-space: nowrap; }
+    .move-up { color: var(--ok); font-weight: 750; white-space: nowrap; }
+    .move-down { color: var(--danger); font-weight: 750; white-space: nowrap; }
     .unknown-text { color: var(--muted); font-weight: 500; }
     .table-scroll { overflow-x: auto; }
     .split-table { table-layout: fixed; }

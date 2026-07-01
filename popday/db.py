@@ -121,6 +121,9 @@ CREATE TABLE IF NOT EXISTS price_reactions (
     latest_close REAL,
     interval_return_pct REAL,
     interval_daily_volatility_pct REAL,
+    event_day_close_date TEXT,
+    event_day_close REAL,
+    event_day_move_pct REAL,
     price_data_source TEXT,
     price_data_timestamp TEXT,
     status TEXT NOT NULL,
@@ -192,6 +195,13 @@ class Database:
             self.conn.execute(
                 "ALTER TABLE hype_tracking ADD COLUMN provisional INTEGER NOT NULL DEFAULT 1"
             )
+        price_reaction_columns = {
+            row["name"] for row in self.conn.execute("PRAGMA table_info(price_reactions)").fetchall()
+        }
+        for column in ("event_day_close_date", "event_day_close", "event_day_move_pct"):
+            if column not in price_reaction_columns:
+                col_type = "TEXT" if column.endswith("_date") else "REAL"
+                self.conn.execute(f"ALTER TABLE price_reactions ADD COLUMN {column} {col_type}")
 
     def close(self) -> None:
         self.conn.close()
@@ -643,14 +653,16 @@ class Database:
              event_date, filing_date, acceptance_datetime, reaction_date, previous_close_date,
              previous_close, reaction_open, reaction_high, reaction_low, reaction_close,
              announcement_move_pct, intraday_range_pct, latest_close_date, latest_close,
-             interval_return_pct, interval_daily_volatility_pct, price_data_source,
+             interval_return_pct, interval_daily_volatility_pct,
+             event_day_close_date, event_day_close, event_day_move_pct, price_data_source,
              price_data_timestamp, status, notes)
             VALUES
             (:announcement_key, :source_table, :source_id, :company_name, :cik, :ticker,
              :event_date, :filing_date, :acceptance_datetime, :reaction_date, :previous_close_date,
              :previous_close, :reaction_open, :reaction_high, :reaction_low, :reaction_close,
              :announcement_move_pct, :intraday_range_pct, :latest_close_date, :latest_close,
-             :interval_return_pct, :interval_daily_volatility_pct, :price_data_source,
+             :interval_return_pct, :interval_daily_volatility_pct,
+             :event_day_close_date, :event_day_close, :event_day_move_pct, :price_data_source,
              :price_data_timestamp, :status, :notes)
             ON CONFLICT(announcement_key) DO UPDATE SET
                 source_table = excluded.source_table,
@@ -674,6 +686,9 @@ class Database:
                 latest_close = excluded.latest_close,
                 interval_return_pct = excluded.interval_return_pct,
                 interval_daily_volatility_pct = excluded.interval_daily_volatility_pct,
+                event_day_close_date = excluded.event_day_close_date,
+                event_day_close = excluded.event_day_close,
+                event_day_move_pct = excluded.event_day_move_pct,
                 price_data_source = excluded.price_data_source,
                 price_data_timestamp = excluded.price_data_timestamp,
                 status = excluded.status,
@@ -691,7 +706,8 @@ class Database:
                    previous_close_date, previous_close, reaction_open, reaction_high,
                    reaction_low, reaction_close, announcement_move_pct, intraday_range_pct,
                    latest_close_date, latest_close, interval_return_pct,
-                   interval_daily_volatility_pct, price_data_source, price_data_timestamp,
+                   interval_daily_volatility_pct, event_day_close_date, event_day_close,
+                   event_day_move_pct, price_data_source, price_data_timestamp,
                    status, notes
             FROM price_reactions
             ORDER BY COALESCE(filing_date, '') DESC, company_name
