@@ -11,6 +11,10 @@ V1 is intentionally small:
 - Email-only output
 - No public website, accounts, dashboard, market commentary, or scoring
 
+The current operating model now includes a small public PythonAnywhere front
+door for checking PopDay output. The source of truth for code remains the Mac
+Mini PopDay repo at `/Users/jasondunne/Documents/PopDay`.
+
 ## Setup
 
 Use Python 3.11+ on the Mac mini.
@@ -52,6 +56,33 @@ python popday.py --recent-candidates
 python popday.py --send-test-email
 python popday.py --debug-ui
 ```
+
+For public-site changes, use the live deploy and click-test workflow:
+
+```bash
+cd /Users/jasondunne/Documents/PopDay
+git status -sb
+python3 -m py_compile popday.py popday/*.py
+bash scripts/deploy_dev_to_pythonanywhere.sh
+```
+
+The deploy script backs up the Mac Mini runtime database, syncs Mac Mini repo
+code into `/Users/jasondunne/PopDayRuntime`, copies code plus the runtime
+database to PythonAnywhere, reloads the PythonAnywhere app, then runs:
+
+```bash
+python3 scripts/verify_live_popday.py
+python3 scripts/verify_live_popday_buttons.py
+```
+
+`verify_live_popday_buttons.py` is the public button smoke test. It opens the
+live public front door, follows the public navigation links for Investor Days,
+Research / Hype, Candidates, Schedule, System Health, and Help, and confirms the
+Email Alerts page redirects signed-out users to login.
+
+After the scripts pass, use the in-app browser to click the affected live
+button/tab and inspect the visible result. A user-facing PopDay change is not
+done until the public button shows the expected screen.
 
 `--dry-run` prints detected alerts and does not send email.
 
