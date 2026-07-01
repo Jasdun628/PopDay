@@ -263,13 +263,19 @@ class PublicCandidatesRouteTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200)
             for label in [
                 "Investor Days",
+                "Evidence",
                 "Research / Hype",
                 "Scan Log",
                 "Schedule",
                 "System Health",
+                "Acceptance Time",
+                "Price Reaction",
                 "Help",
             ]:
                 self.assertIn(label, html)
+            self.assertIn("Upcoming events and Legacy events", html)
+            self.assertIn("after-market announcements", html)
+            self.assertIn("Not live yet", html)
             self.assertNotIn("Processed Filings", html)
             self.assertNotIn("Include Rules", html)
             self.assertNotIn("No Commentary", html)

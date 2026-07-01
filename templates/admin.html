@@ -947,12 +947,14 @@
     <p class="page-note">What each PopDay tab is for.</p>
     <div class="manual-grid">
       {% for title, text in [
-        ("Investor Days",   "Confirmed Investor Day, Analyst Day, and Capital Markets Day announcements PopDay has found. Evidence links go to the announcement document where available."),
-        ("Research / Hype", "Research view for already detected events. It shows stored Hype Count fields and uses unknown where PopDay does not yet have enough data."),
-        ("Scan Log",        "Inspection view for filings PopDay examined, including dismissed false positives. It is useful for checking why something did or did not qualify."),
-        ("Schedule",        "Recent Mac Mini scanner runs and the next expected run time."),
-        ("System Health",   "Current front-door health, freshness, backup state, and latest scan facts."),
-        ("Help",            "This page.")
+        ("Investor Days",       "Confirmed Investor Day, Analyst Day, and Capital Markets Day announcements PopDay has found. The list is split into Upcoming events and Legacy events."),
+        ("Evidence",            "Evidence links open the announcement document PopDay used, usually the exhibit or filing page that contains the actual event announcement."),
+        ("Research / Hype",     "Research view for already detected events. It shows stored Hype Count fields and uses unknown where PopDay does not yet have enough data."),
+        ("Scan Log",            "Inspection view for filings PopDay examined, including dismissed false positives. It is useful for checking why something did or did not qualify."),
+        ("Schedule",            "Recent Mac Mini scanner runs and the next expected run time."),
+        ("System Health",       "Current front-door health, freshness, backup state, and latest scan facts."),
+        ("Acceptance Time",     "PopDay now stores EDGAR acceptance time where available. This matters because after-market announcements should usually be measured against the next trading day."),
+        ("Price Reaction",      "Not live yet. This is the planned tab for free cached price reaction measures, including previous close, latest available price, announcement-day move, and transparent volatility.")
       ] %}
       <div class="manual-card">
         <h3>{{ title }}</h3>

@@ -85,6 +85,8 @@ PUBLIC_TABS = (
         (
             "Help",
             "What each PopDay tab is for",
+            "Acceptance Time",
+            "Price Reaction",
             "Research / Hype",
             "System Health",
         ),
