@@ -837,12 +837,12 @@
   </section>
 
   {# ------------------------------------------------------------------ #}
-  {# CANDIDATES                                                          #}
+  {# SCAN LOG                                                            #}
   {# ------------------------------------------------------------------ #}
   {% elif active_tab == 'candidates' %}
   <section>
-    <h2>Candidate Matches</h2>
-    <p class="page-note">Matches PopDay inspected, including dismissed false positives.</p>
+    <h2>Scan Log</h2>
+    <p class="page-note">Filings PopDay inspected, including dismissed false positives.</p>
     {% if candidates %}
     <table>
       <thead>
@@ -914,7 +914,7 @@
       </tbody>
     </table>
     {% else %}
-    <div class="empty">No candidate matches yet.</div>
+    <div class="empty">No scan log entries yet.</div>
     {% endif %}
   </section>
 
@@ -929,7 +929,7 @@
       {% for title, text in [
         ("Investor Days",   "Confirmed Investor Day, Analyst Day, and Capital Markets Day announcements PopDay has found. Evidence links go to the announcement document where available."),
         ("Research / Hype", "Research view for already detected events. It shows stored Hype Count fields and uses unknown where PopDay does not yet have enough data."),
-        ("Candidates",      "Inspection view for filings PopDay examined, including dismissed false positives. It is useful for checking why something did or did not qualify."),
+        ("Scan Log",        "Inspection view for filings PopDay examined, including dismissed false positives. It is useful for checking why something did or did not qualify."),
         ("Schedule",        "Recent Mac Mini scanner runs and the next expected run time."),
         ("System Health",   "Current front-door health, freshness, backup state, and latest scan facts."),
         ("Help",            "This page.")

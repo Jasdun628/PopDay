@@ -151,7 +151,7 @@ ADMIN_TABS = [
     ("research", "Research / Hype"),
     ("rules", "Rules"),
     ("recipients", "Email Alerts"),
-    ("candidates", "Candidates"),
+    ("candidates", "Scan Log"),
     ("health", "Schedule"),
     ("summary", "System Health"),
     ("help", "Help"),
@@ -160,7 +160,7 @@ ADMIN_TABS = [
 PUBLIC_TABS = [
     ("announcements", "Investor Days"),
     ("research", "Research / Hype"),
-    ("candidates", "Candidates"),
+    ("candidates", "Scan Log"),
     ("health", "Schedule"),
     ("summary", "System Health"),
     ("help", "Help"),

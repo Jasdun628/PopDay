@@ -134,7 +134,7 @@
       <p>Local monitor for EDGAR Investor Day alerts.</p>
     </div>
     <div class="header-actions">
-      <a href="{{ url_for('admin_tab', tab='candidates') }}" class="inline-action">← Candidates</a>
+      <a href="{{ url_for('admin_tab', tab='candidates') }}" class="inline-action">← Scan Log</a>
       <a href="{{ url_for('admin_logout') }}" class="inline-action">Sign out</a>
     </div>
   </div>
@@ -203,7 +203,7 @@
     {% endif %}
 
     <div style="margin-bottom:14px;">
-      <a href="{{ url_for('admin_tab', tab='candidates') }}" class="button-link secondary-link">Back to candidates</a>
+      <a href="{{ url_for('admin_tab', tab='candidates') }}" class="button-link secondary-link">Back to Scan Log</a>
       {% if sec_url %}
       <a href="{{ sec_url }}" target="_blank" rel="noopener" class="button-link">Open SEC filing page</a>
       {% endif %}

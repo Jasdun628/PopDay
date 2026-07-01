@@ -445,7 +445,7 @@ def _tabs(active: str) -> str:
         ("rules", "Rules"),
         ("recipients", "Email Alerts"),
         ("health", "System Health"),
-        ("candidates", "Candidates"),
+        ("candidates", "Scan Log"),
         ("filings", "Filings"),
         ("help", "Help"),
     ]
@@ -588,7 +588,7 @@ def _filing_preview(db_path: str, detection_id: int) -> str:
     return (
         "<section><h2>Filing Text</h2>"
         '<p class="page-note">Cleaned local preview of the source filing around the match.</p>'
-        f'<a class="button-link secondary-link" href="/?tab=candidates">Back to candidates</a>'
+        f'<a class="button-link secondary-link" href="/?tab=candidates">Back to Scan Log</a>'
         f'<a class="button-link" href="{_e(sec_url)}">Open SEC filing page</a>'
         f"<div class=\"snippet-box\"><strong>{_e(row['company_name'])}</strong><br>"
         f"Form: {_e(row['form_type'])}<br>"
@@ -761,7 +761,7 @@ def _processed_table(db: Database) -> str:
 def _candidates_table(db: Database) -> str:
     rows = db.recent_candidates()
     if not rows:
-        return '<div class="empty">No candidate matches yet.</div>'
+        return '<div class="empty">No scan log entries yet.</div>'
     body = "\n".join(
         "<tr>"
         f"<td>{_e(_friendly_datetime(row['created_timestamp']))}</td>"
@@ -899,8 +899,8 @@ def render_debug_page(db_path: str, active_tab: str = "summary") -> str:
             )
         elif active_tab == "candidates":
             content = (
-                "<section><h2>Candidate Matches</h2>"
-                '<p class="page-note">Matches PopDay inspected, including dismissed false positives.</p>'
+                "<section><h2>Scan Log</h2>"
+                '<p class="page-note">Filings PopDay inspected, including dismissed false positives.</p>'
                 f"{_candidates_table(db)}</section>"
             )
         elif active_tab == "filings":

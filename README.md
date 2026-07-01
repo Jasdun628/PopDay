@@ -77,7 +77,7 @@ python3 scripts/verify_live_popday_buttons.py
 
 `verify_live_popday_buttons.py` is the public button smoke test. It opens the
 live public front door, follows the public navigation links for Investor Days,
-Research / Hype, Candidates, Schedule, System Health, and Help, and confirms the
+Research / Hype, Scan Log, Schedule, System Health, and Help, and confirms the
 Email Alerts page redirects signed-out users to login.
 
 After the scripts pass, use the in-app browser to click the affected live

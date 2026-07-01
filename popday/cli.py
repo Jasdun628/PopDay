@@ -480,7 +480,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--recent-candidates",
         action="store_true",
-        help="Show recent candidate matches and dismissal reasons.",
+        help="Show recent scan log entries and dismissal reasons.",
     )
     parser.add_argument("--send-test-email", action="store_true", help="Send one SMTP test email.")
     parser.add_argument(

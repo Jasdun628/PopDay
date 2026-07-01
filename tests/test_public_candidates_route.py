@@ -34,8 +34,8 @@ class PublicCandidatesRouteTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertIn("Running list of qualifying Investor Day announcements", html)
             self.assertLess(html.find("Investor Days"), html.find("Research / Hype"))
-            self.assertLess(html.find("Research / Hype"), html.find("Candidates"))
-            self.assertLess(html.find("Candidates"), html.find("Schedule"))
+            self.assertLess(html.find("Research / Hype"), html.find("Scan Log"))
+            self.assertLess(html.find("Scan Log"), html.find("Schedule"))
             self.assertLess(html.find("Schedule"), html.find("System Health"))
             self.assertLess(html.find("System Health"), html.find("Help"))
             self.assertNotIn(">Filings<", html)
@@ -148,7 +148,7 @@ class PublicCandidatesRouteTests(unittest.TestCase):
             for label in [
                 "Investor Days",
                 "Research / Hype",
-                "Candidates",
+                "Scan Log",
                 "Schedule",
                 "System Health",
                 "Help",
@@ -169,7 +169,7 @@ class PublicCandidatesRouteTests(unittest.TestCase):
             html = response.get_data(as_text=True)
 
             self.assertEqual(response.status_code, 200)
-            self.assertIn("Candidate Matches", html)
+            self.assertIn("Scan Log", html)
             self.assertNotIn("/admin/login", response.request.path)
             self.assertNotIn("Read text", html)
 

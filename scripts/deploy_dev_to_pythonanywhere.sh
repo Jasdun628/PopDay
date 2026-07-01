@@ -11,6 +11,24 @@ PYTHONANYWHERE_WSGI_PATH="${PYTHONANYWHERE_WSGI_PATH:-/var/www/jasdun_pythonanyw
 PYTHONANYWHERE_DB_PATH="${PYTHONANYWHERE_DB_PATH:-$PYTHONANYWHERE_APP_DIR/popday.sqlite3}"
 PYTHON_BIN="${PYTHON_BIN:-/usr/bin/python3}"
 
+run_with_retries() {
+  local label="$1"
+  shift
+  local attempt
+  for attempt in 1 2 3; do
+    if "$@"; then
+      return 0
+    fi
+    if [[ "$attempt" == "3" ]]; then
+      break
+    fi
+    echo "$label failed; waiting for PythonAnywhere reload before retry $((attempt + 1))/3..." >&2
+    sleep $((attempt * 5))
+  done
+  echo "$label failed after 3 attempts." >&2
+  return 1
+}
+
 cd "$SOURCE_REPO"
 
 if [[ ! -f "$RUNTIME_DB_PATH" ]]; then
@@ -47,8 +65,8 @@ ssh "$PYTHONANYWHERE_SSH_TARGET" "cd '$PYTHONANYWHERE_APP_DIR' && python3 -m py_
 ssh "$PYTHONANYWHERE_SSH_TARGET" "touch '$PYTHONANYWHERE_WSGI_PATH'"
 
 sleep 3
-"$PYTHON_BIN" scripts/verify_live_popday.py
-"$PYTHON_BIN" scripts/verify_live_popday_buttons.py
+run_with_retries "PopDay live verification" "$PYTHON_BIN" scripts/verify_live_popday.py
+run_with_retries "PopDay live button verification" "$PYTHON_BIN" scripts/verify_live_popday_buttons.py
 
 echo "PopDay development front door deployed."
 echo "Open: https://jasdun.pythonanywhere.com/"

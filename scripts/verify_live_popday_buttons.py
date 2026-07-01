@@ -48,11 +48,11 @@ PUBLIC_TABS = (
         ),
     ),
     PublicTab(
-        "Candidates",
+        "Scan Log",
         "candidates",
         (
-            "Candidate Matches",
-            "Matches PopDay inspected",
+            "Scan Log",
+            "Filings PopDay inspected",
             "Status",
             "Source",
         ),
