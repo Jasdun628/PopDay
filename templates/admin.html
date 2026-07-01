@@ -490,6 +490,7 @@
       <thead>
         <tr>
           <th>Company</th>
+          <th>Evidence</th>
           <th>
             <span class="sortable-head">
               Event Date
@@ -529,7 +530,7 @@
               </span>
             </span>
           </th>
-          <th>Matched Phrase</th><th>Evidence</th><th>Source Type</th>
+          <th>Matched Phrase</th><th>Source Type</th>
         </tr>
       </thead>
       <tbody>
@@ -542,15 +543,15 @@
             {{ a.company_name }}
             {% endif %}
           </td>
-          <td class="date-strong">{{ a.event_date }}</td>
-          <td class="date-muted">{{ a.filing_date }}</td>
-          <td class="date-strong">{{ a.hype_count if a.hype_count is not none else "—" }}</td>
-          <td class="phrase-text">{{ a.matched_phrase }}</td>
           <td>
             {% if a.source_url %}
             <a href="{{ a.source_url }}" target="_blank" rel="noopener" class="evidence-link">{{ a.source_link_label }}</a>
             {% endif %}
           </td>
+          <td class="date-strong">{{ a.event_date }}</td>
+          <td class="date-muted">{{ a.filing_date }}</td>
+          <td class="date-strong">{{ a.hype_count if a.hype_count is not none else "—" }}</td>
+          <td class="phrase-text">{{ a.matched_phrase }}</td>
           <td class="secondary-cell">{{ a.source_type }}</td>
         </tr>
         {% endfor %}

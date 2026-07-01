@@ -715,12 +715,12 @@ def _announcements_table(db: Database) -> str:
     body = "\n".join(
         "<tr>"
         f"<td>{_e(row['company_name'])}</td>"
+        f"<td class=\"url\"><a class=\"inline-action\" href=\"{_e(_sec_detail_url(row['source_url']) if row['source_type'] == 'EDGAR' else row['source_url'])}\">Source</a></td>"
         f"<td>{_e(row['event_type'] or 'Investor Day')}</td>"
         f"<td>{_e(_friendly_date_string(row['event_date']))}</td>"
         f"<td>{_e(row['form_type'] or row['source_label'])}</td>"
         f"<td>{_e(_friendly_date_string(row['filing_date']))}</td>"
         f"<td>{_e(row['matched_phrase'] or '')}</td>"
-        f"<td class=\"url\"><a class=\"inline-action\" href=\"{_e(_sec_detail_url(row['source_url']) if row['source_type'] == 'EDGAR' else row['source_url'])}\">Source</a></td>"
         f"<td>{_e(row['source_type'])}</td>"
         "</tr>"
         for row in rows
@@ -731,8 +731,8 @@ def _announcements_table(db: Database) -> str:
         f'<div class="summary-value">{total}</div>'
         '<div class="summary-note">Known Investor Day announcements stored by PopDay.</div>'
         '</div>'
-        "<table><thead><tr><th>Company</th><th>Event</th><th>Event Date</th>"
-        "<th>Source</th><th>Announced/File Date</th><th>Matched Phrase</th><th>Link</th><th>Source Type</th>"
+        "<table><thead><tr><th>Company</th><th>Evidence</th><th>Event</th><th>Event Date</th>"
+        "<th>Source</th><th>Announced/File Date</th><th>Matched Phrase</th><th>Source Type</th>"
         f"</tr></thead><tbody>{body}</tbody></table>"
     )
 

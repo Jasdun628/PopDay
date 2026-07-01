@@ -261,10 +261,12 @@ def check_public_tabs(base_url: str, failures: list[str]) -> None:
             )
             check("Investor Days Email column removed", "<th>Email</th>" not in html, failures)
             check(
-                "Investor Days Evidence before Source Type",
-                html.find("<th>Evidence</th>") != -1
-                and html.find("<th>Source Type</th>") != -1
-                and html.find("<th>Evidence</th>") < html.find("<th>Source Type</th>"),
+                "Investor Days Evidence between Company and Event Date",
+                html.find("<th>Company</th>") != -1
+                and html.find("<th>Evidence</th>") != -1
+                and html.find("Event Date") != -1
+                and html.find("<th>Company</th>") < html.find("<th>Evidence</th>")
+                and html.find("<th>Evidence</th>") < html.find("Event Date"),
                 failures,
             )
 

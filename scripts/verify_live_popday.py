@@ -102,7 +102,14 @@ def main() -> int:
         or "https://www.radian.com/" in announcements,
         failures,
     )
-    check("investor-days column removed", "Company Event Event Date" not in text and "Company Event Date" in text, failures)
+    check(
+        "investor-days column order",
+        "<th>Email</th>" not in announcements
+        and announcements.find("<th>Company</th>")
+        < announcements.find("<th>Evidence</th>")
+        < announcements.find("Event Date"),
+        failures,
+    )
     check("triangle sorters", announcements.count("▲") == 3 and announcements.count("▼") == 3, failures)
     check("hi-lo labels removed", "Hi</a>" not in announcements and "Lo</a>" not in announcements, failures)
     check(
