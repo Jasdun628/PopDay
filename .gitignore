@@ -6,3 +6,5 @@ popday.sqlite3
 config.json
 logs/
 .claude/
+backups/
+*.bak
