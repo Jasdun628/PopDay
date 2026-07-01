@@ -66,6 +66,20 @@ python3 -m py_compile popday.py popday/*.py
 bash scripts/deploy_dev_to_pythonanywhere.sh
 ```
 
+Routine operator shortcuts should go through the stable command below rather
+than one-off `python3 -c` probes:
+
+```bash
+python3 scripts/popday_ops.py runtime-summary
+python3 scripts/popday_ops.py verify-live
+python3 scripts/popday_ops.py deploy
+python3 scripts/popday_ops.py backfill-acceptance
+python3 scripts/popday_ops.py check-pythonanywhere-db
+```
+
+This keeps the Mac Mini PopDay repo as the source of truth while reducing
+approval prompts for routine live/runtime checks.
+
 The deploy script backs up the Mac Mini runtime database, syncs Mac Mini repo
 code into `/Users/jasondunne/PopDayRuntime`, copies code plus the runtime
 database to PythonAnywhere, reloads the PythonAnywhere app, then runs:
