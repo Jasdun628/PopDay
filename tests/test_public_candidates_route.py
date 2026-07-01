@@ -386,21 +386,24 @@ class PublicCandidatesRouteTests(unittest.TestCase):
             html = response.get_data(as_text=True)
 
             self.assertEqual(response.status_code, 200)
-            for label in [
+            labels = [
+                "Price Reaction",
                 "Investor Days",
-                "Evidence",
                 "Research / Hype",
                 "Scan Log",
                 "Schedule",
                 "System Health",
-                "Acceptance Time",
-                "Price Reaction",
                 "Help",
-            ]:
-                self.assertIn(label, html)
+            ]
+            for label in labels:
+                self.assertIn(f"<h3>{label}</h3>", html)
+            for before, after in zip(labels, labels[1:]):
+                self.assertLess(html.find(f"<h3>{before}</h3>"), html.find(f"<h3>{after}</h3>"))
             self.assertIn("Upcoming events and Legacy events", html)
-            self.assertIn("after-market announcements", html)
             self.assertIn("Cached daily market-data view", html)
+            self.assertIn("total interval return", html)
+            self.assertNotIn("<h3>Evidence</h3>", html)
+            self.assertNotIn("<h3>Acceptance Time</h3>", html)
             self.assertNotIn("Processed Filings", html)
             self.assertNotIn("Include Rules", html)
             self.assertNotIn("No Commentary", html)

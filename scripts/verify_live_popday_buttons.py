@@ -28,6 +28,18 @@ class PublicTab:
 
 PUBLIC_TABS = (
     PublicTab(
+        "Price Reaction",
+        "price_reaction",
+        (
+            "Price Reaction",
+            "Cached daily market data",
+            "Previous Close",
+            "Daily Volatility",
+            "Interval Return",
+            "Total interval return",
+        ),
+    ),
+    PublicTab(
         "Investor Days",
         "announcements",
         (
@@ -49,17 +61,6 @@ PUBLIC_TABS = (
             "Legacy",
             "Raw Hype Count",
             "Investor Comms Count",
-        ),
-    ),
-    PublicTab(
-        "Price Reaction",
-        "price_reaction",
-        (
-            "Price Reaction",
-            "Cached daily market data",
-            "Previous Close",
-            "Daily Volatility",
-            "Interval Return",
         ),
     ),
     PublicTab(
@@ -97,10 +98,11 @@ PUBLIC_TABS = (
         "help",
         (
             "Help",
-            "What each PopDay tab is for",
-            "Acceptance Time",
+            "What each public PopDay tab is for",
             "Price Reaction",
+            "Investor Days",
             "Research / Hype",
+            "Scan Log",
             "System Health",
         ),
     ),

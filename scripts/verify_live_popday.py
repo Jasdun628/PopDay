@@ -45,8 +45,9 @@ def main() -> int:
     )
     check(
         "schedule before system health",
-        nav_text(front).find("Research / Hype")
-        < nav_text(front).find("Price Reaction")
+        nav_text(front).find("Price Reaction")
+        < nav_text(front).find("Investor Days")
+        < nav_text(front).find("Research / Hype")
         < nav_text(front).find("Scan Log")
         < nav_text(front).find("Schedule")
         < nav_text(front).find("System Health")
@@ -62,8 +63,8 @@ def main() -> int:
     check("rules tab hidden", "Rules" not in front, failures)
     check("email alerts management link", "Email Alerts" in front and "/admin/recipients" in front, failures)
     check(
-        "opens investor days tab",
-        "Running list of qualifying Investor Day announcements" in front,
+        "opens price reaction tab",
+        "Cached daily market data" in front,
         failures,
     )
     front_text = plain_text(front)
@@ -91,7 +92,6 @@ def main() -> int:
                 "Investor Comms Count",
                 "8-K 7.01 Count",
                 "8-K 8.01 Count",
-                "Presentation / Deck Count",
                 "Latest filing AD-ID",
             ]
         ),
@@ -111,6 +111,7 @@ def main() -> int:
                 "Reaction Close",
                 "Daily Volatility",
                 "Interval Return",
+                "Total interval return",
             ]
         ),
         failures,
