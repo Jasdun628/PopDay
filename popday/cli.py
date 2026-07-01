@@ -438,24 +438,51 @@ def watch_hype(args: argparse.Namespace) -> int:
     return 0
 
 
+def _is_hyped_label(status: str) -> bool:
+    # "building" (future event) and "hyped" (past event) both mean count >= threshold.
+    return status in {"hyped", "building"}
+
+
 def reclassify_hype(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     db = Database(config.db_path)
     db.seed_recipients(config.email_recipients)
+    dry_run = bool(getattr(args, "dry_run", False))
     try:
-        updated = reclassify_hype_tracking(config, db)
+        updated = reclassify_hype_tracking(config, db, dry_run=dry_run)
     except Exception as exc:
         print(f"Hype reclassification failed: {exc}")
         return 1
     finally:
         db.close()
 
-    print(f"Reclassified {len(updated)} hype row(s) with {config.hype_definition_version}.")
-    for row in updated[:20]:
+    changed = [row for row in updated if row.get("changed")]
+    to_hyped = [
+        row for row in changed
+        if _is_hyped_label(row["hype_status"]) and not _is_hyped_label(row["old_status"])
+    ]
+    to_quiet = [
+        row for row in changed
+        if not _is_hyped_label(row["hype_status"]) and _is_hyped_label(row["old_status"])
+    ]
+
+    mode = "DRY-RUN (no database write)" if dry_run else "wrote"
+    print(
+        f"Reclassify {mode}: {len(updated)} hype row(s) evaluated with "
+        f"threshold={config.hype_threshold}, version={config.hype_definition_version}."
+    )
+    print(
+        f"Would relabel {len(changed)} event(s): "
+        f"{len(to_hyped)} quiet->hyped, {len(to_quiet)} hyped->quiet."
+    )
+    sample = changed or updated
+    for row in sample[:20]:
+        items = ",".join(row.get("item_codes") or []) or "-"
         print(
             f"- candidate {row['candidate_id']} {row['event_date']}: "
-            f"{row['hype_status']}{' provisional' if row['provisional'] else ''} "
-            f"({row['qualifying_count']})"
+            f"{row['old_status'] or '(none)'} -> {row['hype_status']}"
+            f"{' provisional' if row['provisional'] else ''} "
+            f"(count={row['qualifying_count']}, items={items})"
         )
     return 0
 
@@ -500,7 +527,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--reclassify",
         action="store_true",
-        help="Recompute hype labels from stored detected_json only, with no EDGAR calls.",
+        help=(
+            "Recompute hype labels from stored detected_json only, with no EDGAR calls. "
+            "Add --dry-run to preview label changes without writing to the database."
+        ),
     )
     parser.add_argument("--debug-ui", action="store_true", help="Start the local read-only debug UI.")
     parser.add_argument(

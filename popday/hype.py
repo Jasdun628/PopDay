@@ -14,7 +14,12 @@ from .edgar_fetch import EdgarClient, SEC_BASE
 
 
 SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik}.json"
-QUALIFYING_ITEM_RE = re.compile(r"\b(?:7\.01|8\.01)\b")
+# Cabrera, Kolokolova & Zhang count three voluntary 8-K item types as pre-event
+# "hype" disclosures:
+#   2.02 = Results of Operations and Financial Condition
+#   7.01 = Regulation FD Disclosure
+#   8.01 = Other Events
+QUALIFYING_ITEM_RE = re.compile(r"\b(?:2\.02|7\.01|8\.01)\b")
 ELIGIBLE_EVENT_TYPES = {"analyst day", "investor day"}
 
 
@@ -145,6 +150,22 @@ def _qualifying_count_from_detected_json(detected_json: str) -> int:
     return len(payload)
 
 
+def _item_codes_from_detected_json(detected_json: str) -> list[str]:
+    """Distinct 8-K item codes across the stored qualifying matches."""
+    try:
+        payload = json.loads(detected_json or "[]")
+    except Exception:
+        return []
+    if not isinstance(payload, list):
+        return []
+    codes: set[str] = set()
+    for match in payload:
+        if isinstance(match, dict):
+            for code in match.get("item_codes", []) or []:
+                codes.add(str(code).strip())
+    return sorted(c for c in codes if c)
+
+
 def _reclassified_status(*, event_date: str, as_of: date, threshold: int, detected_json: str) -> tuple[int, str]:
     event_day = _parse_iso_date(event_date) or as_of
     qualifying_count = _qualifying_count_from_detected_json(detected_json)
@@ -232,36 +253,48 @@ def reclassify_hype_tracking(
     db: Database,
     *,
     as_of: date | None = None,
+    dry_run: bool = False,
 ) -> list[dict[str, Any]]:
+    """Recompute hype labels from stored detected_json only.
+
+    With ``dry_run=True`` nothing is written to the database; each returned row
+    also carries the previous label so callers can preview what would change.
+    """
     today = as_of or date.today()
     updated: list[dict[str, Any]] = []
     for row in db.all_hype_tracking_rows():
         detected_json = str(row["detected_json"] or "[]")
+        old_status = str(row["hype_status"] or "")
         qualifying_count, status = _reclassified_status(
             event_date=str(row["event_date"] or ""),
             as_of=today,
             threshold=config.hype_threshold,
             detected_json=detected_json,
         )
-        db.upsert_hype_tracking(
-            candidate_id=int(row["candidate_id"]),
-            cik=str(row["cik"]),
-            announcement_date=str(row["announcement_date"]),
-            event_date=str(row["event_date"]),
-            qualifying_count=qualifying_count,
-            hype_status=status,
-            hype_definition_version=config.hype_definition_version,
-            provisional=config.hype_provisional,
-            last_checked=today.isoformat(),
-            detected_json=detected_json,
-        )
+        item_codes = _item_codes_from_detected_json(detected_json)
+        if not dry_run:
+            db.upsert_hype_tracking(
+                candidate_id=int(row["candidate_id"]),
+                cik=str(row["cik"]),
+                announcement_date=str(row["announcement_date"]),
+                event_date=str(row["event_date"]),
+                qualifying_count=qualifying_count,
+                hype_status=status,
+                hype_definition_version=config.hype_definition_version,
+                provisional=config.hype_provisional,
+                last_checked=today.isoformat(),
+                detected_json=detected_json,
+            )
         updated.append(
             {
                 "candidate_id": int(row["candidate_id"]),
                 "event_date": str(row["event_date"]),
                 "qualifying_count": qualifying_count,
+                "old_status": old_status,
                 "hype_status": status,
                 "provisional": config.hype_provisional,
+                "item_codes": item_codes,
+                "changed": old_status != status,
             }
         )
     return updated
