@@ -130,6 +130,44 @@ class CandidateOrderingTests(unittest.TestCase):
             finally:
                 db.close()
 
+    def test_investor_day_announcements_include_acceptance_datetime(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db = Database(str(Path(tmpdir) / "popday.sqlite3"))
+            try:
+                db.conn.execute(
+                    """
+                    INSERT INTO detections
+                    (id, accession_number, company_name, cik, form_type, filing_date,
+                     acceptance_datetime, filing_url, event_type, event_date, matched_phrase,
+                     matched_location, snippet, status, dismissal_reason, created_timestamp)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        1,
+                        "acceptance-alert",
+                        "Acceptance Co",
+                        "0000000001",
+                        "8-K",
+                        "20260617",
+                        "2026-06-17T16:32:05-04:00",
+                        "https://www.sec.gov/filing-index.htm",
+                        "Investor Day",
+                        "2026-09-15",
+                        "investor day",
+                        "press_release",
+                        "Acceptance Co will host an Investor Day.",
+                        "alert_candidate",
+                        None,
+                        "2026-06-17T01:00:00+00:00",
+                    ),
+                )
+
+                rows = db.investor_day_announcements()
+
+                self.assertEqual(rows[0]["acceptance_datetime"], "2026-06-17T16:32:05-04:00")
+            finally:
+                db.close()
+
     def test_research_hype_events_include_existing_hype_payload(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             db = Database(str(Path(tmpdir) / "popday.sqlite3"))

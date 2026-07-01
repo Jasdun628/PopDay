@@ -51,6 +51,9 @@ def _enriched_filing(filing: Filing, parsed: object) -> Filing:
     company_name = str(getattr(parsed, "company_name", "") or filing.company_name)
     form_type = str(getattr(parsed, "form_type", "") or filing.form_type)
     filing_date = str(getattr(parsed, "filed_date", "") or filing.filing_date)
+    acceptance_datetime = str(
+        getattr(parsed, "acceptance_datetime", "") or getattr(filing, "acceptance_datetime", "")
+    )
     return Filing(
         accession_number=accession,
         cik=cik,
@@ -59,6 +62,7 @@ def _enriched_filing(filing: Filing, parsed: object) -> Filing:
         filing_date=filing_date,
         filing_url=filing.filing_url,
         primary_document=filing.primary_document,
+        acceptance_datetime=acceptance_datetime,
     )
 
 

@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS processed_filings (
     company_name TEXT NOT NULL,
     form_type TEXT NOT NULL,
     filing_date TEXT NOT NULL,
+    acceptance_datetime TEXT,
     filing_url TEXT NOT NULL,
     processed_timestamp TEXT NOT NULL
 );
@@ -29,6 +30,7 @@ CREATE TABLE IF NOT EXISTS detections (
     cik TEXT NOT NULL,
     form_type TEXT NOT NULL,
     filing_date TEXT NOT NULL,
+    acceptance_datetime TEXT,
     filing_url TEXT NOT NULL,
     event_type TEXT,
     event_date TEXT,
@@ -132,6 +134,14 @@ class Database:
         detection_columns = {
             row["name"] for row in self.conn.execute("PRAGMA table_info(detections)").fetchall()
         }
+        processed_columns = {
+            row["name"]
+            for row in self.conn.execute("PRAGMA table_info(processed_filings)").fetchall()
+        }
+        if "acceptance_datetime" not in processed_columns:
+            self.conn.execute("ALTER TABLE processed_filings ADD COLUMN acceptance_datetime TEXT")
+        if "acceptance_datetime" not in detection_columns:
+            self.conn.execute("ALTER TABLE detections ADD COLUMN acceptance_datetime TEXT")
         if "items_json" not in detection_columns:
             self.conn.execute(
                 "ALTER TABLE detections ADD COLUMN items_json TEXT NOT NULL DEFAULT '[]'"
@@ -187,8 +197,9 @@ class Database:
         self.conn.execute(
             """
             INSERT OR REPLACE INTO processed_filings
-            (accession_number, cik, company_name, form_type, filing_date, filing_url, processed_timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            (accession_number, cik, company_name, form_type, filing_date, acceptance_datetime,
+             filing_url, processed_timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 filing.accession_number,
@@ -196,6 +207,7 @@ class Database:
                 filing.company_name,
                 filing.form_type,
                 filing.filing_date,
+                getattr(filing, "acceptance_datetime", "") or None,
                 filing.filing_url,
                 utc_now(),
             ),
@@ -239,6 +251,58 @@ class Database:
             ),
         ).fetchone()
         return int(row["id"]) if row else 0
+
+    def detections_missing_acceptance_datetime(
+        self,
+        limit: int | None = None,
+        *,
+        qualifying_only: bool = False,
+    ) -> list[sqlite3.Row]:
+        query = """
+            SELECT id, accession_number, filing_url
+            FROM detections
+            WHERE (acceptance_datetime IS NULL OR acceptance_datetime = '')
+              AND filing_url IS NOT NULL
+              AND filing_url != ''
+        """
+        if qualifying_only:
+            query += " AND status = 'alert_candidate'"
+        query += " ORDER BY filing_date DESC, created_timestamp DESC"
+        params: tuple[Any, ...] = ()
+        if limit is not None:
+            query += " LIMIT ?"
+            params = (limit,)
+        return self.conn.execute(query, params).fetchall()
+
+    def set_detection_acceptance_datetime(
+        self,
+        detection_id: int,
+        acceptance_datetime: str,
+    ) -> None:
+        self.conn.execute(
+            """
+            UPDATE detections
+            SET acceptance_datetime = ?
+            WHERE id = ?
+            """,
+            (acceptance_datetime, detection_id),
+        )
+        self.conn.commit()
+
+    def sync_processed_acceptance_datetime(
+        self,
+        accession_number: str,
+        acceptance_datetime: str,
+    ) -> None:
+        self.conn.execute(
+            """
+            UPDATE processed_filings
+            SET acceptance_datetime = ?
+            WHERE accession_number = ?
+            """,
+            (acceptance_datetime, accession_number),
+        )
+        self.conn.commit()
 
     def mark_alert_sent(self, detection_ids: list[int]) -> None:
         if not detection_ids:
@@ -292,7 +356,8 @@ class Database:
     def recent_processed(self, limit: int = 20) -> list[sqlite3.Row]:
         return self.conn.execute(
             """
-            SELECT accession_number, company_name, form_type, filing_date, processed_timestamp
+            SELECT accession_number, company_name, form_type, filing_date, acceptance_datetime,
+                   processed_timestamp
             FROM processed_filings
             ORDER BY processed_timestamp DESC
             LIMIT ?
@@ -305,7 +370,7 @@ class Database:
             """
             SELECT d.id, d.created_timestamp, d.company_name, d.form_type, d.filing_date, d.event_type, d.event_date,
                    d.matched_phrase, d.matched_location, d.status, d.dismissal_reason, d.filing_url,
-                   d.event_url, d.evidence_url, d.evidence_label,
+                   d.acceptance_datetime, d.event_url, d.evidence_url, d.evidence_label,
                    h.qualifying_count, h.hype_status, h.hype_definition_version, h.provisional
             FROM detections d
             LEFT JOIN hype_tracking h ON h.candidate_id = d.id
@@ -319,8 +384,9 @@ class Database:
         return self.conn.execute(
             """
             SELECT id, accession_number, company_name, cik, form_type, filing_date, filing_url,
-                   event_type, event_date, matched_phrase, matched_location, snippet, items_json, status,
-                   dismissal_reason, event_url, evidence_url, evidence_label, alert_sent, created_timestamp
+                   acceptance_datetime, event_type, event_date, matched_phrase, matched_location,
+                   snippet, items_json, status, dismissal_reason, event_url, evidence_url,
+                   evidence_label, alert_sent, created_timestamp
             FROM detections
             WHERE id = ?
             """,
@@ -330,7 +396,8 @@ class Database:
     def latest_sent_alert(self) -> sqlite3.Row | None:
         return self.conn.execute(
             """
-            SELECT company_name, event_type, event_date, filing_url, alert_sent_timestamp
+            SELECT company_name, event_type, event_date, filing_url, acceptance_datetime,
+                   alert_sent_timestamp
             FROM detections
             WHERE alert_sent = 1
             ORDER BY alert_sent_timestamp DESC, created_timestamp DESC
@@ -399,7 +466,8 @@ class Database:
     def hype_watch_candidates(self) -> list[sqlite3.Row]:
         return self.conn.execute(
             """
-            SELECT id, accession_number, company_name, cik, filing_date, event_date, event_type, filing_url
+            SELECT id, accession_number, company_name, cik, filing_date, acceptance_datetime,
+                   event_date, event_type, filing_url
             FROM detections
             WHERE status = 'alert_candidate'
               AND filing_date IS NOT NULL
@@ -479,7 +547,7 @@ class Database:
         rows = self.conn.execute(
             """
             SELECT d.company_name, d.event_type, d.event_date, d.form_type, d.filing_date,
-                   d.filing_url AS source_url, d.evidence_url, d.evidence_label,
+                   d.acceptance_datetime, d.filing_url AS source_url, d.evidence_url, d.evidence_label,
                    d.accession_number, d.matched_phrase, d.matched_location, d.alert_sent,
                    d.alert_sent_timestamp, d.created_timestamp, 'EDGAR' AS source_type,
                    'SEC filing' AS source_label, h.qualifying_count AS hype_count
@@ -494,7 +562,8 @@ class Database:
         known_rows = self.conn.execute(
             """
             SELECT company_name, event_type, event_date, NULL AS form_type,
-                   announcement_date AS filing_date, source_url, NULL AS accession_number,
+                   announcement_date AS filing_date, NULL AS acceptance_datetime,
+                   source_url, NULL AS accession_number,
                    source_url AS evidence_url, source_label AS evidence_label,
                    NULL AS matched_phrase, NULL AS matched_location, alert_sent,
                    alert_sent_timestamp, created_timestamp, source_type, source_label,
@@ -540,7 +609,7 @@ class Database:
             """
             SELECT d.id AS candidate_id, d.company_name, d.ticker, d.cik, d.event_type,
                    d.event_date, COALESCE(h.announcement_date, d.filing_date) AS announcement_date,
-                   d.filing_url AS source_url, d.evidence_url, d.evidence_label,
+                   d.acceptance_datetime, d.filing_url AS source_url, d.evidence_url, d.evidence_label,
                    d.created_timestamp, 'EDGAR' AS source_type,
                    h.qualifying_count AS investor_comms_count,
                    h.detected_json, h.last_checked, h.hype_definition_version, h.provisional
@@ -555,7 +624,7 @@ class Database:
         known_rows = self.conn.execute(
             """
             SELECT NULL AS candidate_id, company_name, NULL AS ticker, NULL AS cik, event_type,
-                   event_date, announcement_date, source_url,
+                   event_date, announcement_date, NULL AS acceptance_datetime, source_url,
                    source_url AS evidence_url, source_label AS evidence_label,
                    created_timestamp, source_type,
                    NULL AS investor_comms_count, NULL AS detected_json, NULL AS last_checked,

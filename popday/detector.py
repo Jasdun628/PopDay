@@ -71,6 +71,7 @@ class Detection:
             "cik": self.filing.cik,
             "form_type": self.filing.form_type,
             "filing_date": self.filing.filing_date,
+            "acceptance_datetime": getattr(self.filing, "acceptance_datetime", "") or None,
             "filing_url": self.filing.filing_url,
             "event_type": self.event_type,
             "event_date": self.event_date,

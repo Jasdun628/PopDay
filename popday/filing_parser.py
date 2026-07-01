@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from html.parser import HTMLParser
 from urllib.parse import urljoin
+from zoneinfo import ZoneInfo
 
 
 ABBREVIATIONS = (
@@ -41,7 +42,8 @@ DOC_META_RE = {
     "filename": re.compile(r"(?im)^<FILENAME>(.*)$"),
     "description": re.compile(r"(?im)^<DESCRIPTION>(.*)$"),
 }
-HEADER_KEY_RE = re.compile(r"^([A-Z][A-Z0-9 .&/()-]+):\s*(.*)$")
+HEADER_KEY_RE = re.compile(r"^([A-Z][A-Z0-9 .&/()_-]+):\s*(.*)$")
+ACCEPTANCE_TAG_RE = re.compile(r"(?i)^<ACCEPTANCE-DATETIME>\s*(\d{14})\s*$")
 DOCUMENT_RE = re.compile(r"<DOCUMENT>(.*?)</DOCUMENT>", re.IGNORECASE | re.DOTALL)
 TEXT_RE = re.compile(r"<TEXT>(.*?)</TEXT>", re.IGNORECASE | re.DOTALL)
 ANCHOR_RE = re.compile(
@@ -114,6 +116,14 @@ def _iso_date(raw: str) -> str:
     return text
 
 
+def _acceptance_datetime(raw: str) -> str:
+    text = normalize_text(raw)
+    if not re.fullmatch(r"\d{14}", text):
+        return text
+    accepted = datetime.strptime(text, "%Y%m%d%H%M%S")
+    return accepted.replace(tzinfo=ZoneInfo("America/New_York")).isoformat(timespec="seconds")
+
+
 def _clean_company_name(value: str) -> str:
     text = normalize_text(value)
     if not text or text != text.upper():
@@ -181,6 +191,7 @@ class ParsedFiling:
     company_name: str
     cik: str
     filed_date: str
+    acceptance_datetime: str
     documents: list[dict]
 
     @property
@@ -225,10 +236,16 @@ def parse_sec_filing(raw: str) -> ParsedFiling:
     company_name = ""
     cik = ""
     filed_date = ""
+    acceptance_datetime = ""
     items: list[str] = []
 
     for line in header.splitlines():
-        match = HEADER_KEY_RE.match(line.strip())
+        stripped = line.strip()
+        acceptance_match = ACCEPTANCE_TAG_RE.match(stripped)
+        if acceptance_match and not acceptance_datetime:
+            acceptance_datetime = _acceptance_datetime(acceptance_match.group(1))
+            continue
+        match = HEADER_KEY_RE.match(stripped)
         if not match:
             continue
         key = match.group(1).strip()
@@ -243,6 +260,8 @@ def parse_sec_filing(raw: str) -> ParsedFiling:
             cik = value.zfill(10)
         elif key == "FILED AS OF DATE" and not filed_date:
             filed_date = _iso_date(value)
+        elif key == "ACCEPTANCE-DATETIME" and not acceptance_datetime:
+            acceptance_datetime = _acceptance_datetime(value)
         elif key == "ITEM INFORMATION" and value:
             items.append(value)
 
@@ -272,6 +291,7 @@ def parse_sec_filing(raw: str) -> ParsedFiling:
         company_name=company_name,
         cik=cik.zfill(10) if cik else "",
         filed_date=filed_date,
+        acceptance_datetime=acceptance_datetime,
         documents=documents,
     )
 

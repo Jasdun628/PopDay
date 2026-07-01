@@ -23,6 +23,7 @@ class Filing:
     filing_date: str
     filing_url: str
     primary_document: str
+    acceptance_datetime: str = ""
 
 
 class EdgarClient:

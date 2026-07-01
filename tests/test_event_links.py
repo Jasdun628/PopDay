@@ -17,6 +17,21 @@ class EventLinkTests(unittest.TestCase):
             [{"url": "https://investor.example.com/events", "text": "Investor Day webcast"}],
         )
 
+    def test_parser_captures_acceptance_datetime_in_new_york_time(self):
+        raw = """
+<SEC-HEADER>
+ACCESSION NUMBER: 0000000000-26-000001
+CONFORMED SUBMISSION TYPE: 8-K
+COMPANY CONFORMED NAME: EXAMPLE INC
+CENTRAL INDEX KEY: 0000000001
+FILED AS OF DATE: 20260619
+<ACCEPTANCE-DATETIME>20260619163205
+</SEC-HEADER>
+"""
+        parsed = parse_sec_filing(raw)
+
+        self.assertEqual(parsed.acceptance_datetime, "2026-06-19T16:32:05-04:00")
+
     def test_detector_attaches_best_company_event_link(self):
         raw = """
 <SEC-HEADER>
