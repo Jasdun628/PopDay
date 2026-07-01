@@ -93,6 +93,7 @@ def main() -> int:
     announcements = fetch("?tab=announcements&v=verify")
     text = plain_text(announcements)
     check("evidence links visible", "Exhibit 99.1" in text or "Business Wire release" in text, failures)
+    check("upcoming legacy sections", text.find("Upcoming") < text.find("Legacy"), failures)
     check(
         "company website links",
         "https://www.harmonicinc.com/" in announcements
@@ -110,13 +111,18 @@ def main() -> int:
         < announcements.find("Event Date"),
         failures,
     )
-    check("triangle sorters", announcements.count("▲") == 3 and announcements.count("▼") == 3, failures)
+    check("triangle sorters", announcements.count("▲") == 6 and announcements.count("▼") == 6, failures)
     check("hi-lo labels removed", "Hi</a>" not in announcements and "Lo</a>" not in announcements, failures)
     check(
-        "newest filed first",
-        "SLB LIMITED/NV" in text
+        "upcoming before legacy rows",
+        "HARMONIC INC." in text
         and "Climb Global Solutions" in text
-        and text.find("SLB LIMITED/NV") < text.find("Climb Global Solutions"),
+        and "SLB LIMITED/NV" in text
+        and "Samsara Inc." in text
+        and text.find("Upcoming") < text.find("HARMONIC INC.")
+        and text.find("Climb Global Solutions") < text.find("Legacy")
+        and text.find("Legacy") < text.find("SLB LIMITED/NV")
+        and text.find("SLB LIMITED/NV") < text.find("Samsara Inc."),
         failures,
     )
 

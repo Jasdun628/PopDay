@@ -35,6 +35,8 @@ PUBLIC_TABS = (
             "Running list of qualifying Investor Day announcements",
             "Company",
             "Evidence",
+            "Upcoming",
+            "Legacy",
         ),
     ),
     PublicTab(

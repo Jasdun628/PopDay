@@ -497,6 +497,17 @@ def _sort_announcements(items: list[dict], sort_key: str, direction: str) -> lis
     return items
 
 
+def _is_upcoming_announcement(item: dict, today: date | None = None) -> bool:
+    event_date = item.get("event_date_raw") or ""
+    if not event_date:
+        return False
+    try:
+        parsed = date.fromisoformat(str(event_date))
+    except ValueError:
+        return False
+    return parsed >= (today or date.today())
+
+
 def _next_scheduled_run() -> str:
     now = datetime.now().astimezone()
     for day_offset in range(8):
@@ -612,8 +623,17 @@ def _build_admin_context(db: Database, tab: str, *, company_websites: dict[str, 
             }
             for r in db.investor_day_announcements()
         ]
+        sorted_announcements = _sort_announcements(announcements, sort_key, direction)
+        upcoming_announcements = [
+            item for item in sorted_announcements if _is_upcoming_announcement(item)
+        ]
+        legacy_announcements = [
+            item for item in sorted_announcements if not _is_upcoming_announcement(item)
+        ]
         ctx.update(
-            announcements=_sort_announcements(announcements, sort_key, direction),
+            announcements=sorted_announcements,
+            upcoming_announcements=upcoming_announcements,
+            legacy_announcements=legacy_announcements,
             announcement_sort=sort_key,
             announcement_direction=direction,
         )

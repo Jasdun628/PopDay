@@ -1,3 +1,76 @@
+{% macro investor_days_table(rows, is_admin, announcement_sort, announcement_direction) %}
+<table>
+  <thead>
+    <tr>
+      <th>Company</th>
+      <th>Evidence</th>
+      <th>
+        <span class="sortable-head">
+          Event Date
+          <span class="sort-controls">
+            <a class="sort-link {% if announcement_sort == 'event' and announcement_direction == 'desc' %}sort-active{% endif %}"
+               aria-label="Sort event date newest first"
+               href="{{ url_for('admin_tab', tab='announcements', sort='event', direction='desc') if is_admin else url_for('index', tab='announcements', sort='event', direction='desc') }}">▲</a>
+            <a class="sort-link {% if announcement_sort == 'event' and announcement_direction == 'asc' %}sort-active{% endif %}"
+               aria-label="Sort event date oldest first"
+               href="{{ url_for('admin_tab', tab='announcements', sort='event', direction='asc') if is_admin else url_for('index', tab='announcements', sort='event', direction='asc') }}">▼</a>
+          </span>
+        </span>
+      </th>
+      <th>
+        <span class="sortable-head">
+          Announced / Filed
+          <span class="sort-controls">
+            <a class="sort-link {% if announcement_sort == 'filed' and announcement_direction == 'desc' %}sort-active{% endif %}"
+               aria-label="Sort filed date newest first"
+               href="{{ url_for('admin_tab', tab='announcements', sort='filed', direction='desc') if is_admin else url_for('index', tab='announcements', sort='filed', direction='desc') }}">▲</a>
+            <a class="sort-link {% if announcement_sort == 'filed' and announcement_direction == 'asc' %}sort-active{% endif %}"
+               aria-label="Sort filed date oldest first"
+               href="{{ url_for('admin_tab', tab='announcements', sort='filed', direction='asc') if is_admin else url_for('index', tab='announcements', sort='filed', direction='asc') }}">▼</a>
+          </span>
+        </span>
+      </th>
+      <th>
+        <span class="sortable-head">
+          Hype Count
+          <span class="sort-controls">
+            <a class="sort-link {% if announcement_sort == 'hype' and announcement_direction == 'desc' %}sort-active{% endif %}"
+               aria-label="Sort hype count highest first"
+               href="{{ url_for('admin_tab', tab='announcements', sort='hype', direction='desc') if is_admin else url_for('index', tab='announcements', sort='hype', direction='desc') }}">▲</a>
+            <a class="sort-link {% if announcement_sort == 'hype' and announcement_direction == 'asc' %}sort-active{% endif %}"
+               aria-label="Sort hype count lowest first"
+               href="{{ url_for('admin_tab', tab='announcements', sort='hype', direction='asc') if is_admin else url_for('index', tab='announcements', sort='hype', direction='asc') }}">▼</a>
+          </span>
+        </span>
+      </th>
+      <th>Matched Phrase</th><th>Source Type</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for a in rows %}
+    <tr>
+      <td class="primary-cell">
+        {% if a.company_url %}
+        <a href="{{ a.company_url }}" target="_blank" rel="noopener" class="company-link">{{ a.company_name }}</a>
+        {% else %}
+        {{ a.company_name }}
+        {% endif %}
+      </td>
+      <td>
+        {% if a.source_url %}
+        <a href="{{ a.source_url }}" target="_blank" rel="noopener" class="evidence-link">{{ a.source_link_label }}</a>
+        {% endif %}
+      </td>
+      <td class="date-strong">{{ a.event_date }}</td>
+      <td class="date-muted">{{ a.filing_date }}</td>
+      <td class="date-strong">{{ a.hype_count if a.hype_count is not none else "—" }}</td>
+      <td class="phrase-text">{{ a.matched_phrase }}</td>
+      <td class="secondary-cell">{{ a.source_type }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endmacro %}
 <!doctype html>
 <html lang="en">
 <head>
@@ -141,6 +214,18 @@
       padding-top: 10px;
     }
     .page-note { color: var(--muted); margin: -6px 0 14px; }
+    .split-heading {
+      border-top: 1px solid var(--line);
+      font-size: 14px;
+      font-weight: 750;
+      margin: 20px 0 8px;
+      padding-top: 14px;
+    }
+    .split-heading-first {
+      border-top: 0;
+      margin-top: 0;
+      padding-top: 0;
+    }
     .pill {
       border-radius: 999px;
       display: inline-block;
@@ -486,77 +571,19 @@
     <h2>Investor Days</h2>
     <p class="page-note">Running list of qualifying Investor Day announcements PopDay has found.</p>
     {% if announcements %}
-    <table>
-      <thead>
-        <tr>
-          <th>Company</th>
-          <th>Evidence</th>
-          <th>
-            <span class="sortable-head">
-              Event Date
-              <span class="sort-controls">
-                <a class="sort-link {% if announcement_sort == 'event' and announcement_direction == 'desc' %}sort-active{% endif %}"
-                   aria-label="Sort event date newest first"
-                   href="{{ url_for('admin_tab', tab='announcements', sort='event', direction='desc') if is_admin else url_for('index', tab='announcements', sort='event', direction='desc') }}">▲</a>
-                <a class="sort-link {% if announcement_sort == 'event' and announcement_direction == 'asc' %}sort-active{% endif %}"
-                   aria-label="Sort event date oldest first"
-                   href="{{ url_for('admin_tab', tab='announcements', sort='event', direction='asc') if is_admin else url_for('index', tab='announcements', sort='event', direction='asc') }}">▼</a>
-              </span>
-            </span>
-          </th>
-          <th>
-            <span class="sortable-head">
-              Announced / Filed
-              <span class="sort-controls">
-                <a class="sort-link {% if announcement_sort == 'filed' and announcement_direction == 'desc' %}sort-active{% endif %}"
-                   aria-label="Sort filed date newest first"
-                   href="{{ url_for('admin_tab', tab='announcements', sort='filed', direction='desc') if is_admin else url_for('index', tab='announcements', sort='filed', direction='desc') }}">▲</a>
-                <a class="sort-link {% if announcement_sort == 'filed' and announcement_direction == 'asc' %}sort-active{% endif %}"
-                   aria-label="Sort filed date oldest first"
-                   href="{{ url_for('admin_tab', tab='announcements', sort='filed', direction='asc') if is_admin else url_for('index', tab='announcements', sort='filed', direction='asc') }}">▼</a>
-              </span>
-            </span>
-          </th>
-          <th>
-            <span class="sortable-head">
-              Hype Count
-              <span class="sort-controls">
-                <a class="sort-link {% if announcement_sort == 'hype' and announcement_direction == 'desc' %}sort-active{% endif %}"
-                   aria-label="Sort hype count highest first"
-                   href="{{ url_for('admin_tab', tab='announcements', sort='hype', direction='desc') if is_admin else url_for('index', tab='announcements', sort='hype', direction='desc') }}">▲</a>
-                <a class="sort-link {% if announcement_sort == 'hype' and announcement_direction == 'asc' %}sort-active{% endif %}"
-                   aria-label="Sort hype count lowest first"
-                   href="{{ url_for('admin_tab', tab='announcements', sort='hype', direction='asc') if is_admin else url_for('index', tab='announcements', sort='hype', direction='asc') }}">▼</a>
-              </span>
-            </span>
-          </th>
-          <th>Matched Phrase</th><th>Source Type</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for a in announcements %}
-        <tr>
-          <td class="primary-cell">
-            {% if a.company_url %}
-            <a href="{{ a.company_url }}" target="_blank" rel="noopener" class="company-link">{{ a.company_name }}</a>
-            {% else %}
-            {{ a.company_name }}
-            {% endif %}
-          </td>
-          <td>
-            {% if a.source_url %}
-            <a href="{{ a.source_url }}" target="_blank" rel="noopener" class="evidence-link">{{ a.source_link_label }}</a>
-            {% endif %}
-          </td>
-          <td class="date-strong">{{ a.event_date }}</td>
-          <td class="date-muted">{{ a.filing_date }}</td>
-          <td class="date-strong">{{ a.hype_count if a.hype_count is not none else "—" }}</td>
-          <td class="phrase-text">{{ a.matched_phrase }}</td>
-          <td class="secondary-cell">{{ a.source_type }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <h3 class="split-heading split-heading-first">Upcoming</h3>
+    {% if upcoming_announcements %}
+      {{ investor_days_table(upcoming_announcements, is_admin, announcement_sort, announcement_direction) }}
+    {% else %}
+      <div class="empty">No upcoming Investor Day announcements stored yet.</div>
+    {% endif %}
+
+    <h3 class="split-heading">Legacy</h3>
+    {% if legacy_announcements %}
+      {{ investor_days_table(legacy_announcements, is_admin, announcement_sort, announcement_direction) }}
+    {% else %}
+      <div class="empty">No legacy Investor Day announcements stored yet.</div>
+    {% endif %}
     {% else %}
     <div class="empty">No qualifying Investor Day announcements stored yet.</div>
     {% endif %}
