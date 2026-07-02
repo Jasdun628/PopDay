@@ -36,7 +36,7 @@ PUBLIC_TABS = (
             "Previous Close",
             "Daily Volatility",
             "Interval Return",
-            "Total interval return",
+            "Average interval return",
         ),
     ),
     PublicTab(
