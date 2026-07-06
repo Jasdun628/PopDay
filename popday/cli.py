@@ -270,7 +270,14 @@ def run_scan(args: argparse.Namespace) -> int:
         for filing in filings:
             if filing.form_type not in TARGET_FORMS:
                 continue
-            if not args.dry_run and db.already_processed(filing.accession_number):
+            if args.reprocess:
+                # Re-run detection over the window, but never touch a filing whose
+                # detection was already emailed as an alert (protects alert history).
+                if not args.dry_run and db.filing_has_sent_alert(filing.accession_number):
+                    continue
+                if not args.dry_run:
+                    db.delete_detections_for_accession(filing.accession_number)
+            elif not args.dry_run and db.already_processed(filing.accession_number):
                 continue
 
             raw = client.get_text(filing.filing_url)
@@ -342,8 +349,11 @@ def run_scan(args: argparse.Namespace) -> int:
             )
             return 0
 
-        if args.dry_run:
+        if args.dry_run or args.reprocess:
+            # Reprocess writes the re-detected candidates to the database (so the
+            # Investor Days tab updates) but, like dry-run, never emails.
             _record_ok(0)
+            note = "DRY-RUN" if args.dry_run else "REPROCESS (detections written, no email)"
             _print_health_summary(
                 filing_date=run_date,
                 index_status="available",
@@ -351,6 +361,7 @@ def run_scan(args: argparse.Namespace) -> int:
                 eight_k_sanity_count=eight_k_sanity_count,
                 alerts_sent=0,
             )
+            print(f"[{note}] {len(alerts)} candidate alert(s):")
             print(build_alert_body(alerts))
             return 0
 
@@ -576,6 +587,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run date as YYYY-MM-DD, today, or previous-business-day.",
     )
     parser.add_argument("--dry-run", action="store_true", help="Print alerts without sending email.")
+    parser.add_argument(
+        "--reprocess",
+        action="store_true",
+        help=(
+            "Re-run detection over already-processed filings (replacing their "
+            "stored detections). Writes to the database but never sends email; "
+            "use to back-fill after a detector improvement."
+        ),
+    )
     parser.add_argument("--show-rules", action="store_true", help="Show read-only rules/debug view.")
     parser.add_argument(
         "--recent-candidates",

@@ -8,7 +8,7 @@ from datetime import date
 from typing import Any
 from urllib.parse import urljoin
 
-from .date_extract import extract_future_date
+from .date_extract import extract_event_date
 from .db import utc_now
 from .edgar_fetch import Filing
 from .filing_parser import ParsedFiling, best_nugget, split_sentences
@@ -263,19 +263,33 @@ def _best_event_signal(
                 if not normalized or phrase not in normalized.lower():
                     continue
                 phrase_context = normalized.lower()
-                event_date = extract_future_date(normalized, run_date)
+                phrase_idx = phrase_context.find(phrase)
+                # "2025 Capital Markets Day" — a phrase named after an earlier
+                # year is a reference to a past event, not a new announcement.
+                year_prefix = re.search(r"(19|20)\d{2}\s*$", phrase_context[:phrase_idx])
+                if year_prefix and int(year_prefix.group(0)) < run_date.year:
+                    continue
+                event_date = extract_event_date(
+                    normalized, run_date, anchor=phrase_idx
+                )
                 if not event_date:
                     continue
-                if _has_any(phrase_context, PAST_CUES):
+                announcement_context = _has_any(phrase_context, ANNOUNCEMENT_CUES)
+                # A clear forward-looking announcement ("will host ... on <future
+                # date>") must not be discarded just because the sentence also
+                # says it was "previously announced". Only treat past-cue text as
+                # a genuine replay/backward reference when there is no
+                # announcement cue at all.
+                if _has_any(phrase_context, PAST_CUES) and not announcement_context:
                     continue
-                if _has_any(phrase_context, routine_phrases) and not _has_any(phrase_context, ANNOUNCEMENT_CUES):
+                if _has_any(phrase_context, routine_phrases) and not announcement_context:
                     continue
                 score = 0
                 if normalized == nugget:
                     score += 4
                 if location == "press_release":
                     score += 3
-                if _has_any(phrase_context, ANNOUNCEMENT_CUES):
+                if announcement_context:
                     score += 2
                 if len(normalized) <= 300:
                     score += 1
@@ -294,6 +308,7 @@ def _best_tbd_signal(
     parsed: ParsedFiling,
     filing_url: str,
     include_phrases: list[str],
+    run_date: date,
 ) -> tuple[str, str, str, str, str] | None:
     """A strong future investor-event announcement that names no concrete date yet.
 
@@ -317,6 +332,11 @@ def _best_tbd_signal(
                 if not normalized or phrase not in normalized.lower():
                     continue
                 context = normalized.lower()
+                # A phrase named after an earlier year ("2025 Capital Markets
+                # Day") is a past-event reference, not a fresh announcement.
+                year_prefix = re.search(r"(19|20)\d{2}\s*$", context[: context.find(phrase)])
+                if year_prefix and int(year_prefix.group(0)) < run_date.year:
+                    continue
                 if not _has_any(context, ANNOUNCEMENT_CUES):
                     continue
                 if _has_any(context, PAST_CUES):
@@ -374,7 +394,7 @@ def detect_in_parsed_filing(
     has_phrase = any(phrase in body_text for phrase in include_phrases)
 
     if has_phrase:
-        tbd = _best_tbd_signal(parsed, filing.filing_url, include_phrases)
+        tbd = _best_tbd_signal(parsed, filing.filing_url, include_phrases, run_date)
         if tbd:
             phrase, location, snippet, evidence_url, evidence_label = tbd
             return [
@@ -439,12 +459,16 @@ def detect_in_sections(
             seen_snippets.add(snippet_key)
 
             phrase_context = snippet.lower()
-            event_date = extract_future_date(snippet, run_date)
+            event_date = extract_event_date(
+                snippet, run_date, anchor=phrase_context.find(phrase)
+            )
             high_signal = not section.location.startswith("full_body:")
             announcement_context = _has_any(phrase_context, ANNOUNCEMENT_CUES)
             past_context = _has_any(phrase_context, PAST_CUES)
 
-            if event_date and (high_signal or announcement_context) and not past_context:
+            # Past-cue text should only veto when there's no forward-looking
+            # announcement cue (see _best_event_signal for the rationale).
+            if event_date and (high_signal or announcement_context) and not (past_context and not announcement_context):
                 detections.append(
                     Detection(
                         filing=filing,

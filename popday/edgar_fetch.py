@@ -174,22 +174,45 @@ class EdgarClient:
             matched_phrase=phrase,
         )
 
+    @staticmethod
+    def _phrase_query_variants(phrase: str) -> list[str]:
+        """Exact phrase plus a simple plural of its final word.
+
+        SEC's full-text search treats a quoted phrase literally: `"investor day"`
+        does NOT match "Investor Days". Companies frequently use the plural
+        ("will host Investor Days on ..."), so without this the primary discovery
+        path silently misses real, alert-worthy filings. Pluralising the last
+        word covers day->days, event->events, seminar->seminars, teach-in->
+        teach-ins, etc. for every current include phrase.
+        """
+        variants = [phrase]
+        words = phrase.split()
+        if words and not words[-1].endswith("s"):
+            variants.append(" ".join(words[:-1] + [words[-1] + "s"]))
+        return variants
+
     def search_filings_for_phrases(
         self, run_date: date, phrases: list[str]
     ) -> list[Filing]:
         """Discover candidate filings via the EDGAR full-text search JSON API.
 
-        One small JSON request per phrase; results deduplicated by accession.
-        Raises EdgarBlockedError / EdgarUnavailableError on hard failure so the
-        caller can fall back to the daily index (and never fake a green run).
+        A small JSON request per phrase (singular and plural), deduplicated by
+        accession. Raises EdgarBlockedError / EdgarUnavailableError on hard
+        failure so the caller can fall back to the daily index (and never fake a
+        green run).
         """
         seen: dict[str, Filing] = {}
+        queried: set[str] = set()
         for phrase in phrases:
-            payload = self.get_json(self._efts_url(phrase, run_date))
-            for hit in payload.get("hits", {}).get("hits", []):
-                filing = self._filing_from_efts_hit(hit, phrase)
-                if filing and filing.accession_number not in seen:
-                    seen[filing.accession_number] = filing
+            for query in self._phrase_query_variants(phrase):
+                if query in queried:
+                    continue
+                queried.add(query)
+                payload = self.get_json(self._efts_url(query, run_date))
+                for hit in payload.get("hits", {}).get("hits", []):
+                    filing = self._filing_from_efts_hit(hit, phrase)
+                    if filing and filing.accession_number not in seen:
+                        seen[filing.accession_number] = filing
         self.stats.sources_used.append("efts")
         return list(seen.values())
 

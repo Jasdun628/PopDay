@@ -359,6 +359,31 @@ class Database:
         ).fetchone()
         return int(row["id"]) if row else 0
 
+    def filing_has_sent_alert(self, accession_number: str) -> bool:
+        """True if any detection for this filing was already emailed as an alert.
+
+        `--reprocess` uses this to leave already-alerted filings completely
+        untouched, so re-detection never disturbs real alert history.
+        """
+        row = self.conn.execute(
+            "SELECT 1 FROM detections WHERE accession_number = ? AND alert_sent = 1 LIMIT 1",
+            (accession_number,),
+        ).fetchone()
+        return row is not None
+
+    def delete_detections_for_accession(self, accession_number: str) -> int:
+        """Remove stored detections for one filing so it can be re-detected.
+
+        Used by `--reprocess` to re-run improved detection over already-processed
+        filings without leaving stale duplicate rows behind.
+        """
+        cursor = self.conn.execute(
+            "DELETE FROM detections WHERE accession_number = ?",
+            (accession_number,),
+        )
+        self.conn.commit()
+        return cursor.rowcount
+
     def detections_missing_acceptance_datetime(
         self,
         limit: int | None = None,
