@@ -289,6 +289,18 @@
     }
     .status-title { font-size: 26px; font-weight: 750; line-height: 1.2; }
     .status-meta { color: var(--muted); margin-top: 6px; overflow-wrap: anywhere; }
+    .scan-alert {
+      background: var(--danger-bg);
+      border: 1px solid var(--danger);
+      border-left: 6px solid var(--danger);
+      border-radius: 6px;
+      color: var(--danger);
+      margin: 14px 0 4px;
+      padding: 14px 16px;
+    }
+    .scan-alert-headline { font-size: 17px; font-weight: 800; }
+    .scan-alert-detail { margin-top: 5px; overflow-wrap: anywhere; }
+    .scan-alert-meta { color: var(--danger); font-size: 13px; margin-top: 6px; opacity: 0.85; }
     .health-strip {
       background: var(--panel);
       border: 1px solid var(--line);
@@ -617,6 +629,14 @@
 	    {% endfor %}
 	  </nav>
 
+  {% if status.scan_alert and status.scan_alert.active %}
+  <div class="scan-alert" role="alert">
+    <div class="scan-alert-headline">⚠ {{ status.scan_alert.headline }}</div>
+    <div class="scan-alert-detail">{{ status.scan_alert.detail }}</div>
+    <div class="scan-alert-meta">Last successful scan: {{ status.scan_alert.last_success_display }}</div>
+  </div>
+  {% endif %}
+
   {% macro research_sort_header(label, key) -%}
     <span class="sortable-head">
       {{ label }}
@@ -653,6 +673,11 @@
           <div class="summary-label">Last Mac Mini scan</div>
           <div class="summary-value">{{ status.latest_scan_started_at_display }}</div>
           <div class="summary-note">Filing date: {{ status.filing_date_scanned or "unknown" }}</div>
+        </div>
+        <div class="health-item">
+          <div class="summary-label">Last successful scan</div>
+          <div class="summary-value">{{ status.last_successful_scan_display or "unknown" }}</div>
+          <div class="summary-note">Discovery source: {{ status.last_scan_source or "unknown" }}</div>
         </div>
         <div class="health-item">
           <div class="summary-label">Browser freshness</div>
@@ -991,10 +1016,21 @@
   {# ------------------------------------------------------------------ #}
   {% elif active_tab == 'health' %}
   <section>
-    <div class="summary-card" style="margin-bottom:12px; display:inline-block; min-width:320px;">
+    <div class="summary-card" style="margin-bottom:12px; display:inline-block; min-width:320px; margin-right:10px;">
       <div class="summary-label">Next scheduled run</div>
       <div class="summary-value" style="font-size:16px;">{{ next_run|replace("UTC", "GMT") }}</div>
     </div>
+    <div class="summary-card" style="margin-bottom:12px; display:inline-block; min-width:320px;">
+      <div class="summary-label">Last successful scan</div>
+      <div class="summary-value" style="font-size:16px;">{{ status.last_successful_scan_display or "unknown" }}</div>
+      <div class="summary-note">Discovery source: {{ status.last_scan_source or "unknown" }}</div>
+    </div>
+    {% if status.scan_alert and status.scan_alert.active %}
+    <div class="scan-alert" role="alert" style="margin-top:0;">
+      <div class="scan-alert-headline">⚠ {{ status.scan_alert.headline }}</div>
+      <div class="scan-alert-detail">{{ status.scan_alert.detail }}</div>
+    </div>
+    {% endif %}
     {% if health_rows %}
     <table>
       <thead>
@@ -1122,7 +1158,7 @@
         ("Research / Hype",     "Research view for already detected events. It is split into Upcoming and Legacy using the Investor Day date, and shows unknown where PopDay does not yet have enough data."),
         ("Scan Log",            "Inspection view for filings PopDay examined, including dismissed false positives. It shows why something did or did not qualify."),
         ("Schedule",            "Recent Mac Mini scanner runs and the next expected run time."),
-        ("System Health",       "Current front-door health, freshness, backup state, and latest scan facts."),
+        ("System Health",       "Current front-door health, freshness, backup state, and latest scan facts. It shows the last successful scan and its discovery source (SEC full-text search, with the daily index as a fallback). If a scan fails or none has succeeded in over 26 hours, a red warning banner appears on every tab explaining exactly why, so a stale page can never look healthy."),
         ("Help",                "Short guide to the public PopDay tabs.")
       ] %}
       <div class="manual-card">

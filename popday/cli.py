@@ -12,7 +12,13 @@ from .date_extract import format_human_date
 from .db import Database
 from .detector import detect_in_parsed_filing, detect_in_sections
 from .debug_server import serve_debug_ui
-from .edgar_fetch import EdgarClient, Filing, TARGET_FORMS
+from .edgar_fetch import (
+    EdgarBlockedError,
+    EdgarClient,
+    EdgarUnavailableError,
+    Filing,
+    TARGET_FORMS,
+)
 from .emailer import (
     build_alert_body,
     send_alert_email,
@@ -187,39 +193,77 @@ def run_scan(args: argparse.Namespace) -> int:
     include_phrases = db.active_phrases("include")
     routine_phrases = db.active_phrases("routine_context")
 
+    scan_run_id = db.start_scan_run(run_date)
+
+    def _fail_scan(reason: str, detail: str) -> int:
+        """Record and report a hard scan failure. NEVER exits 0.
+
+        Historical bug: a 403 from SEC was treated as 'index not yet
+        available' and the scan exited 0 (green), so blocked runs were
+        invisible for weeks. 403 now always means a failed run.
+        """
+        db.finish_scan_run(
+            scan_run_id,
+            status="failed",
+            filings_seen=0,
+            filings_parsed=0,
+            alerts_sent=0,
+            source="",
+            error=f"{reason}: {detail}"[:2000],
+        )
+        _print_health_summary(
+            filing_date=run_date,
+            index_status="error",
+            filings_parsed=0,
+            eight_k_sanity_count=0,
+            alerts_sent=0,
+        )
+        print(f"SCAN FAILED - {reason}\n{detail}")
+        return 1
+
     try:
+        # Primary discovery: EDGAR full-text search API, queried with the
+        # include phrases (a handful of small JSON calls). Fallback: the
+        # legacy daily master index, which SEC's bot filtering now blocks
+        # for some automated clients.
+        filings: list[Filing] = []
+        discovery_source = ""
+        primary_error: Exception | None = None
         try:
-            filings = client.filings_for_date(run_date, max_companies=args.max_companies)
-        except urllib.error.HTTPError as exc:
-            index_status = "not yet available" if exc.code == 403 else "error"
-            _print_health_summary(
-                filing_date=run_date,
-                index_status=index_status,
-                filings_parsed=0,
-                eight_k_sanity_count=0,
-                alerts_sent=0,
-            )
-            print(
-                f"SEC EDGAR returned HTTP {exc.code} while fetching the daily filing index.\n"
-                "This can happen if the daily index for the requested date is not published yet, "
-                "or if SEC rejects the User-Agent.\n"
-                "Check the date and User-Agent, then try again later."
-            )
-            return 0 if exc.code == 403 else 1
-        except urllib.error.URLError as exc:
-            _print_health_summary(
-                filing_date=run_date,
-                index_status="error",
-                filings_parsed=0,
-                eight_k_sanity_count=0,
-                alerts_sent=0,
-            )
-            print(
-                "PopDay could not reach SEC EDGAR while fetching the daily filing index.\n"
-                f"Network error: {exc.reason}\n"
-                "Check the internet connection and try again."
-            )
-            return 1
+            filings = client.search_filings_for_phrases(run_date, include_phrases)
+            discovery_source = "efts"
+        except (EdgarBlockedError, EdgarUnavailableError, urllib.error.HTTPError, ValueError) as exc:
+            primary_error = exc
+        if primary_error is not None:
+            try:
+                filings = client.filings_for_date(
+                    run_date, max_companies=args.max_companies
+                )
+                discovery_source = "daily-index"
+                print(
+                    "Note: full-text search discovery failed "
+                    f"({primary_error}); fell back to the daily index."
+                )
+            except urllib.error.HTTPError as exc:
+                if exc.code == 404 and run_date >= date.today():
+                    # The only legitimate "not published yet" case.
+                    return _fail_scan(
+                        "daily index not yet published",
+                        f"HTTP 404 for {run_date}. Full-text search also failed: {primary_error}",
+                    )
+                return _fail_scan(
+                    f"SEC returned HTTP {exc.code} on the daily index",
+                    f"Full-text search also failed: {primary_error}",
+                )
+            except EdgarBlockedError as exc:
+                return _fail_scan(
+                    "SEC EDGAR is blocking this machine (HTTP 403)",
+                    f"{exc}. Full-text search also failed: {primary_error}. "
+                    "This is usually a temporary IP block for automated "
+                    "clients; the run will be retried on the next schedule.",
+                )
+            except EdgarUnavailableError as exc:
+                return _fail_scan("could not reach SEC EDGAR", str(exc))
 
         eight_k_sanity_count = sum(1 for filing in filings if filing.form_type == "8-K")
 
@@ -276,7 +320,19 @@ def run_scan(args: argparse.Namespace) -> int:
             if not args.dry_run:
                 db.mark_processed(filing)
 
+        def _record_ok(alerts_sent: int) -> None:
+            db.finish_scan_run(
+                scan_run_id,
+                status="ok",
+                filings_seen=len(filings),
+                filings_parsed=filings_parsed,
+                alerts_sent=alerts_sent,
+                source=discovery_source,
+                error="",
+            )
+
         if not alerts:
+            _record_ok(0)
             _print_health_summary(
                 filing_date=run_date,
                 index_status="available",
@@ -287,6 +343,7 @@ def run_scan(args: argparse.Namespace) -> int:
             return 0
 
         if args.dry_run:
+            _record_ok(0)
             _print_health_summary(
                 filing_date=run_date,
                 index_status="available",
@@ -299,6 +356,7 @@ def run_scan(args: argparse.Namespace) -> int:
 
         send_alert_email(config, alerts, recipients=db.active_alert_recipients())
         db.mark_alert_sent([alert.detection_id for alert in alerts])
+        _record_ok(len(alerts))
         _print_health_summary(
             filing_date=run_date,
             index_status="available",
@@ -307,6 +365,17 @@ def run_scan(args: argparse.Namespace) -> int:
             alerts_sent=len(alerts),
         )
         return 0
+    except EdgarBlockedError as exc:
+        return _fail_scan("SEC EDGAR blocked a request mid-run (HTTP 403)", str(exc))
+    except EdgarUnavailableError as exc:
+        return _fail_scan("lost connection to SEC EDGAR mid-run", str(exc))
+    except Exception as exc:  # noqa: BLE001 - a scheduled run must never die silently
+        import traceback
+
+        return _fail_scan(
+            f"unexpected error ({type(exc).__name__})",
+            traceback.format_exc(limit=8),
+        )
     finally:
         db.close()
 

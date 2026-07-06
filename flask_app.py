@@ -350,6 +350,12 @@ def _fallback_status(message: str) -> dict:
         "last_backup_at": None,
         "retained_backups": 0,
         "database_counts": {},
+        "scan_alert": {
+            "active": True,
+            "headline": "Status unavailable — cannot confirm scan health.",
+            "detail": message,
+            "last_success_display": "unknown",
+        },
     }
 
 
@@ -394,7 +400,65 @@ def _load_public_status() -> dict:
         status.get("latest_scan_started_at")
     )
     status["next_expected_scan_display"] = _next_scheduled_run()
+    _scan_health = status.get("scan_health") or {}
+    status["scan_alert"] = _scan_alert(_scan_health)
+    status["last_successful_scan_display"] = (
+        _friendly_datetime_value(_scan_health.get("last_success_utc"))
+        if _scan_health.get("last_success_utc")
+        else "never"
+    )
+    status["last_scan_source"] = _scan_health.get("last_run_source") or "unknown"
     return status
+
+
+def _scan_alert(scan_health: dict) -> dict:
+    """Blunt scan-health banner shown on every tab.
+
+    The whole point of the July 2026 fix is that a silently-dead scan is
+    impossible to hide: if the last run failed, or no scan has succeeded in
+    over 26 hours, every tab carries a red banner saying exactly why.
+    """
+    inactive = {"active": False}
+    if not scan_health.get("table_present"):
+        return inactive
+
+    run_status = str(scan_health.get("last_run_status") or "").strip().lower()
+    error = str(scan_health.get("last_run_error") or "").strip()
+    last_success = _parse_datetime(scan_health.get("last_success_utc"))
+    last_success_display = (
+        _friendly_datetime_value(scan_health.get("last_success_utc"))
+        if scan_health.get("last_success_utc")
+        else "never"
+    )
+    age_hours = (
+        (datetime.now(timezone.utc) - last_success).total_seconds() / 3600
+        if last_success
+        else None
+    )
+
+    if run_status == "failed":
+        detail = f" {error}" if error else ""
+        return {
+            "active": True,
+            "headline": "Scan failed — data may be out of date.",
+            "detail": f"The last automated PopDay scan did not complete.{detail}",
+            "last_success_display": last_success_display,
+        }
+    if last_success is None:
+        return {
+            "active": True,
+            "headline": "No successful scan recorded yet.",
+            "detail": "PopDay has not completed a successful scan on this database.",
+            "last_success_display": last_success_display,
+        }
+    if age_hours is not None and age_hours > 26:
+        return {
+            "active": True,
+            "headline": "Scan is overdue — data may be out of date.",
+            "detail": f"The last successful PopDay scan was about {int(age_hours)} hours ago.",
+            "last_success_display": last_success_display,
+        }
+    return inactive
 
 
 def _admin_display_text(value: object) -> str:

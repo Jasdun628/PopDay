@@ -129,6 +129,19 @@ CREATE TABLE IF NOT EXISTS price_reactions (
     status TEXT NOT NULL,
     notes TEXT
 );
+
+CREATE TABLE IF NOT EXISTS scan_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_date TEXT NOT NULL,
+    started_utc TEXT NOT NULL,
+    finished_utc TEXT,
+    status TEXT NOT NULL DEFAULT 'running',
+    discovery_source TEXT,
+    filings_seen INTEGER NOT NULL DEFAULT 0,
+    filings_parsed INTEGER NOT NULL DEFAULT 0,
+    alerts_sent INTEGER NOT NULL DEFAULT 0,
+    error TEXT
+);
 """
 
 
@@ -224,6 +237,61 @@ class Database:
             [(recipient.lower(), utc_now()) for recipient in recipients],
         )
         self.conn.commit()
+
+    def start_scan_run(self, run_date) -> int:
+        cursor = self.conn.execute(
+            "INSERT INTO scan_runs (run_date, started_utc, status) VALUES (?, ?, 'running')",
+            (str(run_date), utc_now()),
+        )
+        self.conn.commit()
+        return int(cursor.lastrowid)
+
+    def finish_scan_run(
+        self,
+        scan_run_id: int,
+        *,
+        status: str,
+        filings_seen: int,
+        filings_parsed: int,
+        alerts_sent: int,
+        source: str,
+        error: str,
+    ) -> None:
+        self.conn.execute(
+            """
+            UPDATE scan_runs
+               SET finished_utc = ?, status = ?, discovery_source = ?,
+                   filings_seen = ?, filings_parsed = ?, alerts_sent = ?, error = ?
+             WHERE id = ?
+            """,
+            (
+                utc_now(),
+                status,
+                source,
+                filings_seen,
+                filings_parsed,
+                alerts_sent,
+                error,
+                scan_run_id,
+            ),
+        )
+        self.conn.commit()
+
+    def latest_scan_health(self) -> dict[str, Any]:
+        """Dead-man's-switch data for the health tab / status JSON."""
+        last_ok = self.conn.execute(
+            "SELECT * FROM scan_runs WHERE status = 'ok' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        last_any = self.conn.execute(
+            "SELECT * FROM scan_runs ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        return {
+            "last_success_utc": last_ok["finished_utc"] if last_ok else None,
+            "last_run_utc": (last_any["finished_utc"] or last_any["started_utc"]) if last_any else None,
+            "last_run_status": last_any["status"] if last_any else None,
+            "last_run_source": last_any["discovery_source"] if last_any else None,
+            "last_run_error": last_any["error"] if last_any else None,
+        }
 
     def already_processed(self, accession_number: str) -> bool:
         row = self.conn.execute(

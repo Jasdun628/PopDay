@@ -89,6 +89,46 @@ def _count(con: sqlite3.Connection, table: str, where: str = "") -> int | None:
         return None
 
 
+def _scan_health(con: sqlite3.Connection) -> dict[str, Any]:
+    """Authoritative dead-man's-switch health from the scan_runs table.
+
+    Mirrors popday.db.Database.latest_scan_health() but is kept as a raw query
+    so this deploy script stays independent of the popday package import path.
+    Returns table_present=False if the scan_runs table has not been created yet
+    (older runtimes), so callers can fall back to log-based health.
+    """
+    empty: dict[str, Any] = {
+        "table_present": False,
+        "last_success_utc": None,
+        "last_run_utc": None,
+        "last_run_status": None,
+        "last_run_source": None,
+        "last_run_error": None,
+    }
+    try:
+        last_ok = con.execute(
+            "SELECT finished_utc FROM scan_runs WHERE status = 'ok' "
+            "ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        last_any = con.execute(
+            "SELECT started_utc, finished_utc, status, discovery_source, error "
+            "FROM scan_runs ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+    except sqlite3.Error:
+        return empty
+    if last_any is None:
+        empty["table_present"] = True
+        return empty
+    return {
+        "table_present": True,
+        "last_success_utc": last_ok["finished_utc"] if last_ok else None,
+        "last_run_utc": last_any["finished_utc"] or last_any["started_utc"],
+        "last_run_status": last_any["status"],
+        "last_run_source": last_any["discovery_source"],
+        "last_run_error": last_any["error"],
+    }
+
+
 def _latest_alert(con: sqlite3.Connection) -> dict[str, Any] | None:
     rows: list[dict[str, Any]] = []
     try:
@@ -135,6 +175,7 @@ def _database_status(db_path: Path) -> dict[str, Any]:
         "size_bytes": db_path.stat().st_size if db_path.exists() else 0,
         "counts": {},
         "latest_alert": None,
+        "scan_health": None,
         "error": "",
     }
     if not db_path.exists():
@@ -150,6 +191,7 @@ def _database_status(db_path: Path) -> dict[str, Any]:
             "active_recipients": _count(con, "alert_recipients", "WHERE active = 1"),
         }
         status["latest_alert"] = _latest_alert(con)
+        status["scan_health"] = _scan_health(con)
     finally:
         con.close()
     return status
@@ -195,6 +237,38 @@ def _health(
 ) -> dict[str, str]:
     if not db_status["exists"]:
         return {"level": "BROKEN", "summary": "BROKEN: live Mac Mini database is missing."}
+
+    # Authoritative source of truth: the scan_runs dead-man's switch. A 403 or
+    # any hard failure now records status='failed' with an error, so a blocked
+    # or crashed scan can never again look green. Only fall back to the older
+    # log-parsing logic when the table has no rows yet (fresh runtime).
+    scan_health = db_status.get("scan_health") or {}
+    if scan_health.get("table_present") and scan_health.get("last_run_status"):
+        run_status = (scan_health.get("last_run_status") or "").strip().lower()
+        error = (scan_health.get("last_run_error") or "").strip()
+        last_success = _parse_iso(scan_health.get("last_success_utc"))
+        success_age_h = (now - last_success).total_seconds() / 3600 if last_success else None
+
+        if run_status == "failed":
+            detail = f" {error}" if error else ""
+            return {"level": "BROKEN", "summary": f"BROKEN: the latest Mac Mini scan failed.{detail}"[:400]}
+        if last_success is None:
+            return {"level": "BROKEN", "summary": "BROKEN: no successful Mac Mini scan has ever been recorded."}
+        if run_status == "running" and success_age_h is not None and success_age_h > 3:
+            return {"level": "BROKEN", "summary": "BROKEN: a Mac Mini scan started but never finished."}
+        if success_age_h is not None and success_age_h > 50:
+            return {"level": "BROKEN", "summary": f"BROKEN: no successful Mac Mini scan in over {int(success_age_h)} hours."}
+        if success_age_h is not None and success_age_h > 26:
+            return {"level": "STALE", "summary": f"STALE: last successful Mac Mini scan was about {int(success_age_h)} hours ago."}
+        if run_status in {"ok", "running"}:
+            source = scan_health.get("last_run_source") or "?"
+            if run_status == "running":
+                return {"level": "LIVE", "summary": "Healthy. A Mac Mini scan is currently running; the previous scan succeeded."}
+            alerts = latest_run.get("qualifying_alerts_sent") if latest_run else None
+            if alerts and alerts not in {"0", ""}:
+                return {"level": "LIVE", "summary": f"LIVE: latest Mac Mini scan succeeded (via {source}) and sent alerts."}
+            return {"level": "LIVE", "summary": f"Healthy. Latest Mac Mini scan succeeded (via {source}); no qualifying alerts."}
+
     if not latest_run:
         return {"level": "BROKEN", "summary": "BROKEN: no Mac Mini scan runs found in the launchd log."}
 
@@ -268,6 +342,7 @@ def build_status(args: argparse.Namespace) -> dict[str, Any]:
         "error_log_size_bytes": err_log.stat().st_size if err_log.exists() else 0,
         "error_log_modified_at": _log_mtime(err_log),
         "database_counts": db_status["counts"],
+        "scan_health": db_status.get("scan_health"),
         "last_backup_at": backup["latest_backup_at"],
         "last_backup_path": backup["latest_backup_path"],
         "live_database_backed_up": backup["live_database_backed_up"],

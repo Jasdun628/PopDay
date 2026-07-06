@@ -10,22 +10,33 @@ PYTHONANYWHERE_APP_DIR="${PYTHONANYWHERE_APP_DIR:-/home/Jasdun/popday}"
 PYTHONANYWHERE_WSGI_PATH="${PYTHONANYWHERE_WSGI_PATH:-/var/www/jasdun_pythonanywhere_com_wsgi.py}"
 PYTHONANYWHERE_DB_PATH="${PYTHONANYWHERE_DB_PATH:-$PYTHONANYWHERE_APP_DIR/popday.sqlite3}"
 PYTHON_BIN="${PYTHON_BIN:-/usr/bin/python3}"
+POPDAY_DEPLOY_RELOAD_WAIT_SECONDS="${POPDAY_DEPLOY_RELOAD_WAIT_SECONDS:-10}"
+POPDAY_DEPLOY_RELOAD_BACKOFF_SECONDS="${POPDAY_DEPLOY_RELOAD_BACKOFF_SECONDS:-10}"
+POPDAY_DEPLOY_VERIFY_RETRIES="${POPDAY_DEPLOY_VERIFY_RETRIES:-3}"
 
-run_with_retries() {
-  local label="$1"
-  shift
+touch_pythonanywhere_wsgi() {
+  ssh "$PYTHONANYWHERE_SSH_TARGET" "touch '$PYTHONANYWHERE_WSGI_PATH'"
+}
+
+run_live_verifiers_after_reload() {
   local attempt
-  for attempt in 1 2 3; do
-    if "$@"; then
+  local wait_seconds
+  attempt=1
+  while (( attempt <= POPDAY_DEPLOY_VERIFY_RETRIES )); do
+    echo "Requesting PythonAnywhere reload before verification attempt $attempt/$POPDAY_DEPLOY_VERIFY_RETRIES..."
+    touch_pythonanywhere_wsgi
+    wait_seconds=$((POPDAY_DEPLOY_RELOAD_WAIT_SECONDS + ((attempt - 1) * POPDAY_DEPLOY_RELOAD_BACKOFF_SECONDS)))
+    echo "Waiting ${wait_seconds}s for PythonAnywhere to finish reloading..."
+    sleep "$wait_seconds"
+    if "$PYTHON_BIN" scripts/verify_live_popday.py && "$PYTHON_BIN" scripts/verify_live_popday_buttons.py; then
       return 0
     fi
-    if [[ "$attempt" == "3" ]]; then
-      break
+    if (( attempt < POPDAY_DEPLOY_VERIFY_RETRIES )); then
+      echo "PopDay live verification failed after reload attempt $attempt; retrying with a fresh reload..." >&2
     fi
-    echo "$label failed; waiting for PythonAnywhere reload before retry $((attempt + 1))/3..." >&2
-    sleep $((attempt * 5))
+    attempt=$((attempt + 1))
   done
-  echo "$label failed after 3 attempts." >&2
+  echo "PopDay live verification failed after $POPDAY_DEPLOY_VERIFY_RETRIES reload attempts." >&2
   return 1
 }
 
@@ -62,11 +73,8 @@ scp "$STATUS_PATH" "$PYTHONANYWHERE_SSH_TARGET:$PYTHONANYWHERE_APP_DIR/status/po
 
 ssh "$PYTHONANYWHERE_SSH_TARGET" "rm -f '$PYTHONANYWHERE_APP_DIR/templates/status.html'"
 ssh "$PYTHONANYWHERE_SSH_TARGET" "cd '$PYTHONANYWHERE_APP_DIR' && python3 -m py_compile flask_app.py popday/*.py scripts/generate_status_json.py"
-ssh "$PYTHONANYWHERE_SSH_TARGET" "touch '$PYTHONANYWHERE_WSGI_PATH'"
 
-sleep 3
-run_with_retries "PopDay live verification" "$PYTHON_BIN" scripts/verify_live_popday.py
-run_with_retries "PopDay live button verification" "$PYTHON_BIN" scripts/verify_live_popday_buttons.py
+run_live_verifiers_after_reload
 
 echo "PopDay development front door deployed."
 echo "Open: https://jasdun.pythonanywhere.com/"
