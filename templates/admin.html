@@ -156,7 +156,7 @@
       <tr>
         <th>Company</th>
         <th>Event Date</th>
-        <th><span class="tip-head" data-tip="The share price at the close of the actual Investor Day (the first trading day on or after the event date). Green means the stock rose that day (a pop); red means it fell (a tank). The smaller figure is that day's move. Blank for upcoming events that have not happened yet.">Investor Day Close</span></th>
+        <th><span class="tip-head" data-tip="The share price at the close of the actual Investor Day (the first trading day on or after the event date). Green means the stock rose that day; red means it fell. The smaller figure is that day's move. Blank for upcoming events that have not happened yet.">Investor Day Close</span></th>
         <th class="grp-start"><span class="tip-head" data-tip="When the SEC accepted the filing. PopDay shows the precise acceptance timestamp where it is known, otherwise the filing date. A filing accepted at or after 4pm ET can only be reacted to the next trading day, so the reaction day shifts forward.">Filed / Accepted</span></th>
         <th><span class="tip-head" data-tip="The first trading session the market could respond to the announcement — the trading day on or after the filing was accepted. If it was accepted at or after 4pm ET, this is the next trading day.">Reaction Day</span></th>
         <th class="grp-start"><span class="tip-head" data-tip="The share price at the close of the trading day immediately before the reaction day. It is the baseline the move is measured against.">Previous Close</span></th>
@@ -1172,7 +1172,7 @@
     <p class="page-note">What each public PopDay tab is for.</p>
     <div class="manual-grid">
       {% for title, text in [
-        ("Price Reaction",      "Cached daily market-data view for confirmed announcements, split into Upcoming and Legacy by Investor Day date. The cache refreshes automatically after every scan, so newly detected companies appear here without manual steps. Columns are grouped by theme (the event, the announcement, first-day reaction, since then). It shows the closing price on the actual Investor Day coloured green for a pop or red for a tank, the reaction-day move, latest available close, interval return, average interval return, and daily volatility."),
+        ("Price Reaction",      "Cached daily market-data view for confirmed announcements, split into Upcoming and Legacy by Investor Day date. The cache refreshes automatically after every scan, so newly detected companies appear here without manual steps. Columns are grouped by theme (the event, the announcement, first-day reaction, since then). It shows the closing price on the actual Investor Day coloured green when the stock rose and red when it fell, the reaction-day move, latest available close, interval return, average interval return, and daily volatility."),
         ("Investor Days",       "Confirmed Investor Day, Analyst Day, and Capital Markets Day announcements PopDay has found, split into Upcoming and Legacy, with Evidence links to the source. Events announced without a firm date yet appear as Date TBD under Upcoming."),
         ("Research / Hype",     "Research view for already detected events. It is split into Upcoming and Legacy using the Investor Day date, and shows unknown where PopDay does not yet have enough data."),
         ("Scan Log",            "Inspection view for filings PopDay examined, including dismissed false positives. It shows why something did or did not qualify."),
