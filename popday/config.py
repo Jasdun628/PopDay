@@ -20,6 +20,8 @@ DEFAULT_COMPANY_WEBSITES = {
     "SLB LIMITED/NV": "https://www.slb.com/",
     # Added 7 Jul 2026 for newly-surfaced Investor Day companies (URLs verified).
     "Advanced Drainage Systems, Inc.": "https://www.adspipe.com/",
+    # SPAC — links to its merger target Pasqal, whose analyst day this was.
+    "Bleichroeder Acquisition Corp. II": "https://www.pasqal.com/",
     "Caseys General Stores Inc": "https://www.caseys.com/",
     "COMMERCIAL METALS Co": "https://www.cmc.com/",
     "Drdgold Ltd": "https://www.drdgold.com/",

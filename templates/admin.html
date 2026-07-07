@@ -689,6 +689,11 @@
           <div class="summary-note">Discovery source: {{ status.last_scan_source or "unknown" }}</div>
         </div>
         <div class="health-item">
+          <div class="summary-label">Last new candidate found</div>
+          <div class="summary-value">{{ status.last_candidate_display or "unknown" }}</div>
+          <div class="summary-note">Recent discovery: {{ status.coverage_health.recent_filings_seen if status.coverage_health else "?" }} filings / last {{ status.coverage_health.recent_runs_considered if status.coverage_health else "?" }} scans</div>
+        </div>
+        <div class="health-item">
           <div class="summary-label">Browser freshness</div>
           <div class="summary-value">{{ status.status_file_updated_at_display }}</div>
           <div class="summary-note">{{ status.status_file_age_note }}</div>
