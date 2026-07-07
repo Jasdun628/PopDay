@@ -50,6 +50,11 @@ fi
 "$PYTHON_BIN" scripts/backup_popday_runtime.py --reason "pre PythonAnywhere development deploy"
 "$PYTHON_BIN" -m py_compile popday.py popday/*.py
 POPDAY_RUNTIME_DIR="$RUNTIME_DIR" PYTHON_BIN="$PYTHON_BIN" bash scripts/sync_runtime_code_from_repo.sh
+# Belt-and-braces: never ship a stale Price Reaction cache (it is also
+# refreshed automatically after every scan). Non-fatal — a price-feed blip
+# should not block deploying a fix.
+"$PYTHON_BIN" scripts/refresh_price_reaction.py \
+  || echo "WARNING: Price Reaction refresh failed; deploying existing cache." >&2
 "$PYTHON_BIN" scripts/generate_status_json.py \
   --output "$STATUS_PATH" \
   --source-repo "$SOURCE_REPO" \

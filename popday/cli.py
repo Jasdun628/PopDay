@@ -26,6 +26,7 @@ from .emailer import (
 )
 from .filing_parser import parse_sec_filing
 from .hype import reclassify_hype_tracking, watch_hype_candidates
+from .stock_reaction import refresh_price_reactions
 from .parser import parse_filing_sections
 from .rules import ALERT_REQUIREMENTS
 
@@ -159,6 +160,31 @@ def _print_health_summary(
     print(f"Filings parsed: {filings_parsed}", flush=True)
     print(f"8-K sanity count: {eight_k_sanity_count}", flush=True)
     print(f"Qualifying PopDay alerts sent: {alerts_sent}", flush=True)
+
+
+def _refresh_downstream_caches(config, db) -> str:
+    """Refresh every store derived from detections, returning warning notes.
+
+    Chained to any scan that writes detections so the Price Reaction cache and
+    hype tracking can never silently drift out of step with the tabs that read
+    detections live. Neither refresh sends email. A failure here must not stop
+    alerting, so problems are printed and returned for the scan_runs record
+    rather than raised.
+    """
+    notes: list[str] = []
+    try:
+        rows = refresh_price_reactions(db, user_agent=config.sec_user_agent)
+        print(f"Price Reaction cache refreshed: {len(rows)} announcement(s).")
+    except Exception as exc:  # noqa: BLE001 - keep the scan alive
+        notes.append(f"price reaction refresh failed: {exc}")
+        print(f"WARNING - Price Reaction cache refresh failed: {exc}")
+    try:
+        watched = watch_hype_candidates(config, db)
+        print(f"Hype watcher checked {len(watched)} candidate(s).")
+    except Exception as exc:  # noqa: BLE001 - keep the scan alive
+        notes.append(f"hype watcher failed: {exc}")
+        print(f"WARNING - hype watcher failed: {exc}")
+    return "; ".join(notes)
 
 
 def run_scan(args: argparse.Namespace) -> int:
@@ -327,6 +353,16 @@ def run_scan(args: argparse.Namespace) -> int:
             if not args.dry_run:
                 db.mark_processed(filing)
 
+        # Keep derived stores in step with detections. July 2026 lesson: the
+        # Price Reaction tab reads a cache that was only refreshed by hand, so
+        # reprocessed detections never reached it. Any run that writes
+        # detections now refreshes downstream automatically; failures are
+        # reported loudly (and recorded on the scan run) but never block
+        # alerting.
+        downstream_note = ""
+        if not args.dry_run:
+            downstream_note = _refresh_downstream_caches(config, db)
+
         def _record_ok(alerts_sent: int) -> None:
             db.finish_scan_run(
                 scan_run_id,
@@ -335,7 +371,7 @@ def run_scan(args: argparse.Namespace) -> int:
                 filings_parsed=filings_parsed,
                 alerts_sent=alerts_sent,
                 source=discovery_source,
-                error="",
+                error=downstream_note,
             )
 
         if not alerts:

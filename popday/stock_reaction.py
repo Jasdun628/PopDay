@@ -84,6 +84,18 @@ def _fetch_text(url: str, *, user_agent: str) -> str:
         return response.read().decode("utf-8", "replace")
 
 
+def _ticker_rank(ticker: str) -> tuple[int, int]:
+    """Rank a CIK's listings so common stock beats warrants/units/rights.
+
+    SPACs and dual-listed companies share one CIK across several symbols
+    (e.g. BBCQ common vs BBCQW warrants). Warrant prices exaggerate moves, so
+    prefer symbols without a W/U/R class suffix, then shorter symbols (DRD ADR
+    over the thinner OTC DRDGF).
+    """
+    suffix_penalty = 1 if len(ticker) >= 4 and ticker[-1] in "WUR" else 0
+    return (suffix_penalty, len(ticker))
+
+
 def fetch_cik_ticker_map(*, user_agent: str) -> dict[str, str]:
     data = json.loads(_fetch_text(SEC_COMPANY_TICKERS_URL, user_agent=user_agent))
     mapping: dict[str, str] = {}
@@ -91,7 +103,9 @@ def fetch_cik_ticker_map(*, user_agent: str) -> dict[str, str]:
         cik = _normalize_cik(item.get("cik_str"))
         ticker = str(item.get("ticker") or "").strip().upper()
         if cik and ticker:
-            mapping[cik] = ticker
+            existing = mapping.get(cik)
+            if existing is None or _ticker_rank(ticker) < _ticker_rank(existing):
+                mapping[cik] = ticker
     return mapping
 
 

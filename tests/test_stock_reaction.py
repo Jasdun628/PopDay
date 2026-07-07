@@ -61,3 +61,21 @@ class PriceReactionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TickerPreferenceTests(unittest.TestCase):
+    def test_common_stock_beats_warrant_regardless_of_order(self):
+        from unittest import mock
+        import json as _json
+        from popday import stock_reaction as sr
+
+        payload = _json.dumps({
+            "0": {"cik_str": 999001, "ticker": "BBCQW", "title": "Spac W"},
+            "1": {"cik_str": 999001, "ticker": "BBCQ", "title": "Spac"},
+            "2": {"cik_str": 999002, "ticker": "DRDGF", "title": "DRDGOLD OTC"},
+            "3": {"cik_str": 999002, "ticker": "DRD", "title": "DRDGOLD ADR"},
+        })
+        with mock.patch.object(sr, "_fetch_text", return_value=payload):
+            mapping = sr.fetch_cik_ticker_map(user_agent="ua")
+        self.assertEqual(mapping[sr._normalize_cik(999001)], "BBCQ")
+        self.assertEqual(mapping[sr._normalize_cik(999002)], "DRD")
