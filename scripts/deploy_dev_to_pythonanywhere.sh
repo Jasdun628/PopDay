@@ -9,25 +9,61 @@ PYTHONANYWHERE_SSH_TARGET="${PYTHONANYWHERE_SSH_TARGET:-Jasdun@ssh.pythonanywher
 PYTHONANYWHERE_APP_DIR="${PYTHONANYWHERE_APP_DIR:-/home/Jasdun/popday}"
 PYTHONANYWHERE_WSGI_PATH="${PYTHONANYWHERE_WSGI_PATH:-/var/www/jasdun_pythonanywhere_com_wsgi.py}"
 PYTHONANYWHERE_DB_PATH="${PYTHONANYWHERE_DB_PATH:-$PYTHONANYWHERE_APP_DIR/popday.sqlite3}"
+PYTHONANYWHERE_SERVER_LOG="${PYTHONANYWHERE_SERVER_LOG:-/var/log/jasdun.pythonanywhere.com.server.log}"
 PYTHON_BIN="${PYTHON_BIN:-/usr/bin/python3}"
 POPDAY_DEPLOY_RELOAD_WAIT_SECONDS="${POPDAY_DEPLOY_RELOAD_WAIT_SECONDS:-10}"
-POPDAY_DEPLOY_RELOAD_BACKOFF_SECONDS="${POPDAY_DEPLOY_RELOAD_BACKOFF_SECONDS:-10}"
+POPDAY_DEPLOY_RELOAD_CONFIRM_TIMEOUT_SECONDS="${POPDAY_DEPLOY_RELOAD_CONFIRM_TIMEOUT_SECONDS:-70}"
 POPDAY_DEPLOY_VERIFY_RETRIES="${POPDAY_DEPLOY_VERIFY_RETRIES:-3}"
 
 touch_pythonanywhere_wsgi() {
   ssh "$PYTHONANYWHERE_SSH_TARGET" "touch '$PYTHONANYWHERE_WSGI_PATH'"
 }
 
+# uWSGI's own log logs "your mercy for graceful operations on workers is 60
+# seconds" — a touch fired within that window of the previous reload can be
+# silently ignored, so the app keeps serving a stale in-memory Jinja template
+# cache even though the file on disk (and py_compile) is current. Confirming a
+# NEW worker spawn (rather than just sleeping and hoping) is what catches this;
+# discovered 7 Jul 2026 when rapid successive deploys left old copy live while
+# "verification passed" (the verifiers check pages load, not exact text).
+last_reload_marker() {
+  ssh "$PYTHONANYWHERE_SSH_TARGET" \
+    "grep 'spawned uWSGI master process' '$PYTHONANYWHERE_SERVER_LOG' 2>/dev/null | tail -1"
+}
+
+wait_for_confirmed_reload() {
+  local before="$1"
+  local waited=0
+  local after=""
+  while (( waited < POPDAY_DEPLOY_RELOAD_CONFIRM_TIMEOUT_SECONDS )); do
+    sleep 5
+    waited=$((waited + 5))
+    after="$(last_reload_marker)"
+    if [[ -n "$after" && "$after" != "$before" ]]; then
+      echo "Reload confirmed (new PythonAnywhere worker spawn after ${waited}s)."
+      return 0
+    fi
+  done
+  echo "WARNING: no fresh PythonAnywhere worker spawn confirmed within ${POPDAY_DEPLOY_RELOAD_CONFIRM_TIMEOUT_SECONDS}s; the reload may have been ignored." >&2
+  return 1
+}
+
 run_live_verifiers_after_reload() {
   local attempt
-  local wait_seconds
+  local before_marker
   attempt=1
   while (( attempt <= POPDAY_DEPLOY_VERIFY_RETRIES )); do
     echo "Requesting PythonAnywhere reload before verification attempt $attempt/$POPDAY_DEPLOY_VERIFY_RETRIES..."
+    before_marker="$(last_reload_marker || true)"
     touch_pythonanywhere_wsgi
-    wait_seconds=$((POPDAY_DEPLOY_RELOAD_WAIT_SECONDS + ((attempt - 1) * POPDAY_DEPLOY_RELOAD_BACKOFF_SECONDS)))
-    echo "Waiting ${wait_seconds}s for PythonAnywhere to finish reloading..."
-    sleep "$wait_seconds"
+    sleep "$POPDAY_DEPLOY_RELOAD_WAIT_SECONDS"
+    if ! wait_for_confirmed_reload "$before_marker"; then
+      # Reload wasn't confirmed — most likely uWSGI's 60s grace period
+      # swallowed this touch. Wait clear of it so the next attempt's touch
+      # actually lands, rather than immediately re-touching and looping.
+      echo "Waiting clear of PythonAnywhere's reload grace period before retrying..." >&2
+      sleep 65
+    fi
     if "$PYTHON_BIN" scripts/verify_live_popday.py && "$PYTHON_BIN" scripts/verify_live_popday_buttons.py; then
       return 0
     fi
