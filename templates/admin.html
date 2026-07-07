@@ -301,6 +301,13 @@
     .scan-alert-headline { font-size: 17px; font-weight: 800; }
     .scan-alert-detail { margin-top: 5px; overflow-wrap: anywhere; }
     .scan-alert-meta { color: var(--danger); font-size: 13px; margin-top: 6px; opacity: 0.85; }
+    .scan-alert-warn {
+      background: var(--warn-bg);
+      border-color: var(--warn);
+      border-left-color: var(--warn);
+      color: var(--warn);
+    }
+    .scan-alert-warn .scan-alert-meta { color: var(--warn); }
     .health-strip {
       background: var(--panel);
       border: 1px solid var(--line);
@@ -630,10 +637,12 @@
 	  </nav>
 
   {% if status.scan_alert and status.scan_alert.active %}
-  <div class="scan-alert" role="alert">
+  <div class="scan-alert {% if status.scan_alert.level == 'warn' %}scan-alert-warn{% endif %}" role="alert">
     <div class="scan-alert-headline">⚠ {{ status.scan_alert.headline }}</div>
     <div class="scan-alert-detail">{{ status.scan_alert.detail }}</div>
+    {% if status.scan_alert.last_success_display %}
     <div class="scan-alert-meta">Last successful scan: {{ status.scan_alert.last_success_display }}</div>
+    {% endif %}
   </div>
   {% endif %}
 
@@ -1020,10 +1029,15 @@
       <div class="summary-label">Next scheduled run</div>
       <div class="summary-value" style="font-size:16px;">{{ next_run|replace("UTC", "GMT") }}</div>
     </div>
-    <div class="summary-card" style="margin-bottom:12px; display:inline-block; min-width:320px;">
+    <div class="summary-card" style="margin-bottom:12px; display:inline-block; min-width:320px; margin-right:10px;">
       <div class="summary-label">Last successful scan</div>
       <div class="summary-value" style="font-size:16px;">{{ status.last_successful_scan_display or "unknown" }}</div>
       <div class="summary-note">Discovery source: {{ status.last_scan_source or "unknown" }}</div>
+    </div>
+    <div class="summary-card" style="margin-bottom:12px; display:inline-block; min-width:320px;">
+      <div class="summary-label">Last new candidate found</div>
+      <div class="summary-value" style="font-size:16px;">{{ status.last_candidate_display or "unknown" }}</div>
+      <div class="summary-note">Recent discovery: {{ status.coverage_health.recent_filings_seen if status.coverage_health else "?" }} filings across last {{ status.coverage_health.recent_runs_considered if status.coverage_health else "?" }} scans</div>
     </div>
     {% if status.scan_alert and status.scan_alert.active %}
     <div class="scan-alert" role="alert" style="margin-top:0;">
@@ -1158,7 +1172,7 @@
         ("Research / Hype",     "Research view for already detected events. It is split into Upcoming and Legacy using the Investor Day date, and shows unknown where PopDay does not yet have enough data."),
         ("Scan Log",            "Inspection view for filings PopDay examined, including dismissed false positives. It shows why something did or did not qualify."),
         ("Schedule",            "Recent Mac Mini scanner runs and the next expected run time."),
-        ("System Health",       "Current front-door health, freshness, backup state, and latest scan facts. It shows the last successful scan and its discovery source (SEC full-text search, with the daily index as a fallback). If a scan fails or none has succeeded in over 26 hours, a red warning banner appears on every tab explaining exactly why, so a stale page can never look healthy."),
+        ("System Health",       "Current front-door health, freshness, backup state, and latest scan facts. It shows the last successful scan (with its discovery source — SEC full-text search, with the daily index as a fallback) and the last time a new investor-day candidate was found. Two kinds of warning banner appear on every tab: a red one if a scan fails, none has succeeded in over 26 hours, or PopDay stops finding filings altogether; and an amber one if no new candidate has appeared in over a week, which is worth a look. This makes both a broken scan and a silently under-performing one impossible to miss."),
         ("Help",                "Short guide to the public PopDay tabs.")
       ] %}
       <div class="manual-card">

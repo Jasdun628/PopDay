@@ -352,6 +352,7 @@ def _fallback_status(message: str) -> dict:
         "database_counts": {},
         "scan_alert": {
             "active": True,
+            "level": "danger",
             "headline": "Status unavailable — cannot confirm scan health.",
             "detail": message,
             "last_success_display": "unknown",
@@ -401,26 +402,34 @@ def _load_public_status() -> dict:
     )
     status["next_expected_scan_display"] = _next_scheduled_run()
     _scan_health = status.get("scan_health") or {}
-    status["scan_alert"] = _scan_alert(_scan_health)
+    # Highest-severity banner wins: a hard scan failure (red) outranks the output
+    # canary, which itself can be red (discovery down) or amber (candidates stale).
+    status["scan_alert"] = _scan_alert(_scan_health) or _coverage_alert(
+        status.get("coverage_health") or {}
+    ) or {"active": False}
     status["last_successful_scan_display"] = (
         _friendly_datetime_value(_scan_health.get("last_success_utc"))
         if _scan_health.get("last_success_utc")
         else "never"
     )
     status["last_scan_source"] = _scan_health.get("last_run_source") or "unknown"
+    _coverage = status.get("coverage_health") or {}
+    status["last_candidate_display"] = (
+        _friendly_datetime_value(_coverage.get("last_candidate_utc"))
+        if _coverage.get("last_candidate_utc")
+        else "never"
+    )
     return status
 
 
-def _scan_alert(scan_health: dict) -> dict:
-    """Blunt scan-health banner shown on every tab.
+def _scan_alert(scan_health: dict) -> dict | None:
+    """Blunt scan-health banner (red) shown on every tab, or None if healthy.
 
-    The whole point of the July 2026 fix is that a silently-dead scan is
-    impossible to hide: if the last run failed, or no scan has succeeded in
-    over 26 hours, every tab carries a red banner saying exactly why.
+    Process check: a silently-dead scan is impossible to hide — if the last run
+    failed, or no scan has succeeded in over 26 hours, every tab says why.
     """
-    inactive = {"active": False}
     if not scan_health.get("table_present"):
-        return inactive
+        return None
 
     run_status = str(scan_health.get("last_run_status") or "").strip().lower()
     error = str(scan_health.get("last_run_error") or "").strip()
@@ -440,6 +449,7 @@ def _scan_alert(scan_health: dict) -> dict:
         detail = f" {error}" if error else ""
         return {
             "active": True,
+            "level": "danger",
             "headline": "Scan failed — data may be out of date.",
             "detail": f"The last automated PopDay scan did not complete.{detail}",
             "last_success_display": last_success_display,
@@ -447,6 +457,7 @@ def _scan_alert(scan_health: dict) -> dict:
     if last_success is None:
         return {
             "active": True,
+            "level": "danger",
             "headline": "No successful scan recorded yet.",
             "detail": "PopDay has not completed a successful scan on this database.",
             "last_success_display": last_success_display,
@@ -454,11 +465,37 @@ def _scan_alert(scan_health: dict) -> dict:
     if age_hours is not None and age_hours > 26:
         return {
             "active": True,
+            "level": "danger",
             "headline": "Scan is overdue — data may be out of date.",
             "detail": f"The last successful PopDay scan was about {int(age_hours)} hours ago.",
             "last_success_display": last_success_display,
         }
-    return inactive
+    return None
+
+
+def _coverage_alert(coverage_health: dict) -> dict | None:
+    """Output-canary banner, or None. Catches a scan that runs green but finds
+    nothing: 'broken' (discovery down) is red, 'stale' (no new candidates) amber.
+    """
+    level = str(coverage_health.get("level") or "").strip().lower()
+    message = str(coverage_health.get("message") or "").strip()
+    if level == "broken":
+        return {
+            "active": True,
+            "level": "danger",
+            "headline": "PopDay may have stopped finding filings.",
+            "detail": message or "Recent scans discovered no filings.",
+            "last_success_display": None,
+        }
+    if level == "stale":
+        return {
+            "active": True,
+            "level": "warn",
+            "headline": "No new candidates recently — worth a look.",
+            "detail": message or "No new investor-day candidate in a while.",
+            "last_success_display": None,
+        }
+    return None
 
 
 def _admin_display_text(value: object) -> str:

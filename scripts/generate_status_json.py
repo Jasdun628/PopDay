@@ -18,6 +18,42 @@ DEFAULT_RUNTIME_DIR = Path("/Users/jasondunne/PopDayRuntime")
 DEFAULT_BACKUP_ROOT = Path("/Users/jasondunne/PopDayBackups")
 DEFAULT_OUTPUT = DEFAULT_RUNTIME_DIR / "status" / "popday_status.json"
 
+# Output-based canary thresholds. Process checks (did a scan run?) miss the
+# failure where a scan runs green but silently finds nothing — the shape of the
+# June 2026 outage. These watch the output instead.
+COVERAGE_DISCOVERY_RUN_WINDOW = 6  # recent completed runs inspected for discovery
+CANDIDATE_STALE_DAYS = 8  # amber if no new investor-day candidate in this many days
+
+
+def _assess_coverage(
+    *, recent_filings_seen: list[int], days_since_candidate: int | None
+) -> dict[str, str]:
+    """Pure coverage verdict from discovery volume and candidate freshness.
+
+    - broken: several consecutive scans discovered zero filings (discovery is
+      down — the silent-403 / coverage-regression signature).
+    - stale: filings are being seen but no new candidate has appeared in a while
+      (under-matching, or a genuinely quiet stretch worth a human glance).
+    """
+    considered = len(recent_filings_seen)
+    if considered >= COVERAGE_DISCOVERY_RUN_WINDOW and sum(recent_filings_seen) == 0:
+        return {
+            "level": "broken",
+            "message": (
+                f"PopDay discovered no filings across its last {considered} scans "
+                "— discovery may be broken (the June 2026 outage signature)."
+            ),
+        }
+    if days_since_candidate is not None and days_since_candidate > CANDIDATE_STALE_DAYS:
+        return {
+            "level": "stale",
+            "message": (
+                f"No new investor-day candidate in {days_since_candidate} days — "
+                "worth checking the scanner is still matching filings."
+            ),
+        }
+    return {"level": "ok", "message": ""}
+
 
 def _utc_now() -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc)
@@ -129,6 +165,45 @@ def _scan_health(con: sqlite3.Connection) -> dict[str, Any]:
     }
 
 
+def _coverage_health(con: sqlite3.Connection, now: dt.datetime) -> dict[str, Any]:
+    """Output canary: is PopDay still discovering filings and producing candidates?"""
+    base: dict[str, Any] = {
+        "table_present": False,
+        "last_candidate_utc": None,
+        "days_since_candidate": None,
+        "recent_runs_considered": 0,
+        "recent_filings_seen": None,
+        "level": "unknown",
+        "message": "",
+    }
+    try:
+        last_candidate = con.execute(
+            "SELECT max(created_timestamp) FROM detections "
+            "WHERE status IN ('alert_candidate', 'alert_candidate_tbd')"
+        ).fetchone()[0]
+        rows = con.execute(
+            "SELECT filings_seen FROM scan_runs WHERE finished_utc IS NOT NULL "
+            "ORDER BY id DESC LIMIT ?",
+            (COVERAGE_DISCOVERY_RUN_WINDOW,),
+        ).fetchall()
+    except sqlite3.Error:
+        return base
+    recent = [int(row[0] or 0) for row in rows]
+    last_dt = _parse_iso(last_candidate)
+    days = (now.date() - last_dt.date()).days if last_dt else None
+    verdict = _assess_coverage(recent_filings_seen=recent, days_since_candidate=days)
+    base.update(
+        table_present=True,
+        last_candidate_utc=last_candidate,
+        days_since_candidate=days,
+        recent_runs_considered=len(recent),
+        recent_filings_seen=sum(recent),
+        level=verdict["level"],
+        message=verdict["message"],
+    )
+    return base
+
+
 def _latest_alert(con: sqlite3.Connection) -> dict[str, Any] | None:
     rows: list[dict[str, Any]] = []
     try:
@@ -168,7 +243,7 @@ def _latest_alert(con: sqlite3.Connection) -> dict[str, Any] | None:
     return max(rows, key=lambda row: str(row.get("alert_sent_timestamp") or ""))
 
 
-def _database_status(db_path: Path) -> dict[str, Any]:
+def _database_status(db_path: Path, now: dt.datetime) -> dict[str, Any]:
     status: dict[str, Any] = {
         "path": str(db_path),
         "exists": db_path.exists(),
@@ -176,6 +251,7 @@ def _database_status(db_path: Path) -> dict[str, Any]:
         "counts": {},
         "latest_alert": None,
         "scan_health": None,
+        "coverage_health": None,
         "error": "",
     }
     if not db_path.exists():
@@ -192,6 +268,7 @@ def _database_status(db_path: Path) -> dict[str, Any]:
         }
         status["latest_alert"] = _latest_alert(con)
         status["scan_health"] = _scan_health(con)
+        status["coverage_health"] = _coverage_health(con, now)
     finally:
         con.close()
     return status
@@ -260,6 +337,12 @@ def _health(
             return {"level": "BROKEN", "summary": f"BROKEN: no successful Mac Mini scan in over {int(success_age_h)} hours."}
         if success_age_h is not None and success_age_h > 26:
             return {"level": "STALE", "summary": f"STALE: last successful Mac Mini scan was about {int(success_age_h)} hours ago."}
+        # Output canary: a scan can run green yet silently find nothing.
+        coverage = db_status.get("coverage_health") or {}
+        if coverage.get("level") == "broken":
+            return {"level": "BROKEN", "summary": f"BROKEN: {coverage.get('message')}"}
+        if coverage.get("level") == "stale":
+            return {"level": "STALE", "summary": f"STALE: {coverage.get('message')}"}
         if run_status in {"ok", "running"}:
             source = scan_health.get("last_run_source") or "?"
             if run_status == "running":
@@ -310,7 +393,7 @@ def build_status(args: argparse.Namespace) -> dict[str, Any]:
 
     rows = _launchd_rows(out_log)
     latest_run = rows[-1] if rows else None
-    db_status = _database_status(db_path)
+    db_status = _database_status(db_path, now)
     latest_alert = db_status.get("latest_alert") or {}
     backup = _backup_status(args.backup_root)
     health = _health(latest_run=latest_run, db_status=db_status, err_log=err_log, now=now)
@@ -343,6 +426,7 @@ def build_status(args: argparse.Namespace) -> dict[str, Any]:
         "error_log_modified_at": _log_mtime(err_log),
         "database_counts": db_status["counts"],
         "scan_health": db_status.get("scan_health"),
+        "coverage_health": db_status.get("coverage_health"),
         "last_backup_at": backup["latest_backup_at"],
         "last_backup_path": backup["latest_backup_path"],
         "live_database_backed_up": backup["live_database_backed_up"],
