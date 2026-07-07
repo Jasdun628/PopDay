@@ -18,6 +18,16 @@ DEFAULT_COMPANY_WEBSITES = {
     "Radian Group Inc.": "https://www.radian.com/",
     "Samsara Inc.": "https://www.samsara.com/",
     "SLB LIMITED/NV": "https://www.slb.com/",
+    # Added 7 Jul 2026 for newly-surfaced Investor Day companies (URLs verified).
+    "Advanced Drainage Systems, Inc.": "https://www.adspipe.com/",
+    "Caseys General Stores Inc": "https://www.caseys.com/",
+    "COMMERCIAL METALS Co": "https://www.cmc.com/",
+    "Drdgold Ltd": "https://www.drdgold.com/",
+    "Dynatrace, Inc.": "https://www.dynatrace.com/",
+    "Graham Corp": "https://www.grahamcorp.com/",
+    "MoonLake Immunotherapeutics": "https://www.moonlaketx.com/",
+    "Resideo Technologies, Inc.": "https://www.resideo.com/",
+    "Scotts Miracle-gro Co": "https://investor.scotts.com/",
 }
 
 
