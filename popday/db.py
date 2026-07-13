@@ -145,6 +145,14 @@ CREATE TABLE IF NOT EXISTS scan_runs (
     discovery_control TEXT NOT NULL DEFAULT '',
     run_kind TEXT NOT NULL DEFAULT 'scheduled'
 );
+
+CREATE TABLE IF NOT EXISTS ops_alerts (
+    alert_key TEXT PRIMARY KEY,
+    active INTEGER NOT NULL DEFAULT 0,
+    opened_utc TEXT,
+    last_sent_utc TEXT,
+    detail TEXT
+);
 """
 
 
@@ -233,6 +241,16 @@ class Database:
             if column not in price_reaction_columns:
                 col_type = "TEXT" if column.endswith("_date") else "REAL"
                 self.conn.execute(f"ALTER TABLE price_reactions ADD COLUMN {column} {col_type}")
+        # Daily-index rows historically stored filing_date as YYYYMMDD while
+        # EFTS rows use ISO; compact strings sort above every ISO date, which
+        # froze the Scan Log on 17 Jun 2026. Normalise everything to ISO.
+        for table in ("detections", "processed_filings"):
+            self.conn.execute(
+                f"UPDATE {table} SET filing_date = "
+                "substr(filing_date, 1, 4) || '-' || substr(filing_date, 5, 2) "
+                "|| '-' || substr(filing_date, 7, 2) "
+                "WHERE filing_date GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'"
+            )
 
     def close(self) -> None:
         self.conn.close()
@@ -344,6 +362,75 @@ class Database:
             "last_run_error": last_any["error"] if last_any else None,
             "last_run_control": (last_any["discovery_control"] if "discovery_control" in last_any.keys() else "") if last_any else None,
         }
+
+    def check_and_update_ops_alert(
+        self, alert_key: str, *, is_broken: bool, detail: str, cooldown_hours: float = 12.0
+    ) -> str:
+        """Decide whether an operational alarm email is due, tracking state so
+        PopDay never spams the same ongoing outage every run.
+
+        Returns one of:
+          'new_failure'   - just went from healthy to broken: send an email now.
+          'still_failing' - been broken longer than cooldown_hours since the last
+                            email: send a reminder now (so a multi-day outage is
+                            never forgotten after the first alert).
+          'recovered'     - was broken, is now healthy: send one all-clear email.
+          'none'          - no email needed this call.
+        """
+        row = self.conn.execute(
+            "SELECT * FROM ops_alerts WHERE alert_key = ?", (alert_key,)
+        ).fetchone()
+        now = utc_now()
+        now_dt = datetime.now(timezone.utc)
+
+        if is_broken:
+            if row is None or not row["active"]:
+                self.conn.execute(
+                    """
+                    INSERT INTO ops_alerts (alert_key, active, opened_utc, last_sent_utc, detail)
+                    VALUES (?, 1, ?, ?, ?)
+                    ON CONFLICT(alert_key) DO UPDATE SET
+                        active = 1, opened_utc = excluded.opened_utc,
+                        last_sent_utc = excluded.last_sent_utc, detail = excluded.detail
+                    """,
+                    (alert_key, now, now, detail),
+                )
+                self.conn.commit()
+                return "new_failure"
+
+            last_sent = row["last_sent_utc"]
+            last_sent_dt = None
+            if last_sent:
+                try:
+                    last_sent_dt = datetime.fromisoformat(last_sent)
+                    if last_sent_dt.tzinfo is None:
+                        last_sent_dt = last_sent_dt.replace(tzinfo=timezone.utc)
+                except ValueError:
+                    last_sent_dt = None
+            stale = (
+                last_sent_dt is None
+                or (now_dt - last_sent_dt).total_seconds() > cooldown_hours * 3600
+            )
+            self.conn.execute(
+                "UPDATE ops_alerts SET detail = ? WHERE alert_key = ?", (detail, alert_key)
+            )
+            if stale:
+                self.conn.execute(
+                    "UPDATE ops_alerts SET last_sent_utc = ? WHERE alert_key = ?",
+                    (now, alert_key),
+                )
+            self.conn.commit()
+            return "still_failing" if stale else "none"
+
+        # is_broken == False
+        if row is not None and row["active"]:
+            self.conn.execute(
+                "UPDATE ops_alerts SET active = 0, last_sent_utc = ? WHERE alert_key = ?",
+                (now, alert_key),
+            )
+            self.conn.commit()
+            return "recovered"
+        return "none"
 
     def already_processed(self, accession_number: str) -> bool:
         row = self.conn.execute(

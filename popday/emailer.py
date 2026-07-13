@@ -314,6 +314,29 @@ def send_privileged_format_test_email(
         smtp.send_message(message)
 
 
+def send_ops_alert_email(config: Config, subject: str, body: str) -> None:
+    """Plain operational alarm - not a marketing alert, no unsubscribe link.
+    Goes to config.email_recipients (Jason's own address), never the public
+    alert_recipients list, and never blocked by anyone's unsubscribe state.
+    """
+    if not config.email_configured:
+        raise RuntimeError("Email is not configured. Set SMTP and email environment variables or config.json.")
+    recipients = config.email_recipients
+    if not recipients:
+        raise RuntimeError("No operator recipients are configured for ops alerts.")
+
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = config.email_from
+    message["To"] = ", ".join(recipients)
+    message.set_content(body)
+
+    with smtplib.SMTP(config.smtp_host, config.smtp_port, timeout=30) as smtp:
+        smtp.starttls()
+        smtp.login(config.smtp_username, config.smtp_password)
+        smtp.send_message(message)
+
+
 def send_test_email(config: Config, recipients: list[str] | None = None) -> None:
     if not config.email_configured:
         raise RuntimeError("Email is not configured. Set SMTP and email environment variables or config.json.")

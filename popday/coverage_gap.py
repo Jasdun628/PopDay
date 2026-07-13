@@ -7,7 +7,24 @@ calls missed_business_days() and sweeps the gap automatically - no human step.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+
+
+def no_scan_day_allowance_hours(last: datetime, now: datetime) -> int:
+    """Hours of extra staleness allowance for scheduled no-scan days.
+
+    PopDay's launchd schedule runs Tue-Sat only, so a Saturday-morning scan is
+    legitimately the newest one until Tuesday. Each Sunday or Monday inside
+    the gap stretches staleness thresholds by 24h; without this every health
+    check went red (or alarmed) each weekend on a perfectly healthy system.
+    """
+    allowance = 0
+    cursor = (last + timedelta(days=1)).date()
+    while cursor <= now.date():
+        if cursor.weekday() in (6, 0):  # Sunday, Monday
+            allowance += 24
+        cursor += timedelta(days=1)
+    return allowance
 
 
 def _previous_business_day(value: date) -> date:

@@ -23,6 +23,7 @@ from .edgar_fetch import (
 from .emailer import (
     build_alert_body,
     send_alert_email,
+    send_ops_alert_email,
     send_privileged_format_test_email,
 )
 from .filing_parser import parse_sec_filing
@@ -257,6 +258,25 @@ def _scan_single_date(
             alerts_sent=0,
         )
         print(f"SCAN FAILED - {reason}\n{detail}")
+        # Banner-only health was invisible unless someone opened the site;
+        # a failed run now emails Jason directly (cooldown-deduped so a
+        # multi-day outage alarms without spamming). Dry-runs are manual
+        # tests and stay silent.
+        if not args.dry_run:
+            full_detail = f"{reason}\n\n{detail}"[:4000]
+            verdict = db.check_and_update_ops_alert(
+                "scan_failure", is_broken=True, detail=full_detail
+            )
+            if verdict in {"new_failure", "still_failing"}:
+                try:
+                    send_ops_alert_email(
+                        config,
+                        "PopDay ALARM - scan failed"
+                        + (" (still failing)" if verdict == "still_failing" else ""),
+                        full_detail,
+                    )
+                except Exception as email_exc:  # noqa: BLE001 - never mask the real failure
+                    print(f"WARNING - could not send ops alert email: {email_exc}")
         return _DayScanOutcome(1, [], scan_run_id=scan_run_id)
 
     try:
@@ -422,6 +442,23 @@ def _scan_single_date(
             efts_total_hits=client.stats.efts_total_hits,
             discovery_control=control,
         )
+        # A real (non-dry-run) success clears any open scan-failure alarm
+        # with exactly one all-clear email. Backfill days count too - a
+        # successful sweep IS the recovery.
+        if not args.dry_run:
+            verdict = db.check_and_update_ops_alert(
+                "scan_failure", is_broken=False, detail=""
+            )
+            if verdict == "recovered":
+                try:
+                    send_ops_alert_email(
+                        config,
+                        "PopDay - scan recovered",
+                        "PopDay completed a successful scan again. "
+                        "The earlier failure alarm is cleared.",
+                    )
+                except Exception as email_exc:  # noqa: BLE001
+                    print(f"WARNING - could not send recovery email: {email_exc}")
         _print_health_summary(
             filing_date=run_date,
             index_status="available",

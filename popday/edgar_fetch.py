@@ -283,6 +283,11 @@ class EdgarClient:
         if form_type not in TARGET_FORMS:
             return None
         accession_number = filename.rsplit("/", 1)[-1].replace(".txt", "")
+        # master.idx gives YYYYMMDD; store ISO like every other source, or
+        # string sorting mixes the two formats and the Scan Log freezes on
+        # whichever compact date is highest (the 17 Jun 2026 incident).
+        if len(filing_date) == 8 and filing_date.isdigit():
+            filing_date = f"{filing_date[:4]}-{filing_date[4:6]}-{filing_date[6:]}"
         return Filing(
             accession_number=accession_number,
             cik=cik.zfill(10),
