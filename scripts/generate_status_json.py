@@ -91,6 +91,23 @@ def _assess_coverage(
     return {"level": "ok", "message": ""}
 
 
+def _no_scan_day_allowance_hours(last: dt.datetime, now: dt.datetime) -> int:
+    """Hours of extra staleness allowance for scheduled no-scan days.
+
+    PopDay's launchd schedule runs Tue-Sat only, so a Saturday-morning scan is
+    legitimately the newest one until Tuesday. Each Sunday or Monday inside
+    the gap stretches the staleness thresholds by 24h; without this the front
+    door went red every Monday on a perfectly healthy system.
+    """
+    allowance = 0
+    cursor = (last + dt.timedelta(days=1)).date()
+    while cursor <= now.date():
+        if cursor.weekday() in (6, 0):  # Sunday, Monday
+            allowance += 24
+        cursor += dt.timedelta(days=1)
+    return allowance
+
+
 def _utc_now() -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc)
 
@@ -416,6 +433,9 @@ def _health(
         error = (scan_health.get("last_run_error") or "").strip()
         last_success = _parse_iso(scan_health.get("last_success_utc"))
         success_age_h = (now - last_success).total_seconds() / 3600 if last_success else None
+        allowance_h = (
+            _no_scan_day_allowance_hours(last_success, now) if last_success else 0
+        )
 
         if run_status == "failed":
             detail = f" {error}" if error else ""
@@ -424,9 +444,9 @@ def _health(
             return {"level": "BROKEN", "summary": "BROKEN: no successful Mac Mini scan has ever been recorded."}
         if run_status == "running" and success_age_h is not None and success_age_h > 3:
             return {"level": "BROKEN", "summary": "BROKEN: a Mac Mini scan started but never finished."}
-        if success_age_h is not None and success_age_h > 50:
+        if success_age_h is not None and success_age_h > 50 + allowance_h:
             return {"level": "BROKEN", "summary": f"BROKEN: no successful Mac Mini scan in over {int(success_age_h)} hours."}
-        if success_age_h is not None and success_age_h > 26:
+        if success_age_h is not None and success_age_h > 26 + allowance_h:
             return {"level": "STALE", "summary": f"STALE: last successful Mac Mini scan was about {int(success_age_h)} hours ago."}
         # Output canary: a scan can run green yet silently find nothing.
         coverage = db_status.get("coverage_health") or {}
