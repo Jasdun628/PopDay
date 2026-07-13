@@ -145,16 +145,23 @@ def main() -> int:
     )
     check("triangle sorters", announcements.count("▲") == 6 and announcements.count("▼") == 6, failures)
     check("hi-lo labels removed", "Hi</a>" not in announcements and "Lo</a>" not in announcements, failures)
+    # Rows must render inside the sections, but events migrate from Upcoming
+    # to Legacy as their dates pass, so don't pin which side any company is
+    # on - that snapshot rots (Climb Global moved sides in July 2026).
+    known_positions = [
+        text.find(name)
+        for name in (
+            "HARMONIC INC.",
+            "Climb Global Solutions",
+            "SLB LIMITED/NV",
+            "Samsara Inc.",
+        )
+    ]
     check(
         "upcoming before legacy rows",
-        "HARMONIC INC." in text
-        and "Climb Global Solutions" in text
-        and "SLB LIMITED/NV" in text
-        and "Samsara Inc." in text
-        and text.find("Upcoming") < text.find("HARMONIC INC.")
-        and text.find("Climb Global Solutions") < text.find("Legacy")
-        and text.find("Legacy") < text.find("SLB LIMITED/NV")
-        and text.find("SLB LIMITED/NV") < text.find("Samsara Inc."),
+        all(pos != -1 for pos in known_positions)
+        and text.find("Upcoming") < min(known_positions)
+        and max(known_positions) > text.find("Legacy"),
         failures,
     )
 
