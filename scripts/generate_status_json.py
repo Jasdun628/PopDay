@@ -176,6 +176,7 @@ def _scan_health(con: sqlite3.Connection) -> dict[str, Any]:
         "last_run_status": None,
         "last_run_source": None,
         "last_run_error": None,
+        "recovered_dates": [],
     }
     try:
         last_ok = con.execute(
@@ -198,7 +199,37 @@ def _scan_health(con: sqlite3.Connection) -> dict[str, Any]:
         "last_run_status": last_any["status"],
         "last_run_source": last_any["discovery_source"],
         "last_run_error": last_any["error"],
+        "recovered_dates": _recovered_dates(con),
     }
+
+
+def _recovered_dates(con: sqlite3.Connection) -> list[str]:
+    """Missed days the most recent run swept during downtime recovery.
+
+    Backfill rows are written immediately before their triggering run's own
+    row, so the latest run session's recoveries are the contiguous trailing
+    group of run_kind='backfill' rows (skipping the newest row itself when it
+    is the scheduled/manual main-date run). Older synced DBs without the
+    run_kind column report none.
+    """
+    try:
+        rows = con.execute(
+            "SELECT run_date, status, run_kind FROM scan_runs "
+            "ORDER BY id DESC LIMIT 40"
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+    if not rows:
+        return []
+    start = 0 if rows[0]["run_kind"] == "backfill" else 1
+    recovered: list[str] = []
+    for row in rows[start:]:
+        if row["run_kind"] != "backfill":
+            break
+        if row["status"] == "ok":
+            recovered.append(row["run_date"])
+    recovered.reverse()
+    return recovered
 
 
 def _coverage_health(con: sqlite3.Connection, now: dt.datetime) -> dict[str, Any]:

@@ -273,6 +273,10 @@ Always distinguish:
 - deployed
 - visible to user
 
+## Self-Healing Coverage Rule
+
+Every time a downtime spell is fixed, PopDay must automatically look for filings missed during the downtime and repopulate with them — the first healthy run after any outage detects the gap from scan_runs and sweeps it, with no human step.
+
 ## Backup Rule
 
 Before deploys, runtime updates, sync changes, database changes, or destructive work, create a backup under:

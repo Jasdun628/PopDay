@@ -116,6 +116,20 @@ def _key_excerpt(alert: object, max_sentences: int = 3, limit: int = 420) -> str
     return f"{clipped}..."
 
 
+def _recovered_note(alert: object) -> str:
+    """Label for alerts found while sweeping scan days missed during downtime."""
+    recovered_from = str(getattr(alert, "recovered_from", "") or "").strip()
+    if not recovered_from:
+        return ""
+    try:
+        from datetime import datetime as _dt
+
+        human = format_human_date(_dt.strptime(recovered_from, "%Y-%m-%d").date())
+    except ValueError:
+        human = recovered_from
+    return f"Recovered from downtime (missed scan day {human})"
+
+
 def build_alert_body(alerts: list[object], unsubscribe_link: str | None = None) -> str:
     lines: list[str] = []
     alert_count = len(alerts)
@@ -137,6 +151,9 @@ def build_alert_body(alerts: list[object], unsubscribe_link: str | None = None) 
         lines.append(f"Company: {alert.company_name}")
         lines.append(f"Event:   {alert.event_label}")
         lines.append(f"Date:    {event_date}")
+        recovered_note = _recovered_note(alert)
+        if recovered_note:
+            lines.append(f"Note:    {recovered_note}")
         nugget = _main_nugget(alert)
         if nugget:
             lines.append("")
@@ -214,6 +231,9 @@ def build_alert_html(alerts: list[object], unsubscribe_link: str | None = None) 
                 f"<strong>Date:</strong> {html.escape(event_date)}",
             ]
         )
+        recovered_note = _recovered_note(alert)
+        if recovered_note:
+            parts.append(f"<br><em>{html.escape(recovered_note)}</em>")
         parts.append("</p>")
         nugget = _main_nugget(alert)
         if nugget:

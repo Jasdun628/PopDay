@@ -413,6 +413,9 @@ def _load_public_status() -> dict:
         else "never"
     )
     status["last_scan_source"] = _scan_health.get("last_run_source") or "unknown"
+    status["recovered_days"] = [
+        _friendly_date(str(d)) for d in (_scan_health.get("recovered_dates") or [])
+    ]
     _coverage = status.get("coverage_health") or {}
     status["last_candidate_display"] = (
         _friendly_datetime_value(_coverage.get("last_candidate_utc"))

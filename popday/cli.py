@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 
 from .config import load_config
+from .coverage_gap import missed_business_days
 from .date_extract import format_human_date
 from .db import Database
 from .detector import detect_in_parsed_filing, detect_in_sections
@@ -47,6 +48,7 @@ class Alert:
     hype_status: str = ""
     hype_count: int | None = None
     hype_provisional: bool = False
+    recovered_from: str = ""  # missed scan date this alert was recovered from
 
 
 PRIVILEGED_TEST_RECIPIENT = "jd@jasondunne.co.uk"
@@ -89,8 +91,11 @@ def parse_run_date(value: str) -> date:
     return datetime.strptime(value, "%Y-%m-%d").date()
 
 
-def _alert_from_detection(detection_id: int, detection: object) -> Alert:
+def _alert_from_detection(
+    detection_id: int, detection: object, recovered_from: str = ""
+) -> Alert:
     return Alert(
+        recovered_from=recovered_from,
         detection_id=detection_id,
         company_name=detection.filing.company_name,
         event_label=detection.event_type or "Investor Day",
@@ -187,41 +192,48 @@ def _refresh_downstream_caches(config, db) -> str:
     return "; ".join(notes)
 
 
-def run_scan(args: argparse.Namespace) -> int:
-    print(f"PopDay launchd run started: {_health_timestamp()}", flush=True)
-    config = load_config(args.config)
-    if config.sec_user_agent_has_placeholder_contact:
-        run_date = parse_run_date(args.date)
-        _print_health_summary(
-            filing_date=run_date,
-            index_status="error",
-            filings_parsed=0,
-            eight_k_sanity_count=0,
-            alerts_sent=0,
-        )
-        print(
-            "PopDay needs a real SEC User-Agent contact before scanning EDGAR.\n\n"
-            "Set it in config.json, for example:\n"
-            '  "sec_user_agent": "PopDay/0.1 your-email@example.com"\n\n'
-            "Or run once with:\n"
-            '  POPDAY_SEC_USER_AGENT="PopDay/0.1 your-email@example.com" '
-            "python3 popday.py --date today --dry-run"
-        )
-        return 2
+@dataclass
+class _DayScanOutcome:
+    """Result of scanning one filing date, email deliberately deferred.
 
-    db = Database(config.db_path)
-    db.seed_recipients(config.email_recipients)
-    run_date = parse_run_date(args.date)
+    exit_code non-zero means the day's scan_runs row is already recorded as
+    failed and the caller must stop (never half-heal silently). exit_code 0
+    means the row is recorded ok with alerts_sent=0; the caller sends one
+    combined email at the end and fills the true count in via
+    set_scan_run_alerts_sent.
+    """
+
+    exit_code: int
+    alerts: list  # list[Alert]
+    scan_run_id: int = 0
+    filings_parsed: int = 0
+    eight_k_sanity_count: int = 0
+
+
+def _scan_single_date(
+    config,
+    db: Database,
+    args: argparse.Namespace,
+    run_date: date,
+    *,
+    run_kind: str,
+) -> _DayScanOutcome:
+    """Scan one filing date through the normal machinery, without emailing.
+
+    Used identically for the main scheduled date and for downtime-recovery
+    backfill days; already_processed dedup makes re-sweeps harmless.
+    """
     client = EdgarClient(config.sec_user_agent, config.request_delay_seconds)
     alerts: list[Alert] = []
     filings_parsed = 0
     eight_k_sanity_count = 0
     include_phrases = db.active_phrases("include")
     routine_phrases = db.active_phrases("routine_context")
+    recovered_from = run_date.isoformat() if run_kind == "backfill" else ""
 
-    scan_run_id = db.start_scan_run(run_date)
+    scan_run_id = db.start_scan_run(run_date, run_kind=run_kind)
 
-    def _fail_scan(reason: str, detail: str) -> int:
+    def _fail_scan(reason: str, detail: str) -> _DayScanOutcome:
         """Record and report a hard scan failure. NEVER exits 0.
 
         Historical bug: a 403 from SEC was treated as 'index not yet
@@ -245,7 +257,7 @@ def run_scan(args: argparse.Namespace) -> int:
             alerts_sent=0,
         )
         print(f"SCAN FAILED - {reason}\n{detail}")
-        return 1
+        return _DayScanOutcome(1, [], scan_run_id=scan_run_id)
 
     try:
         # Primary discovery: EDGAR full-text search API, queried with the
@@ -372,9 +384,9 @@ def run_scan(args: argparse.Namespace) -> int:
                         )
                 detection_id = 0 if args.dry_run else db.insert_detection(detection)
                 if detection.status == "alert_candidate" and detection_id:
-                    alerts.append(_alert_from_detection(detection_id, detection))
+                    alerts.append(_alert_from_detection(detection_id, detection, recovered_from))
                 elif detection.status == "alert_candidate" and args.dry_run:
-                    alerts.append(_alert_from_detection(0, detection))
+                    alerts.append(_alert_from_detection(0, detection, recovered_from))
 
             if not args.dry_run:
                 db.mark_processed(filing)
@@ -389,64 +401,41 @@ def run_scan(args: argparse.Namespace) -> int:
         if not args.dry_run:
             downstream_note = _refresh_downstream_caches(config, db)
 
-        def _record_ok(alerts_sent: int) -> None:
-            control = ""
-            if client.stats.control_ok is True:
-                control = "ok"
-            elif client.stats.control_ok is False:
-                control = "broken"
-            elif discovery_source == "efts" and filings:
-                control = "ok"  # live hits are themselves proof the instrument works
-            db.finish_scan_run(
-                scan_run_id,
-                status="ok",
-                filings_seen=len(filings),
-                filings_parsed=filings_parsed,
-                alerts_sent=alerts_sent,
-                source=discovery_source,
-                error=downstream_note,
-                efts_total_hits=client.stats.efts_total_hits,
-                discovery_control=control,
-            )
-
-        if not alerts:
-            _record_ok(0)
-            _print_health_summary(
-                filing_date=run_date,
-                index_status="available",
-                filings_parsed=filings_parsed,
-                eight_k_sanity_count=eight_k_sanity_count,
-                alerts_sent=0,
-            )
-            return 0
-
-        if args.dry_run or args.reprocess:
-            # Reprocess writes the re-detected candidates to the database (so the
-            # Investor Days tab updates) but, like dry-run, never emails.
-            _record_ok(0)
-            note = "DRY-RUN" if args.dry_run else "REPROCESS (detections written, no email)"
-            _print_health_summary(
-                filing_date=run_date,
-                index_status="available",
-                filings_parsed=filings_parsed,
-                eight_k_sanity_count=eight_k_sanity_count,
-                alerts_sent=0,
-            )
-            print(f"[{note}] {len(alerts)} candidate alert(s):")
-            print(build_alert_body(alerts))
-            return 0
-
-        send_alert_email(config, alerts, recipients=db.active_alert_recipients())
-        db.mark_alert_sent([alert.detection_id for alert in alerts])
-        _record_ok(len(alerts))
+        control = ""
+        if client.stats.control_ok is True:
+            control = "ok"
+        elif client.stats.control_ok is False:
+            control = "broken"
+        elif discovery_source == "efts" and filings:
+            control = "ok"  # live hits are themselves proof the instrument works
+        # Coverage truth is status='ok'. A dry-run writes no detections, so it
+        # must never claim a day as covered - otherwise one manual dry-run
+        # after downtime would silently consume the gap without repopulating.
+        db.finish_scan_run(
+            scan_run_id,
+            status="dry-run" if args.dry_run else "ok",
+            filings_seen=len(filings),
+            filings_parsed=filings_parsed,
+            alerts_sent=0,  # combined email happens later; count filled in then
+            source=discovery_source,
+            error=downstream_note,
+            efts_total_hits=client.stats.efts_total_hits,
+            discovery_control=control,
+        )
         _print_health_summary(
             filing_date=run_date,
             index_status="available",
             filings_parsed=filings_parsed,
             eight_k_sanity_count=eight_k_sanity_count,
-            alerts_sent=len(alerts),
+            alerts_sent=0,
         )
-        return 0
+        return _DayScanOutcome(
+            0,
+            alerts,
+            scan_run_id=scan_run_id,
+            filings_parsed=filings_parsed,
+            eight_k_sanity_count=eight_k_sanity_count,
+        )
     except EdgarBlockedError as exc:
         return _fail_scan("SEC EDGAR blocked a request mid-run (HTTP 403)", str(exc))
     except EdgarUnavailableError as exc:
@@ -458,6 +447,98 @@ def run_scan(args: argparse.Namespace) -> int:
             f"unexpected error ({type(exc).__name__})",
             traceback.format_exc(limit=8),
         )
+
+
+def run_scan(args: argparse.Namespace) -> int:
+    print(f"PopDay launchd run started: {_health_timestamp()}", flush=True)
+    config = load_config(args.config)
+    run_date = parse_run_date(args.date)
+    if config.sec_user_agent_has_placeholder_contact:
+        _print_health_summary(
+            filing_date=run_date,
+            index_status="error",
+            filings_parsed=0,
+            eight_k_sanity_count=0,
+            alerts_sent=0,
+        )
+        print(
+            "PopDay needs a real SEC User-Agent contact before scanning EDGAR.\n\n"
+            "Set it in config.json, for example:\n"
+            '  "sec_user_agent": "PopDay/0.1 your-email@example.com"\n\n'
+            "Or run once with:\n"
+            '  POPDAY_SEC_USER_AGENT="PopDay/0.1 your-email@example.com" '
+            "python3 popday.py --date today --dry-run"
+        )
+        return 2
+
+    db = Database(config.db_path)
+    db.seed_recipients(config.email_recipients)
+    try:
+        # Self-healing coverage: before scanning the main date, sweep any
+        # business days missed during downtime (failed runs, dead launchd,
+        # SEC block, sync breakage). Coverage truth is the scan_runs table;
+        # already_processed dedup makes re-sweeps harmless.
+        explicit_floor = None
+        if getattr(args, "backfill_from", None):
+            explicit_floor = datetime.strptime(args.backfill_from, "%Y-%m-%d").date()
+        earliest_ok = db.earliest_ok_run_date()
+        floor = explicit_floor or earliest_ok
+        covered = db.covered_ok_dates(floor) if floor else set()
+        missed = missed_business_days(
+            covered,
+            main_run_date=run_date,
+            earliest_ok=earliest_ok,
+            explicit_floor=explicit_floor,
+        )
+        if missed:
+            print(
+                f"Recovering {len(missed)} missed day(s): "
+                + ", ".join(day.isoformat() for day in missed)
+            )
+
+        all_alerts: list[Alert] = []
+        alerts_by_run: dict[int, int] = {}
+        for day in missed:
+            outcome = _scan_single_date(config, db, args, day, run_kind="backfill")
+            if outcome.exit_code != 0:
+                # Never half-heal silently: the failed day is recorded, the
+                # remaining sweep (and the main date) is aborted so the red
+                # banner fires; days already swept keep their ok rows and the
+                # next healthy run resumes exactly here.
+                print(
+                    "Downtime recovery aborted at "
+                    f"{day.isoformat()}; remaining days will be swept by the "
+                    "next healthy run."
+                )
+                return outcome.exit_code
+            all_alerts.extend(outcome.alerts)
+            alerts_by_run[outcome.scan_run_id] = len(outcome.alerts)
+
+        main = _scan_single_date(config, db, args, run_date, run_kind="scheduled")
+        if main.exit_code != 0:
+            return main.exit_code
+        all_alerts.extend(main.alerts)
+        alerts_by_run[main.scan_run_id] = len(main.alerts)
+
+        if not all_alerts:
+            return 0
+
+        if args.dry_run or args.reprocess:
+            # Reprocess writes the re-detected candidates to the database (so the
+            # Investor Days tab updates) but, like dry-run, never emails.
+            note = "DRY-RUN" if args.dry_run else "REPROCESS (detections written, no email)"
+            print(f"[{note}] {len(all_alerts)} candidate alert(s):")
+            print(build_alert_body(all_alerts))
+            return 0
+
+        # ONE combined email covering the recovered days and the main date.
+        send_alert_email(config, all_alerts, recipients=db.active_alert_recipients())
+        db.mark_alert_sent([alert.detection_id for alert in all_alerts])
+        for run_id, count in alerts_by_run.items():
+            if count:
+                db.set_scan_run_alerts_sent(run_id, count)
+        print(f"Combined alert email sent: {len(all_alerts)} alert(s).")
+        return 0
     finally:
         db.close()
 
@@ -658,6 +739,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run date as YYYY-MM-DD, today, or previous-business-day.",
     )
     parser.add_argument("--dry-run", action="store_true", help="Print alerts without sending email.")
+    parser.add_argument(
+        "--backfill-from",
+        help=(
+            "YYYY-MM-DD floor for the automatic downtime-recovery sweep, "
+            "overriding the earliest-recorded-ok-run floor. Use for deliberate "
+            "historical recovery (e.g. a gap from before scan_runs existed)."
+        ),
+    )
     parser.add_argument(
         "--reprocess",
         action="store_true",

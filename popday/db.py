@@ -142,7 +142,8 @@ CREATE TABLE IF NOT EXISTS scan_runs (
     alerts_sent INTEGER NOT NULL DEFAULT 0,
     error TEXT,
     efts_total_hits INTEGER NOT NULL DEFAULT 0,
-    discovery_control TEXT NOT NULL DEFAULT ''
+    discovery_control TEXT NOT NULL DEFAULT '',
+    run_kind TEXT NOT NULL DEFAULT 'scheduled'
 );
 """
 
@@ -195,6 +196,10 @@ class Database:
         if scan_run_columns and "discovery_control" not in scan_run_columns:
             self.conn.execute(
                 "ALTER TABLE scan_runs ADD COLUMN discovery_control TEXT NOT NULL DEFAULT ''"
+            )
+        if scan_run_columns and "run_kind" not in scan_run_columns:
+            self.conn.execute(
+                "ALTER TABLE scan_runs ADD COLUMN run_kind TEXT NOT NULL DEFAULT 'scheduled'"
             )
         if "acceptance_datetime" not in processed_columns:
             self.conn.execute("ALTER TABLE processed_filings ADD COLUMN acceptance_datetime TEXT")
@@ -251,13 +256,41 @@ class Database:
         )
         self.conn.commit()
 
-    def start_scan_run(self, run_date) -> int:
+    def start_scan_run(self, run_date, run_kind: str = "scheduled") -> int:
         cursor = self.conn.execute(
-            "INSERT INTO scan_runs (run_date, started_utc, status) VALUES (?, ?, 'running')",
-            (str(run_date), utc_now()),
+            "INSERT INTO scan_runs (run_date, started_utc, status, run_kind) "
+            "VALUES (?, ?, 'running', ?)",
+            (str(run_date), utc_now(), run_kind),
         )
         self.conn.commit()
         return int(cursor.lastrowid)
+
+    def set_scan_run_alerts_sent(self, scan_run_id: int, alerts_sent: int) -> None:
+        """Backfilled days defer email; count is filled in once the combined
+        end-of-run email actually goes out."""
+        self.conn.execute(
+            "UPDATE scan_runs SET alerts_sent = ? WHERE id = ?",
+            (alerts_sent, scan_run_id),
+        )
+        self.conn.commit()
+
+    def covered_ok_dates(self, since) -> set:
+        """Business-day coverage truth: run_dates with at least one ok run."""
+        rows = self.conn.execute(
+            "SELECT DISTINCT run_date FROM scan_runs WHERE status = 'ok' AND run_date >= ?",
+            (str(since),),
+        ).fetchall()
+        return {
+            datetime.strptime(row["run_date"], "%Y-%m-%d").date() for row in rows
+        }
+
+    def earliest_ok_run_date(self):
+        row = self.conn.execute(
+            "SELECT MIN(run_date) AS d FROM scan_runs WHERE status = 'ok'"
+        ).fetchone()
+        if not row or not row["d"]:
+            return None
+        return datetime.strptime(row["d"], "%Y-%m-%d").date()
 
     def finish_scan_run(
         self,
