@@ -291,6 +291,32 @@ def run_scan(args: argparse.Namespace) -> int:
             except EdgarUnavailableError as exc:
                 return _fail_scan("could not reach SEC EDGAR", str(exc))
 
+        # A zero-hit EFTS day is only trustworthy if the instrument still
+        # works. One control query against a fixed historical week that is
+        # guaranteed to match; if even that returns nothing, the query or
+        # response parsing is broken (API drift) and this run must not be
+        # reported as a quiet green day.
+        if discovery_source == "efts" and not filings:
+            try:
+                control_ok = client.discovery_control_probe()
+            except (EdgarBlockedError, EdgarUnavailableError, urllib.error.HTTPError) as exc:
+                return _fail_scan(
+                    "zero filings found and the discovery control probe errored",
+                    f"Cannot verify the full-text search instrument: {exc}",
+                )
+            if not control_ok:
+                return _fail_scan(
+                    "discovery instrument broken",
+                    "Live queries and the known-good control query both "
+                    "returned zero hits from EDGAR full-text search. The "
+                    "query format or response parsing no longer matches the "
+                    "API - do not trust green runs until this is fixed.",
+                )
+            print(
+                "Zero filings matched today; control probe confirms the "
+                "search instrument works (verified quiet day)."
+            )
+
         eight_k_sanity_count = sum(1 for filing in filings if filing.form_type == "8-K")
 
         for filing in filings:
@@ -364,6 +390,13 @@ def run_scan(args: argparse.Namespace) -> int:
             downstream_note = _refresh_downstream_caches(config, db)
 
         def _record_ok(alerts_sent: int) -> None:
+            control = ""
+            if client.stats.control_ok is True:
+                control = "ok"
+            elif client.stats.control_ok is False:
+                control = "broken"
+            elif discovery_source == "efts" and filings:
+                control = "ok"  # live hits are themselves proof the instrument works
             db.finish_scan_run(
                 scan_run_id,
                 status="ok",
@@ -372,6 +405,8 @@ def run_scan(args: argparse.Namespace) -> int:
                 alerts_sent=alerts_sent,
                 source=discovery_source,
                 error=downstream_note,
+                efts_total_hits=client.stats.efts_total_hits,
+                discovery_control=control,
             )
 
         if not alerts:

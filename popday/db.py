@@ -140,7 +140,9 @@ CREATE TABLE IF NOT EXISTS scan_runs (
     filings_seen INTEGER NOT NULL DEFAULT 0,
     filings_parsed INTEGER NOT NULL DEFAULT 0,
     alerts_sent INTEGER NOT NULL DEFAULT 0,
-    error TEXT
+    error TEXT,
+    efts_total_hits INTEGER NOT NULL DEFAULT 0,
+    discovery_control TEXT NOT NULL DEFAULT ''
 );
 """
 
@@ -183,6 +185,17 @@ class Database:
             row["name"]
             for row in self.conn.execute("PRAGMA table_info(processed_filings)").fetchall()
         }
+        scan_run_columns = {
+            row["name"] for row in self.conn.execute("PRAGMA table_info(scan_runs)").fetchall()
+        }
+        if scan_run_columns and "efts_total_hits" not in scan_run_columns:
+            self.conn.execute(
+                "ALTER TABLE scan_runs ADD COLUMN efts_total_hits INTEGER NOT NULL DEFAULT 0"
+            )
+        if scan_run_columns and "discovery_control" not in scan_run_columns:
+            self.conn.execute(
+                "ALTER TABLE scan_runs ADD COLUMN discovery_control TEXT NOT NULL DEFAULT ''"
+            )
         if "acceptance_datetime" not in processed_columns:
             self.conn.execute("ALTER TABLE processed_filings ADD COLUMN acceptance_datetime TEXT")
         if "acceptance_datetime" not in detection_columns:
@@ -256,12 +269,15 @@ class Database:
         alerts_sent: int,
         source: str,
         error: str,
+        efts_total_hits: int = 0,
+        discovery_control: str = "",
     ) -> None:
         self.conn.execute(
             """
             UPDATE scan_runs
                SET finished_utc = ?, status = ?, discovery_source = ?,
-                   filings_seen = ?, filings_parsed = ?, alerts_sent = ?, error = ?
+                   filings_seen = ?, filings_parsed = ?, alerts_sent = ?, error = ?,
+                   efts_total_hits = ?, discovery_control = ?
              WHERE id = ?
             """,
             (
@@ -272,6 +288,8 @@ class Database:
                 filings_parsed,
                 alerts_sent,
                 error,
+                efts_total_hits,
+                discovery_control,
                 scan_run_id,
             ),
         )
@@ -291,6 +309,7 @@ class Database:
             "last_run_status": last_any["status"] if last_any else None,
             "last_run_source": last_any["discovery_source"] if last_any else None,
             "last_run_error": last_any["error"] if last_any else None,
+            "last_run_control": (last_any["discovery_control"] if "discovery_control" in last_any.keys() else "") if last_any else None,
         }
 
     def already_processed(self, accession_number: str) -> bool:

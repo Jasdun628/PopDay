@@ -62,6 +62,8 @@ class FetchStats:
     requests: int = 0
     retries: int = 0
     http_403: int = 0
+    efts_total_hits: int = 0
+    control_ok: bool | None = None
     sources_used: list[str] = field(default_factory=list)
 
 
@@ -191,15 +193,23 @@ class EdgarClient:
             variants.append(" ".join(words[:-1] + [words[-1] + "s"]))
         return variants
 
+    def _efts_query(self, query: str, run_date: date, offset: int) -> dict:
+        url = self._efts_url(query, run_date)
+        if offset:
+            url = f"{url}&from={offset}"
+        return self.get_json(url)
+
     def search_filings_for_phrases(
-        self, run_date: date, phrases: list[str]
+        self, run_date: date, phrases: list[str], *, max_hits_per_query: int = 100
     ) -> list[Filing]:
         """Discover candidate filings via the EDGAR full-text search JSON API.
 
-        A small JSON request per phrase (singular and plural), deduplicated by
-        accession. Raises EdgarBlockedError / EdgarUnavailableError on hard
-        failure so the caller can fall back to the daily index (and never fake a
-        green run).
+        A small JSON request per phrase (singular and plural), paginated past
+        the API's 10-hit page size up to max_hits_per_query, deduplicated by
+        accession. Records the API-reported total hits in stats so callers can
+        distinguish "instrument broken" from "genuinely quiet". Raises
+        EdgarBlockedError / EdgarUnavailableError on hard failure so the caller
+        can fall back to the daily index (and never fake a green run).
         """
         seen: dict[str, Filing] = {}
         queried: set[str] = set()
@@ -208,13 +218,50 @@ class EdgarClient:
                 if query in queried:
                     continue
                 queried.add(query)
-                payload = self.get_json(self._efts_url(query, run_date))
-                for hit in payload.get("hits", {}).get("hits", []):
-                    filing = self._filing_from_efts_hit(hit, phrase)
-                    if filing and filing.accession_number not in seen:
-                        seen[filing.accession_number] = filing
+                offset = 0
+                while True:
+                    payload = self._efts_query(query, run_date, offset)
+                    hits = payload.get("hits", {}).get("hits", [])
+                    total = int(
+                        (payload.get("hits", {}).get("total") or {}).get("value") or 0
+                    )
+                    if offset == 0:
+                        self.stats.efts_total_hits += total
+                    for hit in hits:
+                        filing = self._filing_from_efts_hit(hit, phrase)
+                        if filing and filing.accession_number not in seen:
+                            seen[filing.accession_number] = filing
+                    offset += len(hits)
+                    if not hits or offset >= min(total, max_hits_per_query):
+                        break
         self.stats.sources_used.append("efts")
         return list(seen.values())
+
+    # Control probe: a fixed historical business week that is guaranteed to
+    # contain 8-K full-text matches. If even this returns zero, the query or
+    # response parsing is broken (API drift) - a zero-hit live day is then
+    # NOT trustworthy. One request, run only when a live day comes back empty.
+    CONTROL_QUERY = "press release"
+    CONTROL_START = "2026-02-02"
+    CONTROL_END = "2026-02-06"
+
+    def discovery_control_probe(self) -> bool:
+        """True if the full-text search instrument demonstrably works."""
+        params = {
+            "q": f'"{self.CONTROL_QUERY}"',
+            "dateRange": "custom",
+            "startdt": self.CONTROL_START,
+            "enddt": self.CONTROL_END,
+            "forms": ",".join(sorted(TARGET_FORMS)),
+        }
+        payload = self.get_json(f"{EFTS_BASE}?{urllib.parse.urlencode(params)}")
+        total = int((payload.get("hits", {}).get("total") or {}).get("value") or 0)
+        parsed_any = any(
+            self._filing_from_efts_hit(hit, self.CONTROL_QUERY)
+            for hit in payload.get("hits", {}).get("hits", [])
+        )
+        self.stats.control_ok = bool(total > 0 and parsed_any)
+        return self.stats.control_ok
 
     # ------------------------------------------------ Fallback: daily index
 

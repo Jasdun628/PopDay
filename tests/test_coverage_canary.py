@@ -23,10 +23,46 @@ class CoverageCanaryTests(unittest.TestCase):
         v = gsj._assess_coverage(recent_filings_seen=[2, 0, 3, 1, 0, 4], days_since_candidate=1)
         self.assertEqual(v["level"], "ok")
 
-    def test_broken_when_discovery_dry_across_window(self):
-        v = gsj._assess_coverage(recent_filings_seen=[0, 0, 0, 0, 0, 0], days_since_candidate=12)
+    def test_zero_window_on_daily_index_is_broken(self):
+        # Hundreds of filings per day are expected from the daily index, so an
+        # all-zero window there still means discovery is down.
+        v = gsj._assess_coverage(
+            recent_filings_seen=[0, 0, 0, 0, 0, 0],
+            days_since_candidate=12,
+            discovery_source="daily-index",
+        )
         self.assertEqual(v["level"], "broken")
         self.assertIn("no filings", v["message"])
+
+    def test_zero_window_on_efts_with_control_ok_is_verified_quiet(self):
+        # EFTS counts phrase hits, which are legitimately zero on quiet days;
+        # a passing control probe means the instrument works, so no red banner.
+        v = gsj._assess_coverage(
+            recent_filings_seen=[0, 0, 0, 0, 0, 0],
+            days_since_candidate=3,
+            discovery_control="ok",
+            discovery_source="efts",
+        )
+        self.assertEqual(v["level"], "ok")
+
+    def test_zero_window_with_broken_control_is_broken(self):
+        v = gsj._assess_coverage(
+            recent_filings_seen=[0, 0, 0, 0, 0, 0],
+            days_since_candidate=3,
+            discovery_control="broken",
+            discovery_source="efts",
+        )
+        self.assertEqual(v["level"], "broken")
+        self.assertIn("control probe", v["message"])
+
+    def test_zero_window_on_efts_without_control_verdict_is_amber(self):
+        v = gsj._assess_coverage(
+            recent_filings_seen=[0, 0, 0, 0, 0, 0],
+            days_since_candidate=3,
+            discovery_source="efts",
+        )
+        self.assertEqual(v["level"], "stale")
+        self.assertIn("quiet stretch", v["message"])
 
     def test_no_false_alarm_with_too_few_runs(self):
         # A couple of quiet days must not trip the discovery canary.

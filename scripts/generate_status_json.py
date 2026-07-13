@@ -26,29 +26,65 @@ CANDIDATE_STALE_DAYS = 8  # amber if no new investor-day candidate in this many 
 
 
 def _assess_coverage(
-    *, recent_filings_seen: list[int], days_since_candidate: int | None
+    *,
+    recent_filings_seen: list[int],
+    days_since_candidate: int | None,
+    discovery_control: str = "",
+    discovery_source: str = "",
 ) -> dict[str, str]:
-    """Pure coverage verdict from discovery volume and candidate freshness.
+    """Pure coverage verdict from discovery volume, candidate freshness, and
+    the discovery instrument's own health.
 
-    - broken: several consecutive scans discovered zero filings (discovery is
-      down — the silent-403 / coverage-regression signature).
-    - stale: filings are being seen but no new candidate has appeared in a while
-      (under-matching, or a genuinely quiet stretch worth a human glance).
+    filings_seen changed meaning with the EFTS switch: it now counts
+    phrase-matching filings (routinely zero on quiet days), not every 8-K
+    filed (hundreds). Zeros alone are therefore NOT evidence of breakage on
+    EFTS runs - only the control probe can distinguish "instrument broken"
+    from "genuinely quiet".
+
+    - broken: control probe says the instrument is broken, or an all-zero
+      window on a non-EFTS source (where hundreds are always expected).
+    - stale: no new candidate in a while, or an all-zero EFTS window with no
+      control verdict recorded (unverified quiet - worth a human glance).
     """
     considered = len(recent_filings_seen)
-    if considered >= COVERAGE_DISCOVERY_RUN_WINDOW and sum(recent_filings_seen) == 0:
-        return {
-            "level": "broken",
-            "message": (
-                f"PopDay discovered no filings across its last {considered} scans "
-                "— discovery may be broken (the June 2026 outage signature)."
-            ),
-        }
+    all_zero = considered >= COVERAGE_DISCOVERY_RUN_WINDOW and sum(recent_filings_seen) == 0
+    control = str(discovery_control or "").strip().lower()
+    source = str(discovery_source or "").strip().lower()
+
+    if all_zero:
+        if control == "broken":
+            return {
+                "level": "broken",
+                "message": (
+                    "The discovery control probe failed: EDGAR full-text search "
+                    "returned zero hits even for a known-good historical query. "
+                    "The instrument is broken - recent green runs cannot be trusted."
+                ),
+            }
+        if source and source != "efts":
+            return {
+                "level": "broken",
+                "message": (
+                    f"PopDay discovered no filings across its last {considered} scans "
+                    "on the daily-index source, where hundreds are expected - "
+                    "discovery may be broken (the June 2026 outage signature)."
+                ),
+            }
+        if control != "ok":
+            return {
+                "level": "stale",
+                "message": (
+                    f"Zero filings matched across the last {considered} scans and no "
+                    "control-probe verdict is recorded - probably a quiet stretch, "
+                    "but worth one manual check."
+                ),
+            }
+        # control == "ok": verified quiet; fall through to candidate freshness.
     if days_since_candidate is not None and days_since_candidate > CANDIDATE_STALE_DAYS:
         return {
             "level": "stale",
             "message": (
-                f"No new investor-day candidate in {days_since_candidate} days — "
+                f"No new investor-day candidate in {days_since_candidate} days - "
                 "worth checking the scanner is still matching filings."
             ),
         }
@@ -188,10 +224,34 @@ def _coverage_health(con: sqlite3.Connection, now: dt.datetime) -> dict[str, Any
         ).fetchall()
     except sqlite3.Error:
         return base
+    latest = None
+    try:
+        latest = con.execute(
+            "SELECT COALESCE(discovery_source, ''), COALESCE(discovery_control, '') "
+            "FROM scan_runs WHERE finished_utc IS NOT NULL ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+    except sqlite3.Error:
+        # Older synced DB without the discovery_control column: assess on
+        # volume + freshness only (control stays unknown).
+        try:
+            row = con.execute(
+                "SELECT COALESCE(discovery_source, '') FROM scan_runs "
+                "WHERE finished_utc IS NOT NULL ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            latest = (row[0], "") if row else None
+        except sqlite3.Error:
+            latest = None
     recent = [int(row[0] or 0) for row in rows]
+    latest_source = str(latest[0] or "") if latest else ""
+    latest_control = str(latest[1] or "") if latest else ""
     last_dt = _parse_iso(last_candidate)
     days = (now.date() - last_dt.date()).days if last_dt else None
-    verdict = _assess_coverage(recent_filings_seen=recent, days_since_candidate=days)
+    verdict = _assess_coverage(
+        recent_filings_seen=recent,
+        days_since_candidate=days,
+        discovery_control=latest_control,
+        discovery_source=latest_source,
+    )
     base.update(
         table_present=True,
         last_candidate_utc=last_candidate,
