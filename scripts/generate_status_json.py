@@ -454,10 +454,14 @@ def _health(
             return {"level": "BROKEN", "summary": f"BROKEN: {coverage.get('message')}"}
         if coverage.get("level") == "stale":
             return {"level": "STALE", "summary": f"STALE: {coverage.get('message')}"}
-        if run_status in {"ok", "running"}:
+        if run_status in {"ok", "running", "dry-run"}:
             source = scan_health.get("last_run_source") or "?"
             if run_status == "running":
                 return {"level": "LIVE", "summary": "Healthy. A Mac Mini scan is currently running; the previous scan succeeded."}
+            if run_status == "dry-run":
+                # A manual dry-run after the last real success: harmless, and
+                # last_success_utc (checked above) is still the honest anchor.
+                return {"level": "LIVE", "summary": "Healthy. Latest activity was a manual dry-run; the last real scan succeeded."}
             alerts = latest_run.get("qualifying_alerts_sent") if latest_run else None
             if alerts and alerts not in {"0", ""}:
                 return {"level": "LIVE", "summary": f"LIVE: latest Mac Mini scan succeeded (via {source}) and sent alerts."}
@@ -471,16 +475,17 @@ def _health(
         return {"level": "BROKEN", "summary": "BROKEN: latest scan time could not be parsed."}
 
     age_hours = (now - started).total_seconds() / 3600
+    log_allowance_h = _no_scan_day_allowance_hours(started, now)
     index_status = (latest_run.get("edgar_index_status") or "").strip().lower()
     err_size = err_log.stat().st_size if err_log.exists() else 0
 
-    if age_hours > 42:
+    if age_hours > 42 + log_allowance_h:
         return {"level": "BROKEN", "summary": "BROKEN: no successful Mac Mini scan in more than 42 hours."}
     if index_status == "error":
         return {"level": "BROKEN", "summary": "BROKEN: latest Mac Mini scan reported an EDGAR error."}
     if err_size > 0:
         return {"level": "BROKEN", "summary": "BROKEN: Mac Mini launchd error log is not empty."}
-    if age_hours > 18:
+    if age_hours > 18 + log_allowance_h:
         return {"level": "STALE", "summary": "STALE: latest Mac Mini scan is older than expected."}
     if "not yet" in index_status:
         return {"level": "STALE", "summary": "STALE: SEC EDGAR index was not yet available, but the scanner did not crash."}
