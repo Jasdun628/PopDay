@@ -386,13 +386,12 @@ def _load_public_status() -> dict:
 
     updated_at = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)
     age_hours = (datetime.now(timezone.utc) - updated_at).total_seconds() / 3600
-    allowance_hours = _no_scan_day_allowance_hours(updated_at, datetime.now(timezone.utc))
     level = str(status["health"].get("level") or "UNKNOWN").upper()
 
-    if age_hours > 42 + allowance_hours:
+    if age_hours > 42:
         level = "BROKEN"
         status["health"]["summary"] = _stale_front_door_summary(updated_at, broken=True)
-    elif age_hours > 18 + allowance_hours and level == "LIVE":
+    elif age_hours > 18 and level == "LIVE":
         level = "STALE"
         status["health"]["summary"] = _stale_front_door_summary(updated_at, broken=False)
 
@@ -430,24 +429,6 @@ def _load_public_status() -> dict:
         else "never"
     )
     return status
-
-
-def _no_scan_day_allowance_hours(last: datetime, now: datetime) -> int:
-    """Hours of extra staleness allowance for scheduled no-scan days.
-
-    PopDay's launchd schedule runs Tue-Sat only, so a Saturday-morning scan
-    (and status sync) is legitimately the newest one until Tuesday. Each
-    Sunday or Monday inside the gap stretches the staleness thresholds by
-    24h; without this the front door went red every Monday on a perfectly
-    healthy system.
-    """
-    allowance = 0
-    cursor = (last + timedelta(days=1)).date()
-    while cursor <= now.date():
-        if cursor.weekday() in (6, 0):  # Sunday, Monday
-            allowance += 24
-        cursor += timedelta(days=1)
-    return allowance
 
 
 def _scan_alert(scan_health: dict) -> dict | None:
@@ -490,9 +471,7 @@ def _scan_alert(scan_health: dict) -> dict | None:
             "detail": "PopDay has not completed a successful scan on this database.",
             "last_success_display": last_success_display,
         }
-    if age_hours is not None and age_hours > 26 + _no_scan_day_allowance_hours(
-        last_success, datetime.now(timezone.utc)
-    ):
+    if age_hours is not None and age_hours > 26:
         return {
             "active": True,
             "level": "danger",
