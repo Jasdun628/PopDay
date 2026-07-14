@@ -78,15 +78,17 @@ def normalize_text(value: str) -> str:
 def html_to_text(value: str) -> str:
     try:
         from bs4 import BeautifulSoup  # type: ignore
+
+        return normalize_text(BeautifulSoup(value or "", "html.parser").get_text(" "))
     except Exception:
-        extractor = _TextExtractor()
-        try:
-            extractor.feed(value or "")
-            return extractor.text()
-        except Exception:
-            fallback = re.sub(r"<[^>]+>", " ", value or "")
-            return normalize_text(fallback)
-    return normalize_text(BeautifulSoup(value or "", "html.parser").get_text(" "))
+        pass
+    extractor = _TextExtractor()
+    try:
+        extractor.feed(value or "")
+        return extractor.text()
+    except Exception:
+        fallback = re.sub(r"<[^>]+>", " ", value or "")
+        return normalize_text(fallback)
 
 
 def extract_links(value: str, *, base_url: str = "") -> list[dict[str, str]]:
