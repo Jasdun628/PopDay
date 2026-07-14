@@ -8,3 +8,4 @@ logs/
 .claude/
 backups/
 *.bak
+.last_deployed_commit
