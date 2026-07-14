@@ -147,26 +147,26 @@
     </colgroup>
     <thead>
       <tr class="group-row">
-        <th colspan="3" class="grp grp-event"><span class="tip-head" data-tip="What actually happened at the Investor Day itself: the company, the event date, and the closing share price on that day.">The event</span></th>
-        <th colspan="2" class="grp grp-announce grp-start"><span class="tip-head" data-tip="When and how PopDay learned about it: the SEC filing date/time, and the first trading day the market could react to that announcement.">The announcement</span></th>
-        <th colspan="4" class="grp grp-reaction grp-start"><span class="tip-head" data-tip="How the stock moved on the very first trading session after the announcement (AD) was filed - the market's immediate, same-day reaction, before the Investor Day itself has even happened.">First-day reaction to AD</span></th>
-        <th colspan="3" class="grp grp-since grp-start"><span class="tip-head" data-tip="How the stock has performed from just before that first reaction day up to the most recent close PopDay has on file - the cumulative move and how choppy it's been over that whole stretch.">Since then</span></th>
-        <th class="grp grp-status grp-start"><span class="tip-head" data-tip="Whether PopDay has full, usable data for this row, or a short note explaining what's missing and why.">Status</span></th>
+        <th colspan="3" class="grp grp-event"><span class="tip-head" data-tip="Who held the Investor Day, when it happened (or will), and where the stock closed on the day itself.">The event</span></th>
+        <th colspan="2" class="grp grp-announce grp-start"><span class="tip-head" data-tip="When the news landed: the moment the SEC filing arrived, and the first trading day anyone could act on it.">The announcement</span></th>
+        <th colspan="4" class="grp grp-reaction grp-start"><span class="tip-head" data-tip="What the stock did on day one after the announcement (AD) dropped - the market's knee-jerk verdict, long before the Investor Day itself.">First-day reaction to AD</span></th>
+        <th colspan="3" class="grp grp-since grp-start"><span class="tip-head" data-tip="The bigger picture since the news: where the stock has drifted from just before that first reaction day to its latest close, and how bumpy the ride has been.">Since then</span></th>
+        <th class="grp grp-status grp-start"><span class="tip-head" data-tip="A quick sanity flag: is this row complete, or is something missing (and why)?">Status</span></th>
       </tr>
       <tr>
         <th>Company</th>
         <th>Event Date</th>
-        <th><span class="tip-head" data-tip="The share price at the close of the actual Investor Day (the first trading day on or after the event date). Green means the stock rose that day; red means it fell. The smaller figure is that day's move. Blank for upcoming events that have not happened yet.">Investor Day Close</span></th>
-        <th class="grp-start"><span class="tip-head" data-tip="When the SEC accepted the filing. PopDay shows the precise acceptance timestamp where it is known, otherwise the filing date. A filing accepted at or after 4pm ET can only be reacted to the next trading day, so the reaction day shifts forward.">Filed / Accepted</span></th>
-        <th><span class="tip-head" data-tip="The first trading session the market could respond to the announcement — the trading day on or after the filing was accepted. If it was accepted at or after 4pm ET, this is the next trading day.">Reaction Day</span></th>
-        <th class="grp-start"><span class="tip-head" data-tip="The share price at the close of the trading day immediately before the reaction day. It is the baseline the move is measured against.">Previous Close</span></th>
-        <th><span class="tip-head" data-tip="The share price at the close of the reaction day itself.">Reaction Close</span></th>
-        <th><span class="tip-head" data-tip="The percentage change from the Previous Close to the Reaction Close — how far the stock moved on the first day the market could react.">Move</span></th>
-        <th><span class="tip-head" data-tip="How wide the stock traded on the reaction day: the day's high minus its low, shown as a percentage of the Previous Close. A bigger number means a more volatile session.">Intraday Range</span></th>
-        <th class="grp-start"><span class="tip-head" data-tip="The most recent daily closing price PopDay has on file for this stock. The date of that close is shown beneath the price.">Latest Close</span></th>
-        <th><span class="tip-head" data-tip="The percentage change from the Previous Close to the Latest Close — the cumulative move over the whole window since the announcement.">Interval Return</span></th>
-        <th><span class="tip-head" data-tip="How choppy the stock has been over the measurement window — that window runs from the day before the reaction day (the Previous Close) through to the Latest Close. It is the standard deviation of the daily close-to-close percentage returns across those trading days; a higher number means bigger day-to-day swings.">Daily Volatility</span></th>
-        <th class="grp-start"><span class="tip-head" data-tip="Whether PopDay could build a full row of data for this announcement (for example 'Ok'), or a short note explaining why data is missing.">Status</span></th>
+        <th><span class="tip-head" data-tip="Where the stock finished on the Investor Day itself - green if it ended up, red if down, with that day's move underneath. Blank until the event has actually happened.">Investor Day Close</span></th>
+        <th class="grp-start"><span class="tip-head" data-tip="The exact moment the filing hit the SEC. Anything accepted at or after 4pm ET missed the closing bell, so the market's first chance to react rolls to the next trading day.">Filed / Accepted</span></th>
+        <th><span class="tip-head" data-tip="The first day traders could actually do anything about the news - same day if it landed during market hours, the next trading day if it came in after the close.">Reaction Day</span></th>
+        <th class="grp-start"><span class="tip-head" data-tip="Where the stock stood the day before anyone knew - the starting line every move on this row is measured from.">Previous Close</span></th>
+        <th><span class="tip-head" data-tip="Where the stock finished at the end of the reaction day - the first close after the market had its say.">Reaction Close</span></th>
+        <th><span class="tip-head" data-tip="Day one in a single number: how far the stock moved from the previous close once the news was out.">Move</span></th>
+        <th><span class="tip-head" data-tip="How wild the reaction day was - the full swing from that day's low to its high, as a share of the previous close. Bigger number, wilder session.">Intraday Range</span></th>
+        <th class="grp-start"><span class="tip-head" data-tip="The freshest closing price PopDay has for this stock, with its date shown underneath.">Latest Close</span></th>
+        <th><span class="tip-head" data-tip="The running score: how far the stock has moved in total from just before the news to its latest close.">Interval Return</span></th>
+        <th><span class="tip-head" data-tip="How bumpy the ride has been since the news - the typical size of the day-to-day swings over the whole stretch. Higher means a jumpier stock.">Daily Volatility</span></th>
+        <th class="grp-start"><span class="tip-head" data-tip="Ok means the row is complete; anything else is a short note on what data is missing and why.">Status</span></th>
       </tr>
     </thead>
     <tbody>
@@ -200,7 +200,7 @@
     </tbody>
     <tfoot>
       <tr class="total-row">
-        <td colspan="10" class="total-label {% if average.startswith('+') %}move-up{% elif average.startswith('-') %}move-down{% endif %}"><span class="tip-head" data-tip="The mean of the Interval Return column across every row in this table - the average cumulative move from just before the first reaction day to each company's latest available close.">Average interval return</span></td>
+        <td colspan="10" class="total-label {% if average.startswith('+') %}move-up{% elif average.startswith('-') %}move-down{% endif %}"><span class="tip-head" data-tip="The bottom line for this table: take every Interval Return above and average them - the typical total move a stock has made since its announcement.">Average interval return</span></td>
         <td class="number-cell {% if average.startswith('+') %}move-up{% elif average.startswith('-') %}move-down{% endif %}">{{ average }}</td>
         <td colspan="2"></td>
       </tr>
