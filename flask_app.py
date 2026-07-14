@@ -70,6 +70,14 @@ def _interval_return_average(rows) -> str:
     return _pct_text(sum(values) / len(values))
 
 
+def _event_day_return_average(rows) -> str:
+    """Average (mean) Investor Day close move across a group of Price Reaction rows."""
+    values = [row["event_day_move_raw"] for row in rows if row.get("event_day_move_raw") is not None]
+    if not values:
+        return "—"
+    return _pct_text(sum(values) / len(values))
+
+
 def _friendly_date(value: str) -> str:
     if not value:
         return ""
@@ -953,6 +961,7 @@ def _build_admin_context(db: Database, tab: str, *, company_websites: dict[str, 
                 "reaction_close": _money_text(r["reaction_close"]),
                 "event_day_close": _money_text(r["event_day_close"]) if dict(r).get("event_day_close") is not None else "—",
                 "event_day_move_pct": _pct_text(r["event_day_move_pct"]) if dict(r).get("event_day_move_pct") is not None else "",
+                "event_day_move_raw": dict(r).get("event_day_move_pct"),
                 "event_day_direction": (
                     "up" if (dict(r).get("event_day_move_pct") or 0) > 0
                     else ("down" if (dict(r).get("event_day_move_pct") or 0) < 0 else "")
@@ -978,6 +987,8 @@ def _build_admin_context(db: Database, tab: str, *, company_websites: dict[str, 
         ctx["legacy_price_reaction_rows"] = legacy_pr
         ctx["upcoming_price_reaction_avg"] = _interval_return_average(upcoming_pr)
         ctx["legacy_price_reaction_avg"] = _interval_return_average(legacy_pr)
+        ctx["upcoming_price_reaction_event_avg"] = _event_day_return_average(upcoming_pr)
+        ctx["legacy_price_reaction_event_avg"] = _event_day_return_average(legacy_pr)
     elif tab == "rules":
         from popday.rules import ALERT_REQUIREMENTS
         ctx["rules"] = [dict(r) for r in db.rules()]
