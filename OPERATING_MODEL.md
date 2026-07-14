@@ -96,17 +96,19 @@ Design all workflows around hiding repository, deployment, runtime, database, la
 
 ## Device Roles
 
-- Mac Mini: private scanner engine, live runtime database, launchd schedule, backups, source development.
-- PythonAnywhere: browser front door for the current PopDay interface.
+As of the 14 Jul 2026 scan cutover:
+
+- Mac Mini: source development only (Claude Code work, the source repo, local dev tooling). No longer runs the scanner - its launchd scan job (`com.popday.alerts`) is disabled. Still holds a local backup rotation (`/Users/jasondunne/PopDayBackups/`) that includes a pulled-down read-only copy of PythonAnywhere's live database on every deploy.
+- PythonAnywhere: scan execution environment (two daily scheduled tasks, 04:00 and 07:00 UTC) *and* the browser front door. Holds the live runtime database - it is now the single source of truth for scan data, not a synced copy.
 - GitHub repo: offsite source backup, not the live database or secret store.
 
 ## Source And Runtime
 
-- Mac Mini PopDay repo: `/Users/jasondunne/Documents/PopDay`
-- Mac Mini runtime: `/Users/jasondunne/PopDayRuntime`
-- Live Mac Mini database: `/Users/jasondunne/PopDayRuntime/popday.sqlite3`
-- Runtime status JSON: `/Users/jasondunne/PopDayRuntime/status/popday_status.json`
+- Mac Mini PopDay repo: `/Users/jasondunne/Documents/PopDay` (source only)
+- Mac Mini runtime (dev/local, no longer scanned into): `/Users/jasondunne/PopDayRuntime`
 - PythonAnywhere app path: `/home/Jasdun/popday`
+- Live database (since the 14 Jul 2026 cutover): `/home/Jasdun/popday/popday.sqlite3` on PythonAnywhere
+- Live status JSON (generated on PythonAnywhere itself, not synced): `/home/Jasdun/popday/status/popday_status.json`
 
 ## Normal Development Workflow
 
@@ -119,13 +121,12 @@ bash scripts/deploy_dev_to_pythonanywhere.sh
 
 The deploy script must:
 
-1. Create a timestamped Mac Mini backup.
-2. Generate fresh status JSON from the Mac Mini runtime.
-3. Upload the latest development UI to PythonAnywhere.
-4. Upload the current Mac Mini runtime database copy and status JSON to PythonAnywhere.
-5. Remove obsolete competing UI files.
-6. Compile the remote Python files.
-7. Reload the PythonAnywhere web app.
+1. Create a timestamped Mac Mini backup, including a pulled-down read-only copy of PythonAnywhere's live database.
+2. Upload the latest code (Flask app, popday package, templates, scripts) to PythonAnywhere - never the database, which is only ever written to by PythonAnywhere's own scan tasks.
+3. Remove obsolete competing UI files.
+4. Compile the remote Python files.
+5. Refresh the Price Reaction cache and regenerate status JSON on PythonAnywhere itself, against its own live database.
+6. Reload the PythonAnywhere web app and verify.
 
 ## Automation And Access Policy
 
@@ -181,8 +182,8 @@ The main tabs are:
 The System Health tab starts with a health strip showing:
 
 - LIVE / HEALTHY / STALE / BROKEN
-- last Mac Mini scan
-- last sync
+- last PopDay scan
+- browser freshness (how current the status shown is)
 - last alert
 - next scan
 - backup status
@@ -299,7 +300,7 @@ Before deploys, runtime updates, sync changes, database changes, or destructive 
 
 Backups should include:
 
-- live runtime database
+- live database (a read-only pull from PythonAnywhere since the 14 Jul 2026 cutover, alongside the Mac Mini's own now-frozen runtime copy)
 - runtime config
 - runtime code
 - source repo snapshot
