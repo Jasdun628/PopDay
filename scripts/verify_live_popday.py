@@ -39,17 +39,16 @@ def main() -> int:
     check("front title", "<title>PopDay</title>" in front, failures)
     check(
         "public tabs",
-        all(tab in front for tab in ["System Health", "Investor Days", "Research / Hype", "Price Reaction", "Schedule", "Scan Log", "Help"])
+        all(tab in front for tab in ["System Health", "Investor Days", "Research / Hype", "Price Reaction", "Scan Log", "Help"])
         and "Filings" not in nav_text(front),
         failures,
     )
     check(
-        "schedule before system health",
+        "scan log before system health",
         nav_text(front).find("Price Reaction")
         < nav_text(front).find("Investor Days")
         < nav_text(front).find("Research / Hype")
         < nav_text(front).find("Scan Log")
-        < nav_text(front).find("Schedule")
         < nav_text(front).find("System Health")
         < nav_text(front).find("Help"),
         failures,

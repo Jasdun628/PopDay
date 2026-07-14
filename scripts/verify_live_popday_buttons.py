@@ -71,16 +71,8 @@ PUBLIC_TABS = (
             "Filings PopDay inspected",
             "Status",
             "Source",
-        ),
-    ),
-    PublicTab(
-        "Schedule",
-        "health",
-        (
-            "Next scheduled run",
-            "Recent run",
-            "Filing Date",
-            "Alerts Sent",
+            "Next scan",
+            "Recent scan runs",
         ),
     ),
     PublicTab(
