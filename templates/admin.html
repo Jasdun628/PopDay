@@ -203,10 +203,11 @@
         {% if show_event_average %}
         <td colspan="2" class="total-label {% if event_average.startswith('+') %}move-up{% elif event_average.startswith('-') %}move-down{% endif %}"><span class="tip-head" data-tip="Take every Investor Day Close move above and average them - how the stock typically fared on the big day itself. Only rows whose event has already happened count.">Average event-day return</span></td>
         <td class="number-cell {% if event_average.startswith('+') %}move-up{% elif event_average.startswith('-') %}move-down{% endif %}">{{ event_average }}</td>
-        <td colspan="7" class="total-label {% if average.startswith('+') %}move-up{% elif average.startswith('-') %}move-down{% endif %}"><span class="tip-head" data-tip="The bottom line for this table: take every Interval Return above and average them - the typical total move a stock has made since its announcement.">Average interval return</span></td>
+        <td colspan="6"></td>
         {% else %}
-        <td colspan="9" class="total-label {% if average.startswith('+') %}move-up{% elif average.startswith('-') %}move-down{% endif %}"><span class="tip-head" data-tip="The bottom line for this table: take every Interval Return above and average them - the typical total move a stock has made since its announcement.">Average interval return</span></td>
+        <td colspan="9"></td>
         {% endif %}
+        <td class="total-label {% if average.startswith('+') %}move-up{% elif average.startswith('-') %}move-down{% endif %}"><span class="tip-head" data-tip="The bottom line for this table: take every Interval Return above and average them - the typical total move a stock has made since its announcement.">Average interval return</span></td>
         <td class="number-cell {% if average.startswith('+') %}move-up{% elif average.startswith('-') %}move-down{% endif %}">{{ average }}</td>
         <td colspan="2"></td>
       </tr>
