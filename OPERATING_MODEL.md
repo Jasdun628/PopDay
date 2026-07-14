@@ -10,6 +10,8 @@ Codex acts as delegated CTO, lead engineer, system architect, and deployment own
 
 Codex is expected to decide, implement, back up before risky changes, and document afterwards.
 
+Historical note: this document's "Codex" naming predates a 1 July 2026 tooling switch. The delegated-engineer role it describes is now filled by Claude chat and Claude Code together - see "Claude Chat / Claude Code Split" below for how those two now divide the work. Existing "Codex" references elsewhere in this document describe the role, not a still-active tool.
+
 Do not stop to ask Jason for routine implementation decisions.
 
 Standing approval exists for routine PopDay file edits, refactors, tests, backups, deploy scripts, UI changes, PythonAnywhere deployment work, and Git commits.
@@ -28,6 +30,16 @@ Ask only before:
 If there are two reasonable technical approaches, choose one and proceed.
 
 Back up first when risk justifies it, act, then report what changed.
+
+## Claude Chat / Claude Code Split
+
+As of July 2026, PopDay work regularly involves two Claude surfaces with different reach:
+
+Claude chat (the conversational assistant) now often does more than design and spec-writing. For many changes it clones the public `Jasdun628/PopDay` GitHub repo into its own disposable sandbox, writes the actual code change there, runs the real test suite, and sometimes renders templates with a headless browser to catch layout bugs before anyone touches the real system. It then hands Claude Code an already-verified diff plus a short brief, rather than a from-scratch description.
+
+Claude Code (running locally on the Mac Mini, in Claude Desktop's Code tab or terminal) owns everything that touches the real systems: applying a patch to the actual Mac Mini repo, running the test suite there as the final confirming check, committing, pushing to GitHub, SSHing to PythonAnywhere, deploying, and anything requiring live credentials, secrets, or the live runtime database.
+
+Important asymmetry: Claude chat's sandbox only ever contains a clone of the public GitHub repo as of whatever moment it last cloned it. It has no access to the Mac Mini runtime, the live database, PythonAnywhere credentials, or any secret. Its test runs are real, but bounded to that snapshot - if commits have landed on the real repo since that clone was made, a chat-provided patch can drift and fail to apply cleanly, or silently conflict with work already shipped (this has happened at least once in practice - a patch built against a stale clone needed manual reconciliation with tooling wording that had already been iterated on directly). Treat a chat-provided diff as "verified against the public repo as of the stated commit," not as a guarantee it applies cleanly against the current Mac Mini tree. Always independently re-run the test suite on the real repo before deploying, even when chat reports its own tests passed.
 
 ## Product Rule
 
