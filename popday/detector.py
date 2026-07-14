@@ -63,6 +63,8 @@ class Detection:
     evidence_url: str = ""
     evidence_label: str = ""
     alert_sent: bool = False
+    market: str = "US"
+    ticker: str = ""
 
     def to_record(self) -> dict[str, object]:
         return {
@@ -87,6 +89,8 @@ class Detection:
             "alert_sent": int(self.alert_sent),
             "alert_sent_timestamp": None,
             "created_timestamp": utc_now(),
+            "market": self.market,
+            "ticker": self.ticker or None,
         }
 
 
@@ -521,3 +525,156 @@ def detect_in_sections(
             )
         )
     return detections
+
+
+# --------------------------------------------------------------- UK (text)
+
+def _phrase_in_text(phrase: str, text: str) -> int:
+    """Word-boundary phrase position in text (lowered), or -1.
+
+    Word boundaries matter for the UK trigger list: 'cmd' as a bare substring
+    would match 'recommend'; as a bounded word it only matches real 'CMD'
+    usage. Multi-word phrases behave identically to substring matching.
+    """
+    match = re.search(rf"\b{re.escape(phrase.lower())}\b", text.lower())
+    return match.start() if match else -1
+
+
+def detect_in_uk_announcement(
+    announcement: Any,
+    run_date: date,
+    include_phrases: list[str],
+    routine_phrases: list[str],
+) -> list[Detection]:
+    """Detect an investor event in one Investegate announcement's text.
+
+    The UK equivalent of detect_in_parsed_filing, operating on the plain
+    detail-page text (popday.sources.Announcement.raw_text) instead of SGML
+    documents. Reuses the exact same sentence splitting (split_sentences) and
+    event-date extraction (extract_event_date) as the US path - no forked
+    logic - with one deliberate difference: a trigger phrase in the HEADLINE
+    counts as announcement context, because an RNS headlined e.g. "Notice of
+    Capital Markets Day" is itself the announcement, cue words or not.
+    """
+    headline = str(getattr(announcement, "headline", "") or "")
+    text = str(getattr(announcement, "raw_text", "") or "")
+    wire = str(getattr(announcement, "wire_or_form", "") or "RNS")
+    filing = Filing(
+        accession_number=str(announcement.dedup_key),
+        cik="",
+        company_name=str(announcement.company_name),
+        form_type=wire,
+        filing_date=run_date.isoformat(),
+        filing_url=str(announcement.detail_url),
+        primary_document="",
+        acceptance_datetime=str(getattr(announcement, "announced_at", "") or ""),
+    )
+    ticker = str(getattr(announcement, "company_identifier", "") or "")
+    evidence_label = f"{wire} announcement"
+
+    headline_phrase = next(
+        (p for p in include_phrases if _phrase_in_text(p, headline) != -1), None
+    )
+
+    best_phrase: str | None = None
+    best_snippet: str | None = None
+    best_event_date: str | None = None
+    best_score = -1
+    saw_phrase = headline_phrase is not None
+    for sentence in split_sentences(text):
+        normalized = re.sub(r"\s+", " ", sentence).strip()
+        if not normalized:
+            continue
+        lowered = normalized.lower()
+        for phrase in include_phrases:
+            phrase_idx = _phrase_in_text(phrase, normalized)
+            if phrase_idx == -1:
+                continue
+            saw_phrase = True
+            # "2025 Capital Markets Day" named after an earlier year is a
+            # reference to a past event, not a new announcement.
+            year_prefix = re.search(r"(19|20)\d{2}\s*$", lowered[:phrase_idx])
+            if year_prefix and int(year_prefix.group(0)) < run_date.year:
+                continue
+            event_date = extract_event_date(normalized, run_date, anchor=phrase_idx)
+            if not event_date:
+                continue
+            announcement_context = (
+                headline_phrase is not None or _has_any(lowered, ANNOUNCEMENT_CUES)
+            )
+            if _has_any(lowered, PAST_CUES) and not announcement_context:
+                continue
+            if _has_any(lowered, routine_phrases) and not announcement_context:
+                continue
+            score = 0
+            if announcement_context:
+                score += 2
+            if _has_any(lowered, ANNOUNCEMENT_CUES):
+                score += 2
+            if len(normalized) <= 300:
+                score += 1
+            if score > best_score:
+                best_score = score
+                best_phrase = phrase
+                best_snippet = normalized
+                best_event_date = event_date.isoformat()
+
+    if best_phrase and best_snippet and best_event_date:
+        return [
+            Detection(
+                filing=filing,
+                event_type=_event_type(best_phrase),
+                event_date=best_event_date,
+                matched_phrase=best_phrase,
+                matched_location="announcement_body",
+                snippet=best_snippet,
+                items=[],
+                evidence_url=filing.filing_url,
+                evidence_label=evidence_label,
+                status="alert_candidate",
+                dismissal_reason=None,
+                market="UK",
+                ticker=ticker,
+            )
+        ]
+
+    if headline_phrase is not None:
+        # Headline announces the event but no concrete date parsed from the
+        # body: surface as date-TBD rather than silently dropping it (the
+        # same contract as the US _best_tbd_signal path).
+        return [
+            Detection(
+                filing=filing,
+                event_type=_event_type(headline_phrase),
+                event_date=None,
+                matched_phrase=headline_phrase,
+                matched_location="headline",
+                snippet=re.sub(r"\s+", " ", headline).strip(),
+                items=[],
+                evidence_url=filing.filing_url,
+                evidence_label=evidence_label,
+                status="alert_candidate_tbd",
+                dismissal_reason=None,
+                market="UK",
+                ticker=ticker,
+            )
+        ]
+
+    reason = "missing_future_event_date" if saw_phrase else "no_qualifying_phrase_found"
+    return [
+        Detection(
+            filing=filing,
+            event_type=None,
+            event_date=None,
+            matched_phrase=None,
+            matched_location=None,
+            snippet=re.sub(r"\s+", " ", headline).strip(),
+            items=[],
+            evidence_url=filing.filing_url,
+            evidence_label=evidence_label,
+            status="dismissed",
+            dismissal_reason=reason,
+            market="UK",
+            ticker=ticker,
+        )
+    ]

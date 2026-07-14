@@ -130,6 +130,24 @@ def _recovered_note(alert: object) -> str:
     return f"Recovered from downtime (missed scan day {human})"
 
 
+_MARKET_SECTION_LABELS = {
+    "US": "US - SEC EDGAR",
+    "UK": "UK - RNS (via Investegate)",
+}
+
+
+def _grouped_by_market(alerts: list[object]) -> list[tuple[str, list[object]]]:
+    """Alerts grouped by market, US first. A single-market batch returns one
+    group, and callers render no section headers for it - so US-only emails
+    (the only kind that existed before the UK extension) are unchanged."""
+    groups: dict[str, list[object]] = {}
+    for alert in alerts:
+        market = str(getattr(alert, "market", "US") or "US")
+        groups.setdefault(market, []).append(alert)
+    ordered = sorted(groups.items(), key=lambda kv: (kv[0] != "US", kv[0]))
+    return ordered
+
+
 def build_alert_body(alerts: list[object], unsubscribe_link: str | None = None) -> str:
     lines: list[str] = []
     alert_count = len(alerts)
@@ -142,7 +160,23 @@ def build_alert_body(alerts: list[object], unsubscribe_link: str | None = None) 
         lines.append(f"PopDay found {alert_count} new investor-event announcements.")
     lines.append("")
 
+    groups = _grouped_by_market(alerts)
+    ordered_alerts: list[object] = []
+    section_starts: dict[int, str] = {}
+    if len(groups) > 1:
+        for market, group in groups:
+            section_starts[len(ordered_alerts)] = _MARKET_SECTION_LABELS.get(market, market)
+            ordered_alerts.extend(group)
+    else:
+        ordered_alerts = list(alerts)
+
+    alerts = ordered_alerts
     for index, alert in enumerate(alerts):
+        if index in section_starts:
+            lines.append("=" * 56)
+            lines.append(section_starts[index])
+            lines.append("=" * 56)
+            lines.append("")
         event_date = format_human_date(alert.event_date)
         source_label = getattr(alert, "source_label", "Source")
         lines.append("-" * 56)
@@ -206,7 +240,24 @@ def build_alert_html(alerts: list[object], unsubscribe_link: str | None = None) 
     else:
         parts.append(f"<p>PopDay found {alert_count} new investor-event announcements.</p>")
 
+    groups = _grouped_by_market(alerts)
+    ordered_alerts: list[object] = []
+    section_starts: dict[int, str] = {}
+    if len(groups) > 1:
+        for market, group in groups:
+            section_starts[len(ordered_alerts)] = _MARKET_SECTION_LABELS.get(market, market)
+            ordered_alerts.extend(group)
+    else:
+        ordered_alerts = list(alerts)
+
+    alerts = ordered_alerts
     for index, alert in enumerate(alerts):
+        if index in section_starts:
+            parts.append(
+                "<div style=\"font-size:15px;font-weight:700;letter-spacing:0.04em;"
+                "margin-top:20px;padding:6px 0;border-top:2px solid #111;"
+                f"border-bottom:1px solid #bbb;\">{html.escape(section_starts[index])}</div>"
+            )
         event_date = format_human_date(alert.event_date)
         source_label = html.escape(getattr(alert, "source_label", "Source").upper())
         company_name = html.escape(str(alert.company_name))

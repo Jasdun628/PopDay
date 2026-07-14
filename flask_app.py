@@ -410,9 +410,35 @@ def _load_public_status() -> dict:
     _scan_health = status.get("scan_health") or {}
     # Highest-severity banner wins: a hard scan failure (red) outranks the output
     # canary, which itself can be red (discovery down) or amber (candidates stale).
-    status["scan_alert"] = _scan_alert(_scan_health) or _coverage_alert(
-        status.get("coverage_health") or {}
-    ) or {"active": False}
+    # Evaluated per discovery source when the status file carries the per-source
+    # block (UK extension), so a UK outage banners even while US runs green and
+    # vice versa; older status files fall back to the global view unchanged.
+    per_source: dict = status.get("sources") or {}
+    if per_source:
+        source_banner_labels = {"edgar": "", "investegate": "UK scan: "}
+        level_rank = {"danger": 2, "warning": 1}
+        best: dict | None = None
+        for source_id in sorted(per_source.keys()):
+            entry = per_source[source_id] or {}
+            candidate = _scan_alert(entry.get("scan_health") or {}) or _coverage_alert(
+                entry.get("coverage_health") or {}
+            )
+            if not candidate:
+                continue
+            prefix = source_banner_labels.get(source_id, f"{source_id}: ")
+            if prefix:
+                candidate = candidate | {
+                    "headline": f"{prefix}{candidate.get('headline', '')}"
+                }
+            if best is None or level_rank.get(candidate.get("level"), 0) > level_rank.get(
+                best.get("level"), 0
+            ):
+                best = candidate
+        status["scan_alert"] = best or {"active": False}
+    else:
+        status["scan_alert"] = _scan_alert(_scan_health) or _coverage_alert(
+            status.get("coverage_health") or {}
+        ) or {"active": False}
     status["last_successful_scan_display"] = (
         _friendly_datetime_value(_scan_health.get("last_success_utc"))
         if _scan_health.get("last_success_utc")
@@ -560,6 +586,23 @@ def _money_text(value: object) -> str:
         return f"${float(value):,.2f}"
     except (TypeError, ValueError):
         return str(value)
+
+
+def _money_text_for_market(value: object, market: object) -> str:
+    """Currency symbol per row market: $ for US rows, £ for UK rows."""
+    text = _money_text(value)
+    if str(market or "US") == "UK" and text.startswith("$"):
+        return f"£{text[1:]}"
+    return text
+
+
+_VALID_MARKETS = {"US", "UK"}
+
+
+def _current_market() -> str | None:
+    """The ?market= filter (All when absent/invalid), carried across links."""
+    value = str(request.args.get("market") or "").strip().upper()
+    return value if value in _VALID_MARKETS else None
 
 
 def _pct_text(value: object) -> str:
@@ -772,7 +815,13 @@ def _check_admin():
     return None
 
 
-def _build_admin_context(db: Database, tab: str, *, company_websites: dict[str, str]) -> dict:
+def _build_admin_context(
+    db: Database,
+    tab: str,
+    *,
+    company_websites: dict[str, str],
+    market: str | None = None,
+) -> dict:
     status = _load_public_status()
     if status.get("last_alert_company"):
         status["last_alert_company_url"] = _company_website(
@@ -780,7 +829,7 @@ def _build_admin_context(db: Database, tab: str, *, company_websites: dict[str, 
             company_websites,
         )
     synced_health_rows = _launchd_health_rows_from_lines(status.get("latest_log_tail") or [])
-    ctx: dict = {"status": status}
+    ctx: dict = {"status": status, "active_market": market}
     if tab == "summary":
         latest_run = synced_health_rows[0] if synced_health_rows else None
         latest_alert = db.latest_sent_alert()
@@ -832,7 +881,7 @@ def _build_admin_context(db: Database, tab: str, *, company_websites: dict[str, 
                 ),
                 "source_link_label": dict(r).get("evidence_label") or "Source",
             }
-            for r in db.investor_day_announcements()
+            for r in db.investor_day_announcements(market)
         ]
         sorted_announcements = _sort_announcements(announcements, sort_key, direction)
         # A date-TBD announcement is a future event with no firm date yet, so it belongs
@@ -855,7 +904,7 @@ def _build_admin_context(db: Database, tab: str, *, company_websites: dict[str, 
     elif tab == "research":
         sort_key, direction = _research_sort_settings()
         research_rows = []
-        for r in db.research_hype_events():
+        for r in db.research_hype_events(market):
             row = dict(r)
             ad_raw = row.get("announcement_date") or ""
             id_raw = row.get("event_date") or ""
@@ -939,9 +988,10 @@ def _build_admin_context(db: Database, tab: str, *, company_websites: dict[str, 
                 "accepted": (_friendly_source_datetime_parts(r["acceptance_datetime"])[0] if dict(r).get("acceptance_datetime") else "unknown"),
                 "accepted_time": (_friendly_source_datetime_parts(r["acceptance_datetime"])[1] if dict(r).get("acceptance_datetime") else ""),
                 "reaction_date": _friendly_date(r["reaction_date"]) if dict(r).get("reaction_date") else "unknown",
-                "previous_close": _money_text(r["previous_close"]),
-                "reaction_close": _money_text(r["reaction_close"]),
-                "event_day_close": _money_text(r["event_day_close"]) if dict(r).get("event_day_close") is not None else "—",
+                "market": dict(r).get("market") or "US",
+                "previous_close": _money_text_for_market(r["previous_close"], dict(r).get("market")),
+                "reaction_close": _money_text_for_market(r["reaction_close"], dict(r).get("market")),
+                "event_day_close": _money_text_for_market(r["event_day_close"], dict(r).get("market")) if dict(r).get("event_day_close") is not None else "—",
                 "event_day_move_pct": _pct_text(r["event_day_move_pct"]) if dict(r).get("event_day_move_pct") is not None else "",
                 "event_day_move_raw": dict(r).get("event_day_move_pct"),
                 "event_day_direction": (
@@ -951,7 +1001,7 @@ def _build_admin_context(db: Database, tab: str, *, company_websites: dict[str, 
                 "announcement_move_pct": _pct_text(r["announcement_move_pct"]),
                 "intraday_range_pct": _pct_text(r["intraday_range_pct"]),
                 "latest_close_date": _friendly_date(r["latest_close_date"]) if dict(r).get("latest_close_date") else "unknown",
-                "latest_close": _money_text(r["latest_close"]),
+                "latest_close": _money_text_for_market(r["latest_close"], dict(r).get("market")),
                 "interval_return_pct": _pct_text(r["interval_return_pct"]),
                 "interval_return_raw": r["interval_return_pct"],
                 "interval_daily_volatility_pct": _pct_text(r["interval_daily_volatility_pct"]),
@@ -960,7 +1010,7 @@ def _build_admin_context(db: Database, tab: str, *, company_websites: dict[str, 
                 "source": _price_source_label(r["price_data_source"]),
                 "updated": _friendly_datetime_str(r["price_data_timestamp"]) if dict(r).get("price_data_timestamp") else "unknown",
             }
-            for r in db.price_reaction_rows()
+            for r in db.price_reaction_rows(market)
         ]
         upcoming_pr = [item for item in price_reaction_rows if _is_upcoming_announcement(item)]
         legacy_pr = [item for item in price_reaction_rows if not _is_upcoming_announcement(item)]
@@ -1040,7 +1090,7 @@ def _build_admin_context(db: Database, tab: str, *, company_websites: dict[str, 
                 "hype_tone": _hype_pill_tone(dict(r).get("hype_status")),
                 "hype_provisional": bool(dict(r).get("provisional")),
             }
-            for r in db.recent_candidates()
+            for r in db.recent_candidates(market=market)
         ]
     return ctx
 
@@ -1050,9 +1100,12 @@ def _render_main_ui(tab: str, *, is_admin: bool) -> str:
     if tab not in valid_tabs:
         tab = "summary"
     config = load_config()
+    market = _current_market()
     db = Database(config.db_path)
     try:
-        ctx = _build_admin_context(db, tab, company_websites=config.company_websites)
+        ctx = _build_admin_context(
+            db, tab, company_websites=config.company_websites, market=market
+        )
     finally:
         db.close()
     return render_template(

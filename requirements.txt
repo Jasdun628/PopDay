@@ -1,2 +1,6 @@
 flask>=3.0
 beautifulsoup4>=4.12
+# UK price capture (scripts/capture_uk_prices.py). Pinned: the system 0.2.4
+# on PA silently returns empty data (it targets Yahoo's rate-limited query1
+# host); 0.2.66 verified working from PA on 2026-07-14.
+yfinance==0.2.66

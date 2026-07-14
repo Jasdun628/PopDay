@@ -332,7 +332,15 @@ def compute_price_reaction(
 
 
 def refresh_price_reactions(db: Database, *, user_agent: str) -> list[dict[str, Any]]:
-    announcements = [dict(row) for row in db.investor_day_announcements()]
+    # US-only by design: this cache resolves tickers via SEC's CIK-ticker map
+    # and US Yahoo/Stooq symbols. UK events get daily closes captured into the
+    # separate `prices` table instead (popday/prices.py) - capture only, no
+    # reaction math, per the UK extension's scope guard.
+    announcements = [
+        dict(row)
+        for row in db.investor_day_announcements()
+        if str(dict(row).get("market") or "US") == "US"
+    ]
     cik_tickers = fetch_cik_ticker_map(user_agent=user_agent)
     bars_by_ticker: dict[str, list[PriceBar]] = {}
     source_by_ticker: dict[str, str] = {}

@@ -254,17 +254,20 @@ def reclassify_hype_tracking(
     *,
     as_of: date | None = None,
     dry_run: bool = False,
+    market: str | None = None,
 ) -> list[dict[str, Any]]:
     """Recompute hype labels from stored detected_json only.
 
     With ``dry_run=True`` nothing is written to the database; each returned row
     also carries the previous label so callers can preview what would change.
+    ``market`` limits the pass to one market's rows (None = all markets).
     """
     today = as_of or date.today()
     updated: list[dict[str, Any]] = []
-    for row in db.all_hype_tracking_rows():
+    for row in db.all_hype_tracking_rows(market=market):
         detected_json = str(row["detected_json"] or "[]")
         old_status = str(row["hype_status"] or "")
+        row_market = str(row["market"] or "US") if "market" in row.keys() else "US"
         qualifying_count, status = _reclassified_status(
             event_date=str(row["event_date"] or ""),
             as_of=today,
@@ -284,6 +287,7 @@ def reclassify_hype_tracking(
                 provisional=config.hype_provisional,
                 last_checked=today.isoformat(),
                 detected_json=detected_json,
+                market=row_market,
             )
         updated.append(
             {
@@ -295,6 +299,121 @@ def reclassify_hype_tracking(
                 "provisional": config.hype_provisional,
                 "item_codes": item_codes,
                 "changed": old_status != status,
+            }
+        )
+    return updated
+
+
+def update_uk_hype_from_index(
+    config: Config,
+    db: Database,
+    index_rows: list[Any],
+    run_date: date,
+) -> list[dict[str, Any]]:
+    """UK hype pass: count non-routine announcements for open UK events.
+
+    The UK mapping of the paper's US definition (voluntary 8-K items 2.02/
+    7.01/8.01 between announcement and event): any announcement from the same
+    company on any wire whose headline is not on the routine exclusion list,
+    dated inside (announcement_date, event_date]. Runs against the day's full
+    Investegate index, already in memory from the scan - no extra fetches.
+
+    Observations append into hype_tracking.detected_json in the same shape as
+    the US watcher (deduplicated on the numeric announcement ID), so
+    qualifying_count/--reclassify work identically across markets.
+    """
+    routine = [phrase.lower() for phrase in config.uk_routine_headlines]
+    updated: list[dict[str, Any]] = []
+    for event in db.uk_open_hype_events(run_date.isoformat()):
+        ticker = str(event["ticker"] or "").strip()
+        if not ticker:
+            continue
+        announcement_date = _parse_iso_date(str(event["filing_date"] or ""))
+        event_date = _parse_iso_date(str(event["event_date"] or ""))
+        if not announcement_date or not event_date:
+            continue
+        if not (announcement_date < run_date <= event_date):
+            continue
+
+        observations = []
+        for row in index_rows:
+            if str(getattr(row, "company_identifier", "") or "").strip() != ticker:
+                continue
+            if str(getattr(row, "dedup_key", "")) == str(event["accession_number"]):
+                continue
+            headline = str(getattr(row, "headline", "") or "").lower()
+            if any(excl in headline for excl in routine):
+                continue
+            observations.append(
+                {
+                    "accession_number": str(row.dedup_key),
+                    "filing_date": run_date.isoformat(),
+                    "form": str(getattr(row, "wire_or_form", "") or "RNS"),
+                    "item_codes": [],
+                    "primary_document": "",
+                    "source_url": str(getattr(row, "detail_url", "") or ""),
+                    "headline": str(getattr(row, "headline", "") or ""),
+                }
+            )
+
+        existing_row = db.hype_tracking_for_candidate(int(event["id"]))
+        try:
+            existing = json.loads(str(existing_row["detected_json"] or "[]")) if existing_row else []
+        except Exception:
+            existing = []
+        if not isinstance(existing, list):
+            existing = []
+        seen_ids = {
+            str(match.get("accession_number"))
+            for match in existing
+            if isinstance(match, dict)
+        }
+        merged = existing + [
+            obs for obs in observations if obs["accession_number"] not in seen_ids
+        ]
+        if not merged and existing_row is None and not observations:
+            # Nothing observed yet and no row to update - still record the
+            # tracking row so the Research tab shows a real zero, not unknown.
+            pass
+        qualifying_count = len(merged)
+        candidate = HypeCandidate(
+            candidate_id=int(event["id"]),
+            accession_number=str(event["accession_number"]),
+            company_name=str(event["company_name"]),
+            cik=str(event["cik"] or ticker),
+            announcement_date=announcement_date,
+            event_date=event_date,
+            event_type=str(event["event_type"] or ""),
+            filing_url=str(event["filing_url"]),
+        )
+        status = _status_for(
+            candidate,
+            as_of=run_date,
+            threshold=max(config.hype_threshold, 1),
+            qualifying_count=qualifying_count,
+        )
+        db.upsert_hype_tracking(
+            candidate_id=candidate.candidate_id,
+            cik=ticker,
+            announcement_date=announcement_date.isoformat(),
+            event_date=event_date.isoformat(),
+            qualifying_count=qualifying_count,
+            hype_status=status,
+            hype_definition_version=config.hype_definition_version,
+            provisional=True,
+            last_checked=run_date.isoformat(),
+            detected_json=json.dumps(merged, sort_keys=True),
+            market="UK",
+        )
+        updated.append(
+            {
+                "candidate_id": candidate.candidate_id,
+                "company_name": candidate.company_name,
+                "ticker": ticker,
+                "event_date": event_date.isoformat(),
+                "qualifying_count": qualifying_count,
+                "hype_status": status,
+                "new_today": len(merged) - len(existing),
             }
         )
     return updated

@@ -1,3 +1,11 @@
+{% macro market_pills(tab) %}
+<div class="market-pills">
+  {% for value, label in [(none, 'All'), ('US', 'US'), ('UK', 'UK')] %}
+  <a class="market-pill{{ ' market-pill-active' if (active_market == value) or (value is none and not active_market) else '' }}"
+     href="{{ url_for('admin_tab', tab=tab, market=value) if is_admin else url_for('index', tab=tab, market=value) }}">{{ label }}</a>
+  {% endfor %}
+</div>
+{% endmacro %}
 {% macro investor_days_table(rows, is_admin, announcement_sort, announcement_direction) %}
 <table class="split-table">
   <colgroup>
@@ -15,10 +23,10 @@
           <span class="sort-controls">
             <a class="sort-link {% if announcement_sort == 'event' and announcement_direction == 'desc' %}sort-active{% endif %}"
                aria-label="Sort event date newest first"
-               href="{{ url_for('admin_tab', tab='announcements', sort='event', direction='desc') if is_admin else url_for('index', tab='announcements', sort='event', direction='desc') }}">▲</a>
+               href="{{ url_for('admin_tab', tab='announcements', sort='event', direction='desc', market=active_market) if is_admin else url_for('index', tab='announcements', sort='event', direction='desc', market=active_market) }}">▲</a>
             <a class="sort-link {% if announcement_sort == 'event' and announcement_direction == 'asc' %}sort-active{% endif %}"
                aria-label="Sort event date oldest first"
-               href="{{ url_for('admin_tab', tab='announcements', sort='event', direction='asc') if is_admin else url_for('index', tab='announcements', sort='event', direction='asc') }}">▼</a>
+               href="{{ url_for('admin_tab', tab='announcements', sort='event', direction='asc', market=active_market) if is_admin else url_for('index', tab='announcements', sort='event', direction='asc', market=active_market) }}">▼</a>
           </span>
         </span>
       </th>
@@ -28,10 +36,10 @@
           <span class="sort-controls">
             <a class="sort-link {% if announcement_sort == 'filed' and announcement_direction == 'desc' %}sort-active{% endif %}"
                aria-label="Sort filed date newest first"
-               href="{{ url_for('admin_tab', tab='announcements', sort='filed', direction='desc') if is_admin else url_for('index', tab='announcements', sort='filed', direction='desc') }}">▲</a>
+               href="{{ url_for('admin_tab', tab='announcements', sort='filed', direction='desc', market=active_market) if is_admin else url_for('index', tab='announcements', sort='filed', direction='desc', market=active_market) }}">▲</a>
             <a class="sort-link {% if announcement_sort == 'filed' and announcement_direction == 'asc' %}sort-active{% endif %}"
                aria-label="Sort filed date oldest first"
-               href="{{ url_for('admin_tab', tab='announcements', sort='filed', direction='asc') if is_admin else url_for('index', tab='announcements', sort='filed', direction='asc') }}">▼</a>
+               href="{{ url_for('admin_tab', tab='announcements', sort='filed', direction='asc', market=active_market) if is_admin else url_for('index', tab='announcements', sort='filed', direction='asc', market=active_market) }}">▼</a>
           </span>
         </span>
       </th>
@@ -41,10 +49,10 @@
           <span class="sort-controls">
             <a class="sort-link {% if announcement_sort == 'hype' and announcement_direction == 'desc' %}sort-active{% endif %}"
                aria-label="Sort hype count highest first"
-               href="{{ url_for('admin_tab', tab='announcements', sort='hype', direction='desc') if is_admin else url_for('index', tab='announcements', sort='hype', direction='desc') }}">▲</a>
+               href="{{ url_for('admin_tab', tab='announcements', sort='hype', direction='desc', market=active_market) if is_admin else url_for('index', tab='announcements', sort='hype', direction='desc', market=active_market) }}">▲</a>
             <a class="sort-link {% if announcement_sort == 'hype' and announcement_direction == 'asc' %}sort-active{% endif %}"
                aria-label="Sort hype count lowest first"
-               href="{{ url_for('admin_tab', tab='announcements', sort='hype', direction='asc') if is_admin else url_for('index', tab='announcements', sort='hype', direction='asc') }}">▼</a>
+               href="{{ url_for('admin_tab', tab='announcements', sort='hype', direction='asc', market=active_market) if is_admin else url_for('index', tab='announcements', sort='hype', direction='asc', market=active_market) }}">▼</a>
           </span>
         </span>
       </th>
@@ -377,6 +385,13 @@
       padding-top: 10px;
     }
     .page-note { color: var(--muted); margin: -6px 0 14px; }
+    .market-pills { display: flex; gap: 6px; margin: 0 0 14px; }
+    .market-pill {
+      padding: 3px 12px; border: 1px solid var(--border); border-radius: 999px;
+      font-size: 13px; font-weight: 600; color: var(--muted); text-decoration: none;
+    }
+    .market-pill:hover { color: var(--ink); border-color: var(--ink); }
+    .market-pill-active { color: var(--ink); border-color: var(--ink); background: var(--row-alt, rgba(0,0,0,0.04)); }
     .scan-log-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
     .next-scan-note { color: var(--muted); font-size: 12px; white-space: nowrap; }
     .recent-runs-details { margin: 4px 0 18px; }
@@ -664,10 +679,10 @@
       <span class="sort-controls">
         <a class="sort-link {% if research_sort == key and research_direction == 'desc' %}sort-active{% endif %}"
            aria-label="Sort {{ label }} descending"
-           href="{{ url_for('admin_tab', tab='research', sort=key, direction='desc') if is_admin else url_for('index', tab='research', sort=key, direction='desc') }}">▲</a>
+           href="{{ url_for('admin_tab', tab='research', sort=key, direction='desc', market=active_market) if is_admin else url_for('index', tab='research', sort=key, direction='desc', market=active_market) }}">▲</a>
         <a class="sort-link {% if research_sort == key and research_direction == 'asc' %}sort-active{% endif %}"
            aria-label="Sort {{ label }} ascending"
-           href="{{ url_for('admin_tab', tab='research', sort=key, direction='asc') if is_admin else url_for('index', tab='research', sort=key, direction='asc') }}">▼</a>
+           href="{{ url_for('admin_tab', tab='research', sort=key, direction='asc', market=active_market) if is_admin else url_for('index', tab='research', sort=key, direction='asc', market=active_market) }}">▼</a>
       </span>
     </span>
   {%- endmacro %}
@@ -811,6 +826,7 @@
   <section>
     <h2>Investor Days</h2>
     <p class="page-note">Running list of qualifying Investor Day announcements PopDay has found.</p>
+    {{ market_pills('announcements') }}
     {% if announcements %}
     <h3 class="split-heading split-heading-first">Upcoming</h3>
     {% if upcoming_announcements %}
@@ -837,6 +853,7 @@
   <section>
     <h2>Research / Hype</h2>
     <p class="page-note">{{ research_unknown_note }}</p>
+    {{ market_pills('research') }}
     {% if research_rows %}
     <h3 class="split-heading split-heading-first">Upcoming</h3>
     {% if upcoming_research_rows %}
@@ -863,6 +880,7 @@
   <section>
     <h2>Price Reaction</h2>
     <p class="page-note">Cached daily market data for qualifying announcements. These are latest available daily closes, not live tick prices.</p>
+    {{ market_pills('price_reaction') }}
     {% if price_reaction_rows %}
     <h3 class="split-heading split-heading-first">Upcoming</h3>
     {% if upcoming_price_reaction_rows %}
@@ -1057,6 +1075,7 @@
       <div class="next-scan-note">Next scan: {{ next_run|replace("UTC", "GMT") }}</div>
     </div>
     <p class="page-note">Filings PopDay inspected, including dismissed false positives.</p>
+    {{ market_pills('candidates') }}
     {% if health_rows %}
     <details class="recent-runs-details">
       <summary>Recent scan runs ({{ health_rows|length }})</summary>
