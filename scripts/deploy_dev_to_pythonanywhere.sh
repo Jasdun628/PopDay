@@ -83,7 +83,7 @@ if [[ ! -f "$RUNTIME_DB_PATH" ]]; then
   exit 1
 fi
 
-"$PYTHON_BIN" scripts/backup_popday_runtime.py --reason "pre PythonAnywhere development deploy"
+"$PYTHON_BIN" scripts/backup_popday_runtime.py --reason "pre PythonAnywhere development deploy" --source-repo "$SOURCE_REPO"
 "$PYTHON_BIN" -m py_compile popday.py popday/*.py
 POPDAY_RUNTIME_DIR="$RUNTIME_DIR" PYTHON_BIN="$PYTHON_BIN" bash scripts/sync_runtime_code_from_repo.sh
 # Belt-and-braces: never ship a stale Price Reaction cache (it is also
