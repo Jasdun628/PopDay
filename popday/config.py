@@ -81,7 +81,10 @@ class Config:
 
 def _read_json(path: str | None) -> dict[str, Any]:
     if not path:
-        candidate = Path("config.json")
+        # POPDAY_CONFIG_JSON lets scheduled jobs that run outside the repo
+        # (e.g. the auto-deploy clone, which has no config.json) point every
+        # bare load_config() call at the real config without touching cwd.
+        candidate = Path(os.environ.get("POPDAY_CONFIG_JSON", "config.json"))
     else:
         candidate = Path(path)
     if not candidate.exists():

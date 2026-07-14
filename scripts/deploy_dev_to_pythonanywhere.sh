@@ -89,7 +89,7 @@ POPDAY_RUNTIME_DIR="$RUNTIME_DIR" PYTHON_BIN="$PYTHON_BIN" bash scripts/sync_run
 # Belt-and-braces: never ship a stale Price Reaction cache (it is also
 # refreshed automatically after every scan). Non-fatal — a price-feed blip
 # should not block deploying a fix.
-"$PYTHON_BIN" scripts/refresh_price_reaction.py \
+"$PYTHON_BIN" scripts/refresh_price_reaction.py --db-path "$RUNTIME_DB_PATH" \
   || echo "WARNING: Price Reaction refresh failed; deploying existing cache." >&2
 "$PYTHON_BIN" scripts/generate_status_json.py \
   --output "$STATUS_PATH" \
