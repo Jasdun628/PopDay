@@ -147,11 +147,11 @@
     </colgroup>
     <thead>
       <tr class="group-row">
-        <th colspan="3" class="grp grp-event">The event</th>
-        <th colspan="2" class="grp grp-announce grp-start">The announcement</th>
-        <th colspan="4" class="grp grp-reaction grp-start">First-day reaction to AD</th>
-        <th colspan="3" class="grp grp-since grp-start">Since then</th>
-        <th class="grp grp-status grp-start">Status</th>
+        <th colspan="3" class="grp grp-event"><span class="tip-head" data-tip="What actually happened at the Investor Day itself: the company, the event date, and the closing share price on that day.">The event</span></th>
+        <th colspan="2" class="grp grp-announce grp-start"><span class="tip-head" data-tip="When and how PopDay learned about it: the SEC filing date/time, and the first trading day the market could react to that announcement.">The announcement</span></th>
+        <th colspan="4" class="grp grp-reaction grp-start"><span class="tip-head" data-tip="How the stock moved on the very first trading session after the announcement (AD) was filed - the market's immediate, same-day reaction, before the Investor Day itself has even happened.">First-day reaction to AD</span></th>
+        <th colspan="3" class="grp grp-since grp-start"><span class="tip-head" data-tip="How the stock has performed from just before that first reaction day up to the most recent close PopDay has on file - the cumulative move and how choppy it's been over that whole stretch.">Since then</span></th>
+        <th class="grp grp-status grp-start"><span class="tip-head" data-tip="Whether PopDay has full, usable data for this row, or a short note explaining what's missing and why.">Status</span></th>
       </tr>
       <tr>
         <th>Company</th>
@@ -200,7 +200,7 @@
     </tbody>
     <tfoot>
       <tr class="total-row">
-        <td colspan="10" class="total-label {% if average.startswith('+') %}move-up{% elif average.startswith('-') %}move-down{% endif %}">Average interval return</td>
+        <td colspan="10" class="total-label {% if average.startswith('+') %}move-up{% elif average.startswith('-') %}move-down{% endif %}"><span class="tip-head" data-tip="The mean of the Interval Return column across every row in this table - the average cumulative move from just before the first reaction day to each company's latest available close.">Average interval return</span></td>
         <td class="number-cell {% if average.startswith('+') %}move-up{% elif average.startswith('-') %}move-down{% endif %}">{{ average }}</td>
         <td colspan="2"></td>
       </tr>
