@@ -30,6 +30,7 @@ DEFAULT_COMPANY_WEBSITES = {
     "MoonLake Immunotherapeutics": "https://www.moonlaketx.com/",
     "Resideo Technologies, Inc.": "https://www.resideo.com/",
     "Scotts Miracle-gro Co": "https://investor.scotts.com/",
+    "Sandisk Corp": "https://www.sandisk.com/",
 }
 
 
