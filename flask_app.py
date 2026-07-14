@@ -196,7 +196,6 @@ ADMIN_TABS = [
     ("rules", "Rules"),
     ("recipients", "Email Alerts"),
     ("candidates", "Scan Log"),
-    ("health", "Schedule"),
     ("summary", "System Health"),
     ("help", "Help"),
 ]
@@ -206,7 +205,6 @@ PUBLIC_TABS = [
     ("announcements", "Investor Days"),
     ("research", "Research / Hype"),
     ("candidates", "Scan Log"),
-    ("health", "Schedule"),
     ("summary", "System Health"),
     ("help", "Help"),
 ]
@@ -1010,7 +1008,7 @@ def _build_admin_context(db: Database, tab: str, *, company_websites: dict[str, 
             }
             for r in sent_rows
         ]
-    elif tab == "health":
+    elif tab == "candidates":
         ctx["health_rows"] = [
             {
                 "started": _friendly_datetime_str(r["started"]),
@@ -1023,7 +1021,6 @@ def _build_admin_context(db: Database, tab: str, *, company_websites: dict[str, 
             for r in synced_health_rows
         ]
         ctx["next_run"] = _next_scheduled_run()
-    elif tab == "candidates":
         ctx["candidates"] = [
             {
                 "id": r["id"],

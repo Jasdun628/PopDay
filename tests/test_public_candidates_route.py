@@ -36,8 +36,7 @@ class PublicCandidatesRouteTests(unittest.TestCase):
             self.assertLess(html.find("Price Reaction"), html.find("Investor Days"))
             self.assertLess(html.find("Investor Days"), html.find("Research / Hype"))
             self.assertLess(html.find("Research / Hype"), html.find("Scan Log"))
-            self.assertLess(html.find("Scan Log"), html.find("Schedule"))
-            self.assertLess(html.find("Schedule"), html.find("System Health"))
+            self.assertLess(html.find("Scan Log"), html.find("System Health"))
             self.assertLess(html.find("System Health"), html.find("Help"))
             self.assertNotIn(">Filings<", html)
 
@@ -440,7 +439,6 @@ class PublicCandidatesRouteTests(unittest.TestCase):
                 "Investor Days",
                 "Research / Hype",
                 "Scan Log",
-                "Schedule",
                 "System Health",
                 "Help",
             ]
