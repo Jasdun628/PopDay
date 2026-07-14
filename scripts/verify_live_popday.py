@@ -138,7 +138,7 @@ def main() -> int:
         "investor-days column order",
         "<th>Email</th>" not in announcements
         and announcements.find("<th>Company</th>")
-        < announcements.find("<th>Evidence</th>")
+        < announcements.find(">Evidence<")
         < announcements.find("Event Date"),
         failures,
     )

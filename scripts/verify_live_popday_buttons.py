@@ -274,10 +274,10 @@ def check_public_tabs(base_url: str, failures: list[str]) -> None:
             check(
                 "Investor Days Evidence between Company and Event Date",
                 html.find("<th>Company</th>") != -1
-                and html.find("<th>Evidence</th>") != -1
+                and html.find(">Evidence<") != -1
                 and html.find("Event Date") != -1
-                and html.find("<th>Company</th>") < html.find("<th>Evidence</th>")
-                and html.find("<th>Evidence</th>") < html.find("Event Date"),
+                and html.find("<th>Company</th>") < html.find(">Evidence<")
+                and html.find(">Evidence<") < html.find("Event Date"),
                 failures,
             )
 
