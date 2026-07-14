@@ -41,12 +41,15 @@ def _assess_coverage(
     phrase-matching filings (routinely zero on quiet days), not every 8-K
     filed (hundreds). Zeros alone are therefore NOT evidence of breakage on
     EFTS runs - only the control probe can distinguish "instrument broken"
-    from "genuinely quiet".
+    from "genuinely quiet". The UK investegate-index source counts headline
+    matches the same way (sparse; zero is normal), so it gets the same
+    treatment; only the legacy daily-index source, where hundreds of raw
+    filings are always expected, treats an all-zero window as breakage.
 
     - broken: control probe says the instrument is broken, or an all-zero
-      window on a non-EFTS source (where hundreds are always expected).
-    - stale: no new candidate in a while, or an all-zero EFTS window with no
-      control verdict recorded (unverified quiet - worth a human glance).
+      window on the daily-index source (where hundreds are always expected).
+    - stale: no new candidate in a while, or an all-zero phrase-match window
+      with no control verdict recorded (unverified quiet - worth a glance).
     """
     considered = len(recent_filings_seen)
     all_zero = considered >= COVERAGE_DISCOVERY_RUN_WINDOW and sum(recent_filings_seen) == 0
@@ -58,12 +61,12 @@ def _assess_coverage(
             return {
                 "level": "broken",
                 "message": (
-                    "The discovery control probe failed: EDGAR full-text search "
+                    "The discovery control probe failed: the discovery instrument "
                     "returned zero hits even for a known-good historical query. "
                     "The instrument is broken - recent green runs cannot be trusted."
                 ),
             }
-        if source and source != "efts":
+        if source and source not in ("efts", "investegate-index"):
             return {
                 "level": "broken",
                 "message": (
@@ -171,14 +174,26 @@ def _synth_log_lines_from_scan_runs(con: sqlite3.Connection, limit: int = 12) ->
     host ran the scan.
     """
     try:
+        # US/edgar rows only: these lines feed the existing single-table
+        # "Recent scan runs" view whose format predates the UK extension.
+        # UK (investegate) run health is reported via the per-source
+        # `sources` block instead of being mixed into this stream.
         rows = con.execute(
             "SELECT started_utc, run_date, status, discovery_source, discovery_control, "
             "filings_seen, filings_parsed, alerts_sent FROM scan_runs "
-            "WHERE run_kind != 'backfill' ORDER BY id DESC LIMIT ?",
+            "WHERE run_kind != 'backfill' AND source = 'edgar' ORDER BY id DESC LIMIT ?",
             (limit,),
         ).fetchall()
     except sqlite3.Error:
-        return []
+        try:
+            rows = con.execute(
+                "SELECT started_utc, run_date, status, discovery_source, discovery_control, "
+                "filings_seen, filings_parsed, alerts_sent FROM scan_runs "
+                "WHERE run_kind != 'backfill' ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        except sqlite3.Error:
+            return []
     lines: list[str] = []
     for row in reversed(rows):
         if row["status"] == "failed" or row["discovery_control"] == "broken":
@@ -208,13 +223,26 @@ def _count(con: sqlite3.Connection, table: str, where: str = "") -> int | None:
         return None
 
 
-def _scan_health(con: sqlite3.Connection) -> dict[str, Any]:
+def _scan_sources(con: sqlite3.Connection) -> list[str]:
+    """Distinct discovery sources that have ever run. Pre-UK databases have
+    no source column; treat everything there as 'edgar'."""
+    try:
+        rows = con.execute("SELECT DISTINCT source FROM scan_runs ORDER BY source").fetchall()
+        return [str(row["source"]) for row in rows] or ["edgar"]
+    except sqlite3.Error:
+        return ["edgar"]
+
+
+def _scan_health(con: sqlite3.Connection, source: str | None = None) -> dict[str, Any]:
     """Authoritative dead-man's-switch health from the scan_runs table.
 
     Mirrors popday.db.Database.latest_scan_health() but is kept as a raw query
     so this deploy script stays independent of the popday package import path.
     Returns table_present=False if the scan_runs table has not been created yet
-    (older runtimes), so callers can fall back to log-based health.
+    (older runtimes), so callers can fall back to log-based health. Passing a
+    source filters to one discovery source ('edgar' / 'investegate') so a
+    healthy run from one can never mask an outage in the other; on databases
+    predating the source column the filter is ignored.
     """
     empty: dict[str, Any] = {
         "table_present": False,
@@ -225,16 +253,22 @@ def _scan_health(con: sqlite3.Connection) -> dict[str, Any]:
         "last_run_error": None,
         "recovered_dates": [],
     }
+    source_filter = " AND source = ?" if source else ""
+    params: tuple = (source,) if source else ()
     try:
         last_ok = con.execute(
-            "SELECT finished_utc FROM scan_runs WHERE status = 'ok' "
-            "ORDER BY id DESC LIMIT 1"
+            f"SELECT finished_utc FROM scan_runs WHERE status = 'ok'{source_filter} "
+            "ORDER BY id DESC LIMIT 1",
+            params,
         ).fetchone()
         last_any = con.execute(
             "SELECT started_utc, finished_utc, status, discovery_source, error "
-            "FROM scan_runs ORDER BY id DESC LIMIT 1"
+            f"FROM scan_runs WHERE 1=1{source_filter} ORDER BY id DESC LIMIT 1",
+            params,
         ).fetchone()
     except sqlite3.Error:
+        if source:
+            return _scan_health(con, source=None)
         return empty
     if last_any is None:
         empty["table_present"] = True
@@ -279,8 +313,18 @@ def _recovered_dates(con: sqlite3.Connection) -> list[str]:
     return recovered
 
 
-def _coverage_health(con: sqlite3.Connection, now: dt.datetime) -> dict[str, Any]:
-    """Output canary: is PopDay still discovering filings and producing candidates?"""
+def _coverage_health(
+    con: sqlite3.Connection,
+    now: dt.datetime,
+    source: str | None = None,
+    market: str | None = None,
+) -> dict[str, Any]:
+    """Output canary: is PopDay still discovering filings and producing candidates?
+
+    Per-source/per-market when asked (the UK extension's requirement: a UK
+    block must not be masked by a healthy US run, and vice versa). On
+    databases predating the source/market columns the filters fall away.
+    """
     base: dict[str, Any] = {
         "table_present": False,
         "last_candidate_utc": None,
@@ -290,23 +334,32 @@ def _coverage_health(con: sqlite3.Connection, now: dt.datetime) -> dict[str, Any
         "level": "unknown",
         "message": "",
     }
+    source_filter = " AND source = ?" if source else ""
+    source_params: tuple = (source,) if source else ()
+    market_filter = " AND market = ?" if market else ""
+    market_params: tuple = (market,) if market else ()
     try:
         last_candidate = con.execute(
             "SELECT max(created_timestamp) FROM detections "
-            "WHERE status IN ('alert_candidate', 'alert_candidate_tbd')"
+            f"WHERE status IN ('alert_candidate', 'alert_candidate_tbd'){market_filter}",
+            market_params,
         ).fetchone()[0]
         rows = con.execute(
-            "SELECT filings_seen FROM scan_runs WHERE finished_utc IS NOT NULL "
-            "ORDER BY id DESC LIMIT ?",
-            (COVERAGE_DISCOVERY_RUN_WINDOW,),
+            "SELECT filings_seen FROM scan_runs WHERE finished_utc IS NOT NULL"
+            f"{source_filter} ORDER BY id DESC LIMIT ?",
+            source_params + (COVERAGE_DISCOVERY_RUN_WINDOW,),
         ).fetchall()
     except sqlite3.Error:
+        if source or market:
+            return _coverage_health(con, now)
         return base
     latest = None
     try:
         latest = con.execute(
             "SELECT COALESCE(discovery_source, ''), COALESCE(discovery_control, '') "
-            "FROM scan_runs WHERE finished_utc IS NOT NULL ORDER BY id DESC LIMIT 1"
+            f"FROM scan_runs WHERE finished_utc IS NOT NULL{source_filter} "
+            "ORDER BY id DESC LIMIT 1",
+            source_params,
         ).fetchone()
     except sqlite3.Error:
         # Older synced DB without the discovery_control column: assess on
@@ -406,6 +459,19 @@ def _database_status(db_path: Path, now: dt.datetime) -> dict[str, Any]:
         }
         status["latest_alert"] = _latest_alert(con)
         status["scan_health"] = _scan_health(con)
+        # Per-source health so a UK outage is never masked by a healthy US
+        # run (and vice versa). Keyed by discovery source; each entry pairs
+        # the dead-man's-switch view with that source's own coverage canary.
+        source_markets = {"edgar": "US", "investegate": "UK"}
+        status["sources"] = {
+            source: {
+                "scan_health": _scan_health(con, source=source),
+                "coverage_health": _coverage_health(
+                    con, now, source=source, market=source_markets.get(source)
+                ),
+            }
+            for source in _scan_sources(con)
+        }
         status["coverage_health"] = _coverage_health(con, now)
     finally:
         con.close()
@@ -476,6 +542,62 @@ def _days_since(value: str | None, now: dt.datetime) -> int | None:
     return max(0, (now.date() - parsed.date()).days)
 
 
+_LEVEL_RANK = {"LIVE": 0, "STALE": 1, "BROKEN": 2}
+_SOURCE_LABELS = {"edgar": "", "investegate": "UK (Investegate) "}
+
+
+def _source_health_verdict(
+    scan_health: dict[str, Any],
+    coverage: dict[str, Any],
+    latest_run: dict[str, str] | None,
+    now: dt.datetime,
+    label: str = "",
+) -> dict[str, str] | None:
+    """The scan_runs dead-man's-switch ladder for one discovery source.
+
+    Returns None when this source has no run history (caller falls back to
+    log-based health). `label` prefixes summaries for non-default sources so
+    a UK-caused banner says so explicitly; the US/edgar summaries stay
+    word-for-word identical to the pre-UK output.
+    """
+    if not (scan_health.get("table_present") and scan_health.get("last_run_status")):
+        return None
+    run_status = (scan_health.get("last_run_status") or "").strip().lower()
+    error = (scan_health.get("last_run_error") or "").strip()
+    last_success = _parse_iso(scan_health.get("last_success_utc"))
+    success_age_h = (now - last_success).total_seconds() / 3600 if last_success else None
+
+    if run_status == "failed":
+        detail = f" {error}" if error else ""
+        return {"level": "BROKEN", "summary": f"BROKEN: the latest {label}PopDay scan failed.{detail}"[:400]}
+    if last_success is None:
+        return {"level": "BROKEN", "summary": f"BROKEN: no successful {label}PopDay scan has ever been recorded."}
+    if run_status == "running" and success_age_h is not None and success_age_h > 3:
+        return {"level": "BROKEN", "summary": f"BROKEN: a {label}PopDay scan started but never finished."}
+    if success_age_h is not None and success_age_h > 50:
+        return {"level": "BROKEN", "summary": f"BROKEN: no successful {label}PopDay scan in over {int(success_age_h)} hours."}
+    if success_age_h is not None and success_age_h > 26:
+        return {"level": "STALE", "summary": f"STALE: last successful {label}PopDay scan was about {int(success_age_h)} hours ago."}
+    # Output canary: a scan can run green yet silently find nothing.
+    if coverage.get("level") == "broken":
+        return {"level": "BROKEN", "summary": f"BROKEN: {label}{coverage.get('message')}"}
+    if coverage.get("level") == "stale":
+        return {"level": "STALE", "summary": f"STALE: {label}{coverage.get('message')}"}
+    if run_status in {"ok", "running", "dry-run"}:
+        source = scan_health.get("last_run_source") or "?"
+        if run_status == "running":
+            return {"level": "LIVE", "summary": "Healthy. A PopDay scan is currently running; the previous scan succeeded."}
+        if run_status == "dry-run":
+            # A manual dry-run after the last real success: harmless, and
+            # last_success_utc (checked above) is still the honest anchor.
+            return {"level": "LIVE", "summary": "Healthy. Latest activity was a manual dry-run; the last real scan succeeded."}
+        alerts = latest_run.get("qualifying_alerts_sent") if latest_run else None
+        if alerts and alerts not in {"0", ""}:
+            return {"level": "LIVE", "summary": f"LIVE: latest PopDay scan succeeded (via {source}) and sent alerts."}
+        return {"level": "LIVE", "summary": f"Healthy. Latest PopDay scan succeeded (via {source}); no qualifying alerts."}
+    return None
+
+
 def _health(
     *,
     latest_run: dict[str, str] | None,
@@ -486,46 +608,35 @@ def _health(
     if not db_status["exists"]:
         return {"level": "BROKEN", "summary": "BROKEN: live PopDay database is missing."}
 
-    # Authoritative source of truth: the scan_runs dead-man's switch. A 403 or
-    # any hard failure now records status='failed' with an error, so a blocked
-    # or crashed scan can never again look green. Only fall back to the older
-    # log-parsing logic when the table has no rows yet (fresh runtime).
-    scan_health = db_status.get("scan_health") or {}
-    if scan_health.get("table_present") and scan_health.get("last_run_status"):
-        run_status = (scan_health.get("last_run_status") or "").strip().lower()
-        error = (scan_health.get("last_run_error") or "").strip()
-        last_success = _parse_iso(scan_health.get("last_success_utc"))
-        success_age_h = (now - last_success).total_seconds() / 3600 if last_success else None
-
-        if run_status == "failed":
-            detail = f" {error}" if error else ""
-            return {"level": "BROKEN", "summary": f"BROKEN: the latest PopDay scan failed.{detail}"[:400]}
-        if last_success is None:
-            return {"level": "BROKEN", "summary": "BROKEN: no successful PopDay scan has ever been recorded."}
-        if run_status == "running" and success_age_h is not None and success_age_h > 3:
-            return {"level": "BROKEN", "summary": "BROKEN: a PopDay scan started but never finished."}
-        if success_age_h is not None and success_age_h > 50:
-            return {"level": "BROKEN", "summary": f"BROKEN: no successful PopDay scan in over {int(success_age_h)} hours."}
-        if success_age_h is not None and success_age_h > 26:
-            return {"level": "STALE", "summary": f"STALE: last successful PopDay scan was about {int(success_age_h)} hours ago."}
-        # Output canary: a scan can run green yet silently find nothing.
-        coverage = db_status.get("coverage_health") or {}
-        if coverage.get("level") == "broken":
-            return {"level": "BROKEN", "summary": f"BROKEN: {coverage.get('message')}"}
-        if coverage.get("level") == "stale":
-            return {"level": "STALE", "summary": f"STALE: {coverage.get('message')}"}
-        if run_status in {"ok", "running", "dry-run"}:
-            source = scan_health.get("last_run_source") or "?"
-            if run_status == "running":
-                return {"level": "LIVE", "summary": "Healthy. A PopDay scan is currently running; the previous scan succeeded."}
-            if run_status == "dry-run":
-                # A manual dry-run after the last real success: harmless, and
-                # last_success_utc (checked above) is still the honest anchor.
-                return {"level": "LIVE", "summary": "Healthy. Latest activity was a manual dry-run; the last real scan succeeded."}
-            alerts = latest_run.get("qualifying_alerts_sent") if latest_run else None
-            if alerts and alerts not in {"0", ""}:
-                return {"level": "LIVE", "summary": f"LIVE: latest PopDay scan succeeded (via {source}) and sent alerts."}
-            return {"level": "LIVE", "summary": f"Healthy. Latest PopDay scan succeeded (via {source}); no qualifying alerts."}
+    # Authoritative source of truth: the scan_runs dead-man's switch,
+    # evaluated PER SOURCE and merged worst-first, so a UK outage can never
+    # hide behind a healthy US run (or vice versa). Falls back to the older
+    # log-parsing logic only when no source has any run history yet.
+    sources: dict[str, Any] = db_status.get("sources") or {}
+    verdicts: list[dict[str, str]] = []
+    for source_id in sorted(sources.keys()):
+        entry = sources[source_id] or {}
+        verdict = _source_health_verdict(
+            entry.get("scan_health") or {},
+            entry.get("coverage_health") or {},
+            latest_run if source_id == "edgar" else None,
+            now,
+            label=_SOURCE_LABELS.get(source_id, f"{source_id} "),
+        )
+        if verdict:
+            verdicts.append(verdict)
+    if not verdicts:
+        # No per-source block (older DB): use the global scan_runs view.
+        verdict = _source_health_verdict(
+            db_status.get("scan_health") or {},
+            db_status.get("coverage_health") or {},
+            latest_run,
+            now,
+        )
+        if verdict:
+            verdicts.append(verdict)
+    if verdicts:
+        return max(verdicts, key=lambda v: _LEVEL_RANK.get(v["level"], 0))
 
     if not latest_run:
         return {"level": "BROKEN", "summary": "BROKEN: no PopDay scan runs found."}

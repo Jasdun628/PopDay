@@ -43,64 +43,80 @@ def main() -> int:
     db_path = args.db_path or config.db_path
     db = Database(db_path)
 
-    last_ok = db.conn.execute(
-        "SELECT finished_utc FROM scan_runs WHERE status = 'ok' ORDER BY id DESC LIMIT 1"
-    ).fetchone()
-
     now = datetime.now(timezone.utc)
-    if last_ok and last_ok["finished_utc"]:
-        try:
-            last_dt = datetime.fromisoformat(last_ok["finished_utc"])
-            if last_dt.tzinfo is None:
-                last_dt = last_dt.replace(tzinfo=timezone.utc)
-        except ValueError:
-            last_dt = None
-    else:
-        last_dt = None
 
-    age_hours = (now - last_dt).total_seconds() / 3600 if last_dt else None
-    threshold = STALE_HOURS
-    is_broken = age_hours is None or age_hours > threshold
+    # Per-source since the UK extension: a dead US scan must alarm even while
+    # UK scans run happily, and vice versa. Only sources that have EVER
+    # completed a successful run are watched, so a source that hasn't
+    # launched yet can never raise a false alarm. The alert key for edgar
+    # stays plain 'heartbeat' to preserve the existing ops_alerts state row.
+    source_labels = {"edgar": "US (EDGAR)", "investegate": "UK (Investegate)"}
+    for source in db.scan_sources_with_ok_runs() or ["edgar"]:
+        label = source_labels.get(source, source)
+        alert_key = "heartbeat" if source == "edgar" else f"heartbeat:{source}"
 
-    if is_broken:
-        detail = (
-            f"No successful PopDay scan recorded in the last {threshold:.0f} hours "
-            f"(last success: {last_ok['finished_utc'] if last_ok else 'never'}). "
-            "This heartbeat check runs as its own PythonAnywhere scheduled task and does "
-            "not depend on the scan tasks being enabled - if they've stopped firing, "
-            "this is the only thing that will tell you."
-        )
-    else:
-        detail = ""
+        last_ok = db.conn.execute(
+            "SELECT finished_utc FROM scan_runs "
+            "WHERE status = 'ok' AND source = ? ORDER BY id DESC LIMIT 1",
+            (source,),
+        ).fetchone()
 
-    verdict = db.check_and_update_ops_alert("heartbeat", is_broken=is_broken, detail=detail)
-
-    if verdict == "new_failure":
-        send_ops_alert_email(
-            config,
-            "PopDay ALARM - scan heartbeat missing",
-            detail + "\n\nCheck PythonAnywhere: are the 'Daily PopDay EDGAR scan' tasks enabled and running?",
-        )
-        print(f"Heartbeat alarm sent (new): {detail}")
-    elif verdict == "still_failing":
-        send_ops_alert_email(
-            config,
-            "PopDay ALARM - still down (reminder)",
-            detail + "\n\nThis is a repeat reminder; the outage has not been fixed yet.",
-        )
-        print(f"Heartbeat alarm sent (reminder): {detail}")
-    elif verdict == "recovered":
-        send_ops_alert_email(
-            config,
-            "PopDay - scan heartbeat recovered",
-            "PopDay has completed a successful scan again. The earlier alarm is cleared.",
-        )
-        print("Heartbeat recovered; all-clear email sent.")
-    else:
-        if is_broken:
-            print(f"Still down but within the resend cooldown (age_hours={age_hours}); no email sent.")
+        if last_ok and last_ok["finished_utc"]:
+            try:
+                last_dt = datetime.fromisoformat(last_ok["finished_utc"])
+                if last_dt.tzinfo is None:
+                    last_dt = last_dt.replace(tzinfo=timezone.utc)
+            except ValueError:
+                last_dt = None
         else:
-            print(f"Heartbeat OK (age_hours={age_hours}).")
+            last_dt = None
+
+        age_hours = (now - last_dt).total_seconds() / 3600 if last_dt else None
+        threshold = STALE_HOURS
+        is_broken = age_hours is None or age_hours > threshold
+
+        if is_broken:
+            detail = (
+                f"No successful {label} PopDay scan recorded in the last {threshold:.0f} hours "
+                f"(last success: {last_ok['finished_utc'] if last_ok else 'never'}). "
+                "This heartbeat check runs as its own PythonAnywhere scheduled task and does "
+                "not depend on the scan tasks being enabled - if they've stopped firing, "
+                "this is the only thing that will tell you."
+            )
+        else:
+            detail = ""
+
+        verdict = db.check_and_update_ops_alert(alert_key, is_broken=is_broken, detail=detail)
+
+        if verdict == "new_failure":
+            send_ops_alert_email(
+                config,
+                f"PopDay ALARM - {label} scan heartbeat missing",
+                detail + "\n\nCheck PythonAnywhere: are the PopDay scan tasks enabled and running?",
+            )
+            print(f"Heartbeat alarm sent (new, {source}): {detail}")
+        elif verdict == "still_failing":
+            send_ops_alert_email(
+                config,
+                f"PopDay ALARM - {label} still down (reminder)",
+                detail + "\n\nThis is a repeat reminder; the outage has not been fixed yet.",
+            )
+            print(f"Heartbeat alarm sent (reminder, {source}): {detail}")
+        elif verdict == "recovered":
+            send_ops_alert_email(
+                config,
+                f"PopDay - {label} scan heartbeat recovered",
+                f"PopDay has completed a successful {label} scan again. The earlier alarm is cleared.",
+            )
+            print(f"Heartbeat recovered ({source}); all-clear email sent.")
+        else:
+            if is_broken:
+                print(
+                    f"Still down ({source}) but within the resend cooldown "
+                    f"(age_hours={age_hours}); no email sent."
+                )
+            else:
+                print(f"Heartbeat OK ({source}, age_hours={age_hours}).")
 
     db.close()
     return 0

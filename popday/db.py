@@ -20,7 +20,8 @@ CREATE TABLE IF NOT EXISTS processed_filings (
     filing_date TEXT NOT NULL,
     acceptance_datetime TEXT,
     filing_url TEXT NOT NULL,
-    processed_timestamp TEXT NOT NULL
+    processed_timestamp TEXT NOT NULL,
+    market TEXT NOT NULL DEFAULT 'US'
 );
 
 CREATE TABLE IF NOT EXISTS detections (
@@ -52,6 +53,7 @@ CREATE TABLE IF NOT EXISTS detections (
     reaction_computed_timestamp TEXT,
     price_data_source TEXT,
     created_timestamp TEXT NOT NULL,
+    market TEXT NOT NULL DEFAULT 'US',
     UNIQUE(accession_number, event_type, event_date, matched_phrase, snippet)
 );
 
@@ -82,6 +84,7 @@ CREATE TABLE IF NOT EXISTS known_announcements (
     alert_sent INTEGER NOT NULL DEFAULT 0,
     alert_sent_timestamp TEXT,
     created_timestamp TEXT NOT NULL,
+    market TEXT NOT NULL DEFAULT 'US',
     UNIQUE(company_name, event_type, event_date, source_url)
 );
 
@@ -95,7 +98,8 @@ CREATE TABLE IF NOT EXISTS hype_tracking (
     hype_definition_version TEXT DEFAULT 'v1-abstract-guess',
     provisional INTEGER NOT NULL DEFAULT 1,
     last_checked TEXT,
-    detected_json TEXT
+    detected_json TEXT,
+    market TEXT NOT NULL DEFAULT 'US'
 );
 
 CREATE TABLE IF NOT EXISTS price_reactions (
@@ -127,7 +131,8 @@ CREATE TABLE IF NOT EXISTS price_reactions (
     price_data_source TEXT,
     price_data_timestamp TEXT,
     status TEXT NOT NULL,
-    notes TEXT
+    notes TEXT,
+    market TEXT NOT NULL DEFAULT 'US'
 );
 
 CREATE TABLE IF NOT EXISTS scan_runs (
@@ -143,7 +148,28 @@ CREATE TABLE IF NOT EXISTS scan_runs (
     error TEXT,
     efts_total_hits INTEGER NOT NULL DEFAULT 0,
     discovery_control TEXT NOT NULL DEFAULT '',
-    run_kind TEXT NOT NULL DEFAULT 'scheduled'
+    run_kind TEXT NOT NULL DEFAULT 'scheduled',
+    source TEXT NOT NULL DEFAULT 'edgar'
+);
+
+CREATE TABLE IF NOT EXISTS prices (
+    ticker TEXT NOT NULL,
+    date TEXT NOT NULL,
+    close REAL NOT NULL,
+    currency TEXT NOT NULL,
+    market TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'yfinance',
+    fetched_at TEXT NOT NULL,
+    PRIMARY KEY (ticker, date)
+);
+
+CREATE TABLE IF NOT EXISTS ticker_mappings (
+    market TEXT NOT NULL,
+    local_symbol TEXT NOT NULL,
+    yahoo_symbol TEXT NOT NULL,
+    manual_override TEXT,
+    notes TEXT,
+    PRIMARY KEY (market, local_symbol)
 );
 
 CREATE TABLE IF NOT EXISTS ops_alerts (
@@ -241,6 +267,26 @@ class Database:
             if column not in price_reaction_columns:
                 col_type = "TEXT" if column.endswith("_date") else "REAL"
                 self.conn.execute(f"ALTER TABLE price_reactions ADD COLUMN {column} {col_type}")
+        # UK market extension (Jul 2026): market tag on every announcement-ish
+        # table, defaulting to 'US' so existing rows are untouched; scan_runs
+        # gains a source tag ('edgar' / 'investegate') so coverage gaps,
+        # health, and the heartbeat are all tracked per discovery source.
+        market_tables = {
+            "detections": detection_columns,
+            "processed_filings": processed_columns,
+            "known_announcements": columns,
+            "hype_tracking": hype_columns,
+            "price_reactions": price_reaction_columns,
+        }
+        for table, table_columns in market_tables.items():
+            if table_columns and "market" not in table_columns:
+                self.conn.execute(
+                    f"ALTER TABLE {table} ADD COLUMN market TEXT NOT NULL DEFAULT 'US'"
+                )
+        if scan_run_columns and "source" not in scan_run_columns:
+            self.conn.execute(
+                "ALTER TABLE scan_runs ADD COLUMN source TEXT NOT NULL DEFAULT 'edgar'"
+            )
         # Daily-index rows historically stored filing_date as YYYYMMDD while
         # EFTS rows use ISO; compact strings sort above every ISO date, which
         # froze the Scan Log on 17 Jun 2026. Normalise everything to ISO.
@@ -274,11 +320,11 @@ class Database:
         )
         self.conn.commit()
 
-    def start_scan_run(self, run_date, run_kind: str = "scheduled") -> int:
+    def start_scan_run(self, run_date, run_kind: str = "scheduled", source: str = "edgar") -> int:
         cursor = self.conn.execute(
-            "INSERT INTO scan_runs (run_date, started_utc, status, run_kind) "
-            "VALUES (?, ?, 'running', ?)",
-            (str(run_date), utc_now(), run_kind),
+            "INSERT INTO scan_runs (run_date, started_utc, status, run_kind, source) "
+            "VALUES (?, ?, 'running', ?, ?)",
+            (str(run_date), utc_now(), run_kind, source),
         )
         self.conn.commit()
         return int(cursor.lastrowid)
@@ -292,23 +338,41 @@ class Database:
         )
         self.conn.commit()
 
-    def covered_ok_dates(self, since) -> set:
-        """Business-day coverage truth: run_dates with at least one ok run."""
+    def covered_ok_dates(self, since, source: str = "edgar") -> set:
+        """Business-day coverage truth: run_dates with at least one ok run.
+
+        Per-source since the UK extension - a healthy US run must never mark
+        a UK day as covered, or a UK outage would silently self-heal nothing.
+        """
         rows = self.conn.execute(
-            "SELECT DISTINCT run_date FROM scan_runs WHERE status = 'ok' AND run_date >= ?",
-            (str(since),),
+            "SELECT DISTINCT run_date FROM scan_runs "
+            "WHERE status = 'ok' AND run_date >= ? AND source = ?",
+            (str(since), source),
         ).fetchall()
         return {
             datetime.strptime(row["run_date"], "%Y-%m-%d").date() for row in rows
         }
 
-    def earliest_ok_run_date(self):
+    def earliest_ok_run_date(self, source: str = "edgar"):
         row = self.conn.execute(
-            "SELECT MIN(run_date) AS d FROM scan_runs WHERE status = 'ok'"
+            "SELECT MIN(run_date) AS d FROM scan_runs WHERE status = 'ok' AND source = ?",
+            (source,),
         ).fetchone()
         if not row or not row["d"]:
             return None
         return datetime.strptime(row["d"], "%Y-%m-%d").date()
+
+    def scan_sources_with_ok_runs(self) -> list[str]:
+        """Sources that have ever completed a successful run.
+
+        The heartbeat and per-source health checks iterate over these, so a
+        source that has never launched (e.g. UK pre-cutover) can never raise
+        a false alarm, while every launched source is watched independently.
+        """
+        rows = self.conn.execute(
+            "SELECT DISTINCT source FROM scan_runs WHERE status = 'ok' ORDER BY source"
+        ).fetchall()
+        return [str(row["source"]) for row in rows]
 
     def finish_scan_run(
         self,
@@ -346,13 +410,22 @@ class Database:
         )
         self.conn.commit()
 
-    def latest_scan_health(self) -> dict[str, Any]:
-        """Dead-man's-switch data for the health tab / status JSON."""
+    def latest_scan_health(self, source: str | None = None) -> dict[str, Any]:
+        """Dead-man's-switch data for the health tab / status JSON.
+
+        With source=None (default, original behaviour) this reports across
+        all sources; pass 'edgar' / 'investegate' for per-source health so a
+        healthy run from one source can never mask an outage in the other.
+        """
+        source_filter = " AND source = ?" if source else ""
+        params: tuple = (source,) if source else ()
         last_ok = self.conn.execute(
-            "SELECT * FROM scan_runs WHERE status = 'ok' ORDER BY id DESC LIMIT 1"
+            f"SELECT * FROM scan_runs WHERE status = 'ok'{source_filter} ORDER BY id DESC LIMIT 1",
+            params,
         ).fetchone()
         last_any = self.conn.execute(
-            "SELECT * FROM scan_runs ORDER BY id DESC LIMIT 1"
+            f"SELECT * FROM scan_runs WHERE 1=1{source_filter} ORDER BY id DESC LIMIT 1",
+            params,
         ).fetchone()
         return {
             "last_success_utc": last_ok["finished_utc"] if last_ok else None,
@@ -439,13 +512,13 @@ class Database:
         ).fetchone()
         return row is not None
 
-    def mark_processed(self, filing: Any) -> None:
+    def mark_processed(self, filing: Any, market: str = "US") -> None:
         self.conn.execute(
             """
             INSERT OR REPLACE INTO processed_filings
             (accession_number, cik, company_name, form_type, filing_date, acceptance_datetime,
-             filing_url, processed_timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+             filing_url, processed_timestamp, market)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 filing.accession_number,
@@ -456,6 +529,7 @@ class Database:
                 getattr(filing, "acceptance_datetime", "") or None,
                 filing.filing_url,
                 utc_now(),
+                market,
             ),
         )
         self.conn.commit()
@@ -636,19 +710,21 @@ class Database:
             (limit,),
         ).fetchall()
 
-    def recent_candidates(self, limit: int = 30) -> list[sqlite3.Row]:
+    def recent_candidates(self, limit: int = 30, market: str | None = None) -> list[sqlite3.Row]:
+        market_filter = " WHERE d.market = ?" if market else ""
+        params: tuple = (market, limit) if market else (limit,)
         return self.conn.execute(
-            """
+            f"""
             SELECT d.id, d.created_timestamp, d.company_name, d.form_type, d.filing_date, d.event_type, d.event_date,
                    d.matched_phrase, d.matched_location, d.status, d.dismissal_reason, d.filing_url,
-                   d.acceptance_datetime, d.event_url, d.evidence_url, d.evidence_label,
+                   d.acceptance_datetime, d.event_url, d.evidence_url, d.evidence_label, d.market,
                    h.qualifying_count, h.hype_status, h.hype_definition_version, h.provisional
             FROM detections d
-            LEFT JOIN hype_tracking h ON h.candidate_id = d.id
+            LEFT JOIN hype_tracking h ON h.candidate_id = d.id{market_filter}
             ORDER BY d.filing_date DESC, d.created_timestamp DESC
             LIMIT ?
             """,
-            (limit,),
+            params,
         ).fetchall()
 
     def detection(self, detection_id: int) -> sqlite3.Row | None:
@@ -735,6 +811,10 @@ class Database:
         return [dict(row) for row in [*detection_rows, *known_rows]]
 
     def hype_watch_candidates(self) -> list[sqlite3.Row]:
+        # US-only by design: this feeds the EDGAR submissions-JSON watcher,
+        # which looks companies up by CIK on data.sec.gov. UK candidates have
+        # an EPIC ticker in the cik column and are watched by the Investegate
+        # scan's own in-index hype pass instead.
         return self.conn.execute(
             """
             SELECT id, accession_number, company_name, cik, filing_date, acceptance_datetime,
@@ -743,8 +823,27 @@ class Database:
             WHERE status = 'alert_candidate'
               AND filing_date IS NOT NULL
               AND event_date IS NOT NULL
+              AND market = 'US'
             ORDER BY event_date, created_timestamp
             """
+        ).fetchall()
+
+    def uk_open_hype_events(self, as_of: str) -> list[sqlite3.Row]:
+        """UK alert candidates whose hype window is still worth watching:
+        announced, with the event upcoming or no more than 7 days past."""
+        return self.conn.execute(
+            """
+            SELECT id, accession_number, company_name, cik, ticker, filing_date,
+                   event_date, event_type, filing_url
+            FROM detections
+            WHERE status = 'alert_candidate'
+              AND market = 'UK'
+              AND filing_date IS NOT NULL
+              AND event_date IS NOT NULL
+              AND date(event_date) >= date(?, '-7 days')
+            ORDER BY event_date, created_timestamp
+            """,
+            (as_of,),
         ).fetchall()
 
     def upsert_hype_tracking(
@@ -760,13 +859,14 @@ class Database:
         provisional: bool,
         last_checked: str,
         detected_json: str,
+        market: str = "US",
     ) -> None:
         self.conn.execute(
             """
             INSERT INTO hype_tracking
             (candidate_id, cik, announcement_date, event_date, qualifying_count, hype_status,
-             hype_definition_version, provisional, last_checked, detected_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             hype_definition_version, provisional, last_checked, detected_json, market)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(candidate_id) DO UPDATE SET
                 cik = excluded.cik,
                 announcement_date = excluded.announcement_date,
@@ -776,7 +876,8 @@ class Database:
                 hype_definition_version = excluded.hype_definition_version,
                 provisional = excluded.provisional,
                 last_checked = excluded.last_checked,
-                detected_json = excluded.detected_json
+                detected_json = excluded.detected_json,
+                market = excluded.market
             """,
             (
                 candidate_id,
@@ -789,6 +890,7 @@ class Database:
                 int(provisional),
                 last_checked,
                 detected_json,
+                market,
             ),
         )
         self.conn.commit()
@@ -797,45 +899,107 @@ class Database:
         return self.conn.execute(
             """
             SELECT candidate_id, cik, announcement_date, event_date, qualifying_count,
-                   hype_status, hype_definition_version, provisional, last_checked, detected_json
+                   hype_status, hype_definition_version, provisional, last_checked,
+                   detected_json, market
             FROM hype_tracking
             WHERE candidate_id = ?
             """,
             (candidate_id,),
         ).fetchone()
 
-    def all_hype_tracking_rows(self) -> list[sqlite3.Row]:
+    def all_hype_tracking_rows(self, market: str | None = None) -> list[sqlite3.Row]:
+        market_filter = " WHERE market = ?" if market else ""
+        params: tuple = (market,) if market else ()
         return self.conn.execute(
-            """
+            f"""
             SELECT candidate_id, cik, announcement_date, event_date, qualifying_count,
-                   hype_status, hype_definition_version, provisional, last_checked, detected_json
-            FROM hype_tracking
+                   hype_status, hype_definition_version, provisional, last_checked,
+                   detected_json, market
+            FROM hype_tracking{market_filter}
             ORDER BY event_date, candidate_id
-            """
+            """,
+            params,
         ).fetchall()
 
-    def investor_day_announcements(self) -> list[dict[str, Any]]:
-        rows = self.conn.execute(
+    # ------------------------------------------------------------ UK prices
+
+    def upsert_price(
+        self,
+        *,
+        ticker: str,
+        date: str,
+        close: float,
+        currency: str,
+        market: str,
+        source: str = "yfinance",
+    ) -> None:
+        self.conn.execute(
             """
+            INSERT INTO prices (ticker, date, close, currency, market, source, fetched_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(ticker, date) DO UPDATE SET
+                close = excluded.close,
+                currency = excluded.currency,
+                market = excluded.market,
+                source = excluded.source,
+                fetched_at = excluded.fetched_at
+            """,
+            (ticker, date, close, currency, market, source, utc_now()),
+        )
+        self.conn.commit()
+
+    def get_ticker_mapping(self, market: str, local_symbol: str) -> sqlite3.Row | None:
+        return self.conn.execute(
+            "SELECT market, local_symbol, yahoo_symbol, manual_override, notes "
+            "FROM ticker_mappings WHERE market = ? AND local_symbol = ?",
+            (market, local_symbol),
+        ).fetchone()
+
+    def save_ticker_mapping(
+        self, *, market: str, local_symbol: str, yahoo_symbol: str, notes: str = ""
+    ) -> None:
+        """Record a derived mapping. Never overwrites manual_override - that
+        column is the operator's escape hatch and only a human sets it."""
+        self.conn.execute(
+            """
+            INSERT INTO ticker_mappings (market, local_symbol, yahoo_symbol, notes)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(market, local_symbol) DO UPDATE SET
+                yahoo_symbol = excluded.yahoo_symbol,
+                notes = excluded.notes
+            """,
+            (market, local_symbol, yahoo_symbol, notes),
+        )
+        self.conn.commit()
+
+    def investor_day_announcements(self, market: str | None = None) -> list[dict[str, Any]]:
+        market_filter = " AND d.market = ?" if market else ""
+        params: tuple = (market,) if market else ()
+        rows = self.conn.execute(
+            f"""
             SELECT d.id AS source_id, 'detections' AS source_table,
                    d.company_name, d.cik, d.ticker, d.event_type, d.event_date,
                    d.form_type, d.filing_date,
                    d.acceptance_datetime, d.filing_url AS source_url, d.evidence_url, d.evidence_label,
                    d.accession_number, d.matched_phrase, d.matched_location, d.alert_sent,
-                   d.alert_sent_timestamp, d.created_timestamp, 'EDGAR' AS source_type,
-                   'SEC filing' AS source_label, h.qualifying_count AS hype_count
+                   d.alert_sent_timestamp, d.created_timestamp,
+                   CASE WHEN d.market = 'UK' THEN 'Investegate' ELSE 'EDGAR' END AS source_type,
+                   CASE WHEN d.market = 'UK' THEN 'RNS announcement' ELSE 'SEC filing' END AS source_label,
+                   d.market, h.qualifying_count AS hype_count
             FROM detections d
             LEFT JOIN hype_tracking h ON h.candidate_id = d.id
             WHERE d.event_type IS NOT NULL
               AND (
                 (d.status = 'alert_candidate' AND d.event_date IS NOT NULL)
                 OR d.status = 'alert_candidate_tbd'
-              )
+              ){market_filter}
             ORDER BY d.event_date IS NULL, d.event_date DESC, d.created_timestamp DESC
-            """
+            """,
+            params,
         ).fetchall()
+        known_market_filter = " WHERE market = ?" if market else ""
         known_rows = self.conn.execute(
-            """
+            f"""
             SELECT id AS source_id, 'known_announcements' AS source_table,
                    company_name, NULL AS cik, NULL AS ticker, event_type, event_date, NULL AS form_type,
                    announcement_date AS filing_date, NULL AS acceptance_datetime,
@@ -843,10 +1007,11 @@ class Database:
                    source_url AS evidence_url, source_label AS evidence_label,
                    NULL AS matched_phrase, NULL AS matched_location, alert_sent,
                    alert_sent_timestamp, created_timestamp, source_type, source_label,
-                   NULL AS hype_count
-            FROM known_announcements
+                   market, NULL AS hype_count
+            FROM known_announcements{known_market_filter}
             ORDER BY event_date DESC, created_timestamp DESC
-            """
+            """,
+            params,
         ).fetchall()
         deduped: dict[tuple[str, str, str], dict[str, Any]] = {}
         for row in [*rows, *known_rows]:
@@ -930,9 +1095,11 @@ class Database:
         )
         self.conn.commit()
 
-    def price_reaction_rows(self) -> list[sqlite3.Row]:
+    def price_reaction_rows(self, market: str | None = None) -> list[sqlite3.Row]:
+        market_filter = " WHERE market = ?" if market else ""
+        params: tuple = (market,) if market else ()
         return self.conn.execute(
-            """
+            f"""
             SELECT announcement_key, source_table, source_id, company_name, cik, ticker,
                    event_date, filing_date, acceptance_datetime, reaction_date,
                    previous_close_date, previous_close, reaction_open, reaction_high,
@@ -940,43 +1107,50 @@ class Database:
                    latest_close_date, latest_close, interval_return_pct,
                    interval_daily_volatility_pct, event_day_close_date, event_day_close,
                    event_day_move_pct, price_data_source, price_data_timestamp,
-                   status, notes
-            FROM price_reactions
+                   status, notes, market
+            FROM price_reactions{market_filter}
             ORDER BY COALESCE(filing_date, '') DESC, company_name
-            """
+            """,
+            params,
         ).fetchall()
 
     def investor_day_announcement_count(self) -> int:
         return len(self.investor_day_announcements())
 
-    def research_hype_events(self) -> list[dict[str, Any]]:
+    def research_hype_events(self, market: str | None = None) -> list[dict[str, Any]]:
+        market_filter = " AND d.market = ?" if market else ""
+        params: tuple = (market,) if market else ()
         rows = self.conn.execute(
-            """
+            f"""
             SELECT d.id AS candidate_id, d.company_name, d.ticker, d.cik, d.event_type,
                    d.event_date, COALESCE(h.announcement_date, d.filing_date) AS announcement_date,
                    d.acceptance_datetime, d.filing_url AS source_url, d.evidence_url, d.evidence_label,
-                   d.created_timestamp, 'EDGAR' AS source_type,
-                   h.qualifying_count AS investor_comms_count,
+                   d.created_timestamp,
+                   CASE WHEN d.market = 'UK' THEN 'Investegate' ELSE 'EDGAR' END AS source_type,
+                   d.market, h.qualifying_count AS investor_comms_count,
                    h.detected_json, h.last_checked, h.hype_definition_version, h.provisional
             FROM detections d
             LEFT JOIN hype_tracking h ON h.candidate_id = d.id
             WHERE d.status = 'alert_candidate'
               AND d.event_type IS NOT NULL
-              AND d.event_date IS NOT NULL
+              AND d.event_date IS NOT NULL{market_filter}
             ORDER BY d.event_date DESC, d.created_timestamp DESC
-            """
+            """,
+            params,
         ).fetchall()
+        known_market_filter = " WHERE market = ?" if market else ""
         known_rows = self.conn.execute(
-            """
+            f"""
             SELECT NULL AS candidate_id, company_name, NULL AS ticker, NULL AS cik, event_type,
                    event_date, announcement_date, NULL AS acceptance_datetime, source_url,
                    source_url AS evidence_url, source_label AS evidence_label,
                    created_timestamp, source_type,
-                   NULL AS investor_comms_count, NULL AS detected_json, NULL AS last_checked,
+                   market, NULL AS investor_comms_count, NULL AS detected_json, NULL AS last_checked,
                    NULL AS hype_definition_version, NULL AS provisional
-            FROM known_announcements
+            FROM known_announcements{known_market_filter}
             ORDER BY event_date DESC, created_timestamp DESC
-            """
+            """,
+            params,
         ).fetchall()
         deduped: dict[tuple[str, str, str], dict[str, Any]] = {}
         for row in [*rows, *known_rows]:

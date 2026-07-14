@@ -4,14 +4,15 @@ from __future__ import annotations
 
 import argparse
 import urllib.error
-from dataclasses import dataclass
+from dataclasses import dataclass, replace as dc_replace
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 
 from .config import load_config
 from .coverage_gap import missed_business_days
 from .date_extract import format_human_date
 from .db import Database
-from .detector import detect_in_parsed_filing, detect_in_sections
+from .detector import detect_in_parsed_filing, detect_in_sections, detect_in_uk_announcement
 from .debug_server import serve_debug_ui
 from .edgar_fetch import (
     EdgarBlockedError,
@@ -20,6 +21,12 @@ from .edgar_fetch import (
     Filing,
     TARGET_FORMS,
 )
+from .sources.investegate import (
+    InvestegateBlockedError,
+    InvestegateClient,
+    InvestegateRobotsDisallowedError,
+    _headline_matches,
+)
 from .emailer import (
     build_alert_body,
     send_alert_email,
@@ -27,7 +34,7 @@ from .emailer import (
     send_privileged_format_test_email,
 )
 from .filing_parser import parse_sec_filing
-from .hype import reclassify_hype_tracking, watch_hype_candidates
+from .hype import reclassify_hype_tracking, update_uk_hype_from_index, watch_hype_candidates
 from .stock_reaction import refresh_price_reactions
 from .parser import parse_filing_sections
 from .rules import ALERT_REQUIREMENTS
@@ -50,6 +57,7 @@ class Alert:
     hype_count: int | None = None
     hype_provisional: bool = False
     recovered_from: str = ""  # missed scan date this alert was recovered from
+    market: str = "US"
 
 
 PRIVILEGED_TEST_RECIPIENT = "jd@jasondunne.co.uk"
@@ -109,6 +117,66 @@ def _alert_from_detection(
         evidence_url=str(getattr(detection, "evidence_url", "") or ""),
         evidence_label=str(getattr(detection, "evidence_label", "") or ""),
     )
+
+
+def _alert_from_uk_detection(
+    detection_id: int, detection: object, recovered_from: str = ""
+) -> Alert:
+    return Alert(
+        recovered_from=recovered_from,
+        detection_id=detection_id,
+        company_name=detection.filing.company_name,
+        event_label=detection.event_type or "Capital Markets Day",
+        event_date=datetime.strptime(detection.event_date, "%Y-%m-%d").date(),
+        filing_url=detection.filing.filing_url,
+        source_label="Investegate",
+        form_type=str(detection.filing.form_type or ""),
+        snippet=str(detection.snippet or ""),
+        event_url="",
+        evidence_url=str(getattr(detection, "evidence_url", "") or ""),
+        evidence_label=str(getattr(detection, "evidence_label", "") or ""),
+        market="UK",
+    )
+
+
+def _regenerate_status_json(config) -> None:
+    """Refresh the front door's status JSON after a real scan (PA production).
+
+    The System Health tab's freshness clock reads this file's mtime. It was
+    historically refreshed only by deploys, so a quiet stretch with no
+    commits aged the file toward a false STALE/BROKEN banner (partially
+    masked, pre-14 Jul 2026, by the old weekend staleness allowance). With
+    config.status_json_path set (PA production; unset in local dev), every
+    real scan - successful or failed - now refreshes it, so the freshness
+    clock tracks scans, not deploys. Failures print a warning and never
+    propagate: status JSON is derived data, alerting must not die for it.
+    """
+    if not config.status_json_path:
+        return
+    import subprocess
+    import sys
+
+    script = Path(__file__).resolve().parent.parent / "scripts" / "generate_status_json.py"
+    app_dir = script.parent.parent
+    try:
+        subprocess.run(
+            [
+                sys.executable,
+                str(script),
+                "--output", config.status_json_path,
+                "--db-path", config.db_path,
+                "--source-repo", str(app_dir),
+                "--runtime-dir", str(app_dir),
+                "--backup-root", str(app_dir / "backups"),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        print(f"Status JSON refreshed: {config.status_json_path}")
+    except Exception as exc:  # noqa: BLE001 - derived data must never kill a scan
+        print(f"WARNING - could not refresh status JSON: {exc}")
 
 
 def _alert_from_known(row: object) -> Alert:
@@ -486,6 +554,228 @@ def _scan_single_date(
         )
 
 
+def _scan_single_date_uk(
+    config,
+    db: Database,
+    args: argparse.Namespace,
+    run_date: date,
+    *,
+    run_kind: str,
+) -> _DayScanOutcome:
+    """Scan one UK calendar day via Investegate, mirroring _scan_single_date.
+
+    Same contract: never a silent green - a block, a robots.txt change, or a
+    broken canary is a failed run with its own per-source ops alarm
+    ('scan_failure:investegate'), so a UK outage can never be masked by a
+    healthy US run or vice versa. already_processed dedup on the Investegate
+    numeric ID makes backfill re-sweeps harmless, exactly like the US path.
+    """
+    alerts: list[Alert] = []
+    filings_parsed = 0
+    recovered_from = run_date.isoformat() if run_kind == "backfill" else ""
+    scan_run_id = db.start_scan_run(run_date, run_kind=run_kind, source="investegate")
+
+    def _fail_scan(reason: str, detail: str) -> _DayScanOutcome:
+        db.finish_scan_run(
+            scan_run_id,
+            status="failed",
+            filings_seen=0,
+            filings_parsed=0,
+            alerts_sent=0,
+            source="investegate-index",
+            error=f"{reason}: {detail}"[:2000],
+        )
+        _print_health_summary(
+            filing_date=run_date,
+            index_status="error",
+            filings_parsed=0,
+            eight_k_sanity_count=0,
+            alerts_sent=0,
+        )
+        print(f"SCAN FAILED (UK) - {reason}\n{detail}")
+        if not args.dry_run:
+            full_detail = f"{reason}\n\n{detail}"[:4000]
+            verdict = db.check_and_update_ops_alert(
+                "scan_failure:investegate", is_broken=True, detail=full_detail
+            )
+            if verdict in {"new_failure", "still_failing"}:
+                try:
+                    send_ops_alert_email(
+                        config,
+                        "PopDay ALARM - UK (Investegate) scan failed"
+                        + (" (still failing)" if verdict == "still_failing" else ""),
+                        full_detail,
+                    )
+                except Exception as email_exc:  # noqa: BLE001 - never mask the real failure
+                    print(f"WARNING - could not send ops alert email: {email_exc}")
+        return _DayScanOutcome(1, [], scan_run_id=scan_run_id)
+
+    try:
+        try:
+            client = InvestegateClient(
+                config.uk_user_agent, config.uk_request_delay_seconds
+            )
+        except InvestegateRobotsDisallowedError as exc:
+            return _fail_scan(
+                "Investegate robots.txt now disallows a path PopDay needs", str(exc)
+            )
+
+        index = client.index_for_date(run_date)
+        matches = [
+            row
+            for row in index
+            if _headline_matches(
+                row.headline, config.uk_include_phrases, config.uk_exclude_phrases
+            )
+        ]
+
+        control = ""
+        if matches:
+            control = "ok"  # live matches are themselves proof the instrument works
+        else:
+            # Zero matches is only trustworthy if the pinned historical canary
+            # announcement still parses - otherwise the site may have changed
+            # under us and this "quiet day" is actually a silently broken scan.
+            try:
+                control_ok = client.probe_canary()
+            except (InvestegateBlockedError, urllib.error.URLError) as exc:
+                return _fail_scan(
+                    "zero UK matches and the canary probe errored",
+                    f"Cannot verify the Investegate instrument: {exc}",
+                )
+            if not control_ok:
+                return _fail_scan(
+                    "UK discovery instrument broken",
+                    "Zero live matches and the pinned Glencore canary "
+                    "announcement no longer parses as expected. The site has "
+                    "likely changed - do not trust green UK runs until the "
+                    "adapter is fixed.",
+                )
+            control = "ok"
+            print(
+                "Zero UK announcements matched today; canary probe confirms "
+                "the instrument works (verified quiet day)."
+            )
+
+        routine_phrases = db.active_phrases("routine_context")
+        for row in matches:
+            if args.reprocess:
+                if not args.dry_run and db.filing_has_sent_alert(row.dedup_key):
+                    continue
+                if not args.dry_run:
+                    db.delete_detections_for_accession(row.dedup_key)
+            elif not args.dry_run and db.already_processed(row.dedup_key):
+                continue
+
+            detail_text = client.fetch_detail_text(row.detail_url)
+            filings_parsed += 1
+            enriched = dc_replace(row, raw_text=detail_text)
+            detections = detect_in_uk_announcement(
+                enriched, run_date, config.uk_include_phrases, routine_phrases
+            )
+            for detection in detections:
+                if (
+                    detection.status == "alert_candidate"
+                    and detection.event_type
+                    and detection.event_date
+                    and db.detection_already_alerted(
+                        detection.filing.company_name,
+                        detection.event_type,
+                        detection.event_date,
+                    )
+                ):
+                    detection = dc_replace(
+                        detection,
+                        status="dismissed",
+                        dismissal_reason="event_already_alerted",
+                    )
+                detection_id = 0 if args.dry_run else db.insert_detection(detection)
+                if detection.status == "alert_candidate" and detection_id:
+                    alerts.append(
+                        _alert_from_uk_detection(detection_id, detection, recovered_from)
+                    )
+                elif detection.status == "alert_candidate" and args.dry_run:
+                    alerts.append(
+                        _alert_from_uk_detection(0, detection, recovered_from)
+                    )
+            if not args.dry_run:
+                db.mark_processed(
+                    Filing(
+                        accession_number=row.dedup_key,
+                        cik="",
+                        company_name=row.company_name,
+                        form_type=row.wire_or_form or "RNS",
+                        filing_date=run_date.isoformat(),
+                        filing_url=row.detail_url,
+                        primary_document="",
+                        acceptance_datetime=row.announced_at,
+                    ),
+                    market="UK",
+                )
+
+        # Hype pass over the full day index (already in memory): count
+        # non-routine announcements for companies with open UK events.
+        downstream_note = ""
+        if not args.dry_run:
+            try:
+                watched = update_uk_hype_from_index(config, db, index, run_date)
+                if watched:
+                    print(f"UK hype pass updated {len(watched)} candidate(s).")
+            except Exception as exc:  # noqa: BLE001 - hype must never block alerting
+                downstream_note = f"UK hype pass failed: {exc}"
+                print(f"WARNING - {downstream_note}")
+
+        db.finish_scan_run(
+            scan_run_id,
+            status="dry-run" if args.dry_run else "ok",
+            filings_seen=len(matches),
+            filings_parsed=filings_parsed,
+            alerts_sent=0,
+            source="investegate-index",
+            error=downstream_note,
+            efts_total_hits=len(index),
+            discovery_control=control,
+        )
+        if not args.dry_run:
+            verdict = db.check_and_update_ops_alert(
+                "scan_failure:investegate", is_broken=False, detail=""
+            )
+            if verdict == "recovered":
+                try:
+                    send_ops_alert_email(
+                        config,
+                        "PopDay - UK (Investegate) scan recovered",
+                        "PopDay completed a successful UK scan again. "
+                        "The earlier failure alarm is cleared.",
+                    )
+                except Exception as email_exc:  # noqa: BLE001
+                    print(f"WARNING - could not send recovery email: {email_exc}")
+        _print_health_summary(
+            filing_date=run_date,
+            index_status="available",
+            filings_parsed=filings_parsed,
+            eight_k_sanity_count=0,
+            alerts_sent=0,
+        )
+        return _DayScanOutcome(
+            0,
+            alerts,
+            scan_run_id=scan_run_id,
+            filings_parsed=filings_parsed,
+        )
+    except InvestegateBlockedError as exc:
+        return _fail_scan("Investegate blocked a request mid-run", str(exc))
+    except urllib.error.URLError as exc:
+        return _fail_scan("lost connection to Investegate mid-run", str(exc))
+    except Exception as exc:  # noqa: BLE001 - a scheduled run must never die silently
+        import traceback
+
+        return _fail_scan(
+            f"unexpected error ({type(exc).__name__})",
+            traceback.format_exc(limit=8),
+        )
+
+
 def run_scan(args: argparse.Namespace) -> int:
     print(f"PopDay launchd run started: {_health_timestamp()}", flush=True)
     config = load_config(args.config)
@@ -508,19 +798,23 @@ def run_scan(args: argparse.Namespace) -> int:
         )
         return 2
 
+    source = str(getattr(args, "source", "") or "edgar")
+    scan_one_date = _scan_single_date_uk if source == "investegate" else _scan_single_date
+
     db = Database(config.db_path)
     db.seed_recipients(config.email_recipients)
     try:
         # Self-healing coverage: before scanning the main date, sweep any
-        # business days missed during downtime (failed runs, dead launchd,
-        # SEC block, sync breakage). Coverage truth is the scan_runs table;
-        # already_processed dedup makes re-sweeps harmless.
+        # business days missed during downtime (failed runs, dead scheduler,
+        # a source-side block). Coverage truth is the scan_runs table, PER
+        # SOURCE - a healthy US run never marks a UK day covered or vice
+        # versa; already_processed dedup makes re-sweeps harmless.
         explicit_floor = None
         if getattr(args, "backfill_from", None):
             explicit_floor = datetime.strptime(args.backfill_from, "%Y-%m-%d").date()
-        earliest_ok = db.earliest_ok_run_date()
+        earliest_ok = db.earliest_ok_run_date(source=source)
         floor = explicit_floor or earliest_ok
-        covered = db.covered_ok_dates(floor) if floor else set()
+        covered = db.covered_ok_dates(floor, source=source) if floor else set()
         missed = missed_business_days(
             covered,
             main_run_date=run_date,
@@ -536,7 +830,7 @@ def run_scan(args: argparse.Namespace) -> int:
         all_alerts: list[Alert] = []
         alerts_by_run: dict[int, int] = {}
         for day in missed:
-            outcome = _scan_single_date(config, db, args, day, run_kind="backfill")
+            outcome = scan_one_date(config, db, args, day, run_kind="backfill")
             if outcome.exit_code != 0:
                 # Never half-heal silently: the failed day is recorded, the
                 # remaining sweep (and the main date) is aborted so the red
@@ -551,7 +845,7 @@ def run_scan(args: argparse.Namespace) -> int:
             all_alerts.extend(outcome.alerts)
             alerts_by_run[outcome.scan_run_id] = len(outcome.alerts)
 
-        main = _scan_single_date(config, db, args, run_date, run_kind="scheduled")
+        main = scan_one_date(config, db, args, run_date, run_kind="scheduled")
         if main.exit_code != 0:
             return main.exit_code
         all_alerts.extend(main.alerts)
@@ -578,6 +872,11 @@ def run_scan(args: argparse.Namespace) -> int:
         return 0
     finally:
         db.close()
+        # Every real run - ok or failed - refreshes the front door's status
+        # snapshot so its freshness clock tracks scans, not deploys. After
+        # db.close() so the subprocess sees fully committed scan_runs rows.
+        if not args.dry_run:
+            _regenerate_status_json(config)
 
 
 def show_rules(args: argparse.Namespace) -> int:
@@ -718,7 +1017,9 @@ def reclassify_hype(args: argparse.Namespace) -> int:
     db.seed_recipients(config.email_recipients)
     dry_run = bool(getattr(args, "dry_run", False))
     try:
-        updated = reclassify_hype_tracking(config, db, dry_run=dry_run)
+        updated = reclassify_hype_tracking(
+            config, db, dry_run=dry_run, market=getattr(args, "market", None)
+        )
     except Exception as exc:
         print(f"Hype reclassification failed: {exc}")
         return 1
@@ -776,6 +1077,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run date as YYYY-MM-DD, today, or previous-business-day.",
     )
     parser.add_argument("--dry-run", action="store_true", help="Print alerts without sending email.")
+    parser.add_argument(
+        "--source",
+        choices=["edgar", "investegate"],
+        default="edgar",
+        help=(
+            "Discovery source to scan: 'edgar' (US, default - unchanged existing "
+            "behaviour) or 'investegate' (UK RNS wire). Each source has its own "
+            "scan_runs coverage, self-healing sweep, canary, and ops alarms."
+        ),
+    )
+    parser.add_argument(
+        "--market",
+        choices=["US", "UK"],
+        help="With --reclassify: limit the relabel pass to one market (default: all).",
+    )
     parser.add_argument(
         "--backfill-from",
         help=(

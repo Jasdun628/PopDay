@@ -11,6 +11,47 @@ from typing import Any
 
 DEFAULT_USER_AGENT = "PopDay/0.1 contact@example.com"
 
+# UK (Investegate) defaults - per-market where behaviour differs, shared where
+# it doesn't (hype_threshold, email settings). All overridable in config.json.
+DEFAULT_UK_INCLUDE_PHRASES = [
+    "capital markets day",
+    "capital markets event",
+    "investor day",
+    "investor seminar",
+    "analyst day",
+    "teach-in",
+    "capital markets update",
+    "cmd",  # matched on word boundaries only, never as a substring
+]
+DEFAULT_UK_EXCLUDE_PHRASES = [
+    # Known headline false positives: Investor Meet Company is a webcast
+    # platform whose name appears on routine results presentations, and a
+    # bare "investor presentation" headline is routine IR housekeeping.
+    "investor meet company",
+    "investor presentation",
+    "investor relations website",
+]
+# Routine RNS headline types that never count as pre-event hype disclosures
+# (the UK analogue of restricting US hype to voluntary 8-K items 2.02/7.01/
+# 8.01). Provisional list - matched case-insensitively as substrings.
+DEFAULT_UK_ROUTINE_HEADLINES = [
+    "transaction in own shares",
+    "director/pdmr shareholding",
+    "holding(s) in company",
+    "total voting rights",
+    "block listing",
+    "result of agm",
+    "result of gm",
+    "notice of agm",
+    "agm statement",  # debatable; excluded for v1
+    "second price monitoring extn",
+    "price monitoring extension",
+    "form 8",
+    "rule 8",
+    "annual financial report on nsm",
+    "doc re.",
+]
+
 DEFAULT_COMPANY_WEBSITES = {
     "Barnes & Noble Education, Inc.": "https://bned.com/",
     "Climb Global Solutions, Inc.": "https://www.climbglobalsolutions.com/",
@@ -52,6 +93,15 @@ class Config:
     unsubscribe_base_url: str | None
     unsubscribe_secret: str | None
     company_websites: dict[str, str]
+    # UK market extension (per-market config; hype_threshold/email are shared)
+    uk_user_agent: str
+    uk_request_delay_seconds: float
+    uk_include_phrases: list[str]
+    uk_exclude_phrases: list[str]
+    uk_routine_headlines: list[str]
+    # When set (PA production), every real scan regenerates this status JSON
+    # so the front door's freshness clock tracks scans, not deploys.
+    status_json_path: str
 
     @property
     def email_configured(self) -> bool:
@@ -118,13 +168,22 @@ def _company_websites(settings: dict[str, Any]) -> dict[str, str]:
     return websites
 
 
+def _phrase_list(settings: dict[str, Any], key: str, default: list[str]) -> list[str]:
+    configured = settings.get(key)
+    if not isinstance(configured, list):
+        return list(default)
+    phrases = [str(item).strip().lower() for item in configured if str(item).strip()]
+    return phrases or list(default)
+
+
 def load_config(path: str | None = None) -> Config:
     settings = _read_json(path)
+    sec_user_agent = str(
+        _pick(settings, "sec_user_agent", "POPDAY_SEC_USER_AGENT", DEFAULT_USER_AGENT)
+    )
     return Config(
         db_path=str(_pick(settings, "db_path", "POPDAY_DB_PATH", "popday.sqlite3")),
-        sec_user_agent=str(
-            _pick(settings, "sec_user_agent", "POPDAY_SEC_USER_AGENT", DEFAULT_USER_AGENT)
-        ),
+        sec_user_agent=sec_user_agent,
         smtp_host=_pick(settings, "smtp_host", "POPDAY_SMTP_HOST"),
         smtp_port=int(_pick(settings, "smtp_port", "POPDAY_SMTP_PORT", 587)),
         smtp_username=_pick(settings, "smtp_username", "POPDAY_SMTP_USERNAME"),
@@ -150,4 +209,18 @@ def load_config(path: str | None = None) -> Config:
         unsubscribe_base_url=_pick(settings, "unsubscribe_base_url", "POPDAY_UNSUBSCRIBE_BASE_URL"),
         unsubscribe_secret=_pick(settings, "unsubscribe_secret", "POPDAY_UNSUBSCRIBE_SECRET"),
         company_websites=_company_websites(settings),
+        uk_user_agent=str(
+            _pick(settings, "uk_user_agent", "POPDAY_UK_USER_AGENT", sec_user_agent)
+        ),
+        uk_request_delay_seconds=float(
+            _pick(settings, "uk_request_delay_seconds", "POPDAY_UK_REQUEST_DELAY_SECONDS", 2.0)
+        ),
+        uk_include_phrases=_phrase_list(settings, "uk_include_phrases", DEFAULT_UK_INCLUDE_PHRASES),
+        uk_exclude_phrases=_phrase_list(settings, "uk_exclude_phrases", DEFAULT_UK_EXCLUDE_PHRASES),
+        uk_routine_headlines=_phrase_list(
+            settings, "uk_routine_headlines", DEFAULT_UK_ROUTINE_HEADLINES
+        ),
+        status_json_path=str(
+            _pick(settings, "status_json_path", "POPDAY_STATUS_JSON_PATH", "") or ""
+        ),
     )
