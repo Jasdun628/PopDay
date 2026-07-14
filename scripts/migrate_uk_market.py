@@ -25,7 +25,7 @@ import argparse
 import shutil
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -106,7 +106,7 @@ def main() -> int:
 
     backup_dir = Path(args.backup_dir) if args.backup_dir else db_path.parent / "backups"
     backup_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     backup_path = backup_dir / f"{db_path.name}.{stamp}.pre-uk-migration.bak"
     shutil.copy2(db_path, backup_path)
     print(f"Backup written: {backup_path}")
