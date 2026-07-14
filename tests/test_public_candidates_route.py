@@ -181,8 +181,8 @@ class PublicCandidatesRouteTests(unittest.TestCase):
 
             self.assertEqual(response.status_code, 200)
             self.assertNotIn("<th>Email</th>", html)
-            self.assertLess(html.find("<th>Company</th>"), html.find("<th>Evidence</th>"))
-            self.assertLess(html.find("<th>Evidence</th>"), html.find("Event Date"))
+            self.assertLess(html.find("<th>Company</th>"), html.find(">Evidence</span>"))
+            self.assertLess(html.find(">Evidence</span>"), html.find("Event Date"))
             self.assertLess(html.find("Exhibit 99.1"), html.find("15th Sept 2026"))
             self.assertLess(html.find("15th Sept 2026"), html.find('<td class="secondary-cell">EDGAR</td>'))
 

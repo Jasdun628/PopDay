@@ -8,10 +8,10 @@
   <thead>
     <tr>
       <th>Company</th>
-      <th>Evidence</th>
+      <th><span class="tip-head" data-tip="Direct link to the SEC filing or press release that first confirmed this event - the paper trail behind the detection.">Evidence</span></th>
       <th>
         <span class="sortable-head">
-          Event Date
+          <span class="tip-head" data-tip="When the Investor Day, Analyst Day, or Capital Markets Day itself is scheduled to happen, or already happened.">Event Date</span>
           <span class="sort-controls">
             <a class="sort-link {% if announcement_sort == 'event' and announcement_direction == 'desc' %}sort-active{% endif %}"
                aria-label="Sort event date newest first"
@@ -24,7 +24,7 @@
       </th>
       <th>
         <span class="sortable-head">
-          Announced / Filed
+          <span class="tip-head" data-tip="When the SEC filing that revealed this event was submitted - the paper trail's timestamp, not the event date itself.">Announced / Filed</span>
           <span class="sort-controls">
             <a class="sort-link {% if announcement_sort == 'filed' and announcement_direction == 'desc' %}sort-active{% endif %}"
                aria-label="Sort filed date newest first"
@@ -37,7 +37,7 @@
       </th>
       <th>
         <span class="sortable-head">
-          Hype Count
+          <span class="tip-head" data-tip="How many qualifying voluntary 8-Ks (items 2.02, 7.01, or 8.01) this company filed before the event - the paper trail of investor-facing disclosures PopDay watches for a hype build-up.">Hype Count</span>
           <span class="sort-controls">
             <a class="sort-link {% if announcement_sort == 'hype' and announcement_direction == 'desc' %}sort-active{% endif %}"
                aria-label="Sort hype count highest first"
@@ -48,7 +48,7 @@
           </span>
         </span>
       </th>
-      <th>Matched Phrase</th><th>Source Type</th>
+      <th><span class="tip-head" data-tip="The exact wording in the filing that told PopDay this was an Investor Day announcement, not something else.">Matched Phrase</span></th><th><span class="tip-head" data-tip="Where PopDay found this - an SEC filing (EDGAR) or another kind of public source.">Source Type</span></th>
     </tr>
   </thead>
   <tbody>
@@ -88,17 +88,17 @@
     <thead>
       <tr>
         <th>{{ research_sort_header("Company", "company") }}</th>
-        <th>Ticker</th>
-        <th>Event type</th>
-        <th>{{ research_sort_header("AD date", "ad") }}</th>
-        <th>{{ research_sort_header("ID date", "id") }}</th>
-        <th>{{ research_sort_header("Days AD-ID", "days") }}</th>
-        <th>{{ research_sort_header("Raw Hype Count", "raw") }}</th>
-        <th>{{ research_sort_header("Investor Comms Count", "investor_comms") }}</th>
-        <th>8-K 7.01 Count</th>
-        <th>8-K 8.01 Count</th>
-        <th>Latest filing AD-ID</th>
-        <th>Source link</th>
+        <th><span class="tip-head" data-tip="The stock's trading symbol, where PopDay has been able to identify one.">Ticker</span></th>
+        <th><span class="tip-head" data-tip="What kind of event this is - Investor Day, Analyst Day, or similar.">Event type</span></th>
+        <th>{{ research_sort_header("AD date", "ad", tip="Announcement Date - when the SEC filing about this event first became public.") }}</th>
+        <th>{{ research_sort_header("ID date", "id", tip="Investor Day date - when the event itself is scheduled to happen, or happened.") }}</th>
+        <th>{{ research_sort_header("Days AD-ID", "days", tip="How many days sit between the announcement and the event itself - the run-up window PopDay watches for hype filings.") }}</th>
+        <th>{{ research_sort_header("Raw Hype Count", "raw", tip="Reserved for a future count of hype signals. Not populated yet, so this always shows unknown for now.") }}</th>
+        <th>{{ research_sort_header("Investor Comms Count", "investor_comms", tip="How many qualifying voluntary 8-Ks (items 2.02, 7.01, or 8.01) PopDay has found for this company by checking SEC's own filing feed directly - kept fresh independently of the original detection.") }}</th>
+        <th><span class="tip-head" data-tip="How many of those qualifying filings were Item 7.01 (Regulation FD Disclosure) - a company sharing material information outside a formal earnings release.">8-K 7.01 Count</span></th>
+        <th><span class="tip-head" data-tip="How many of those qualifying filings were Item 8.01 (Other Events) - a catch-all disclosure item companies use for material news that doesn't fit a more specific 8-K item.">8-K 8.01 Count</span></th>
+        <th><span class="tip-head" data-tip="The most recent qualifying filing PopDay found in the announcement-to-event window, with its date, form type, and item codes.">Latest filing AD-ID</span></th>
+        <th><span class="tip-head" data-tip="Link back to the original filing or press release PopDay used to detect this event.">Source link</span></th>
       </tr>
     </thead>
     <tbody>
@@ -658,9 +658,9 @@
   </div>
   {% endif %}
 
-  {% macro research_sort_header(label, key) -%}
+  {% macro research_sort_header(label, key, tip=None) -%}
     <span class="sortable-head">
-      {{ label }}
+      {% if tip %}<span class="tip-head" data-tip="{{ tip }}">{{ label }}</span>{% else %}{{ label }}{% endif %}
       <span class="sort-controls">
         <a class="sort-link {% if research_sort == key and research_direction == 'desc' %}sort-active{% endif %}"
            aria-label="Sort {{ label }} descending"
