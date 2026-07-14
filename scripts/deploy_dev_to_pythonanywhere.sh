@@ -117,7 +117,7 @@ ssh "$PYTHONANYWHERE_SSH_TARGET" "cd '$PYTHONANYWHERE_APP_DIR' && python3 -m py_
 # — a price-feed blip should not block deploying a fix.
 ssh "$PYTHONANYWHERE_SSH_TARGET" "cd '$PYTHONANYWHERE_APP_DIR' && python3 scripts/refresh_price_reaction.py --db-path '$PYTHONANYWHERE_DB_PATH'" \
   || echo "WARNING: PythonAnywhere Price Reaction refresh failed; deploying existing cache." >&2
-ssh "$PYTHONANYWHERE_SSH_TARGET" "cd '$PYTHONANYWHERE_APP_DIR' && python3 scripts/generate_status_json.py --output '$PYTHONANYWHERE_APP_DIR/status/popday_status.json' --source-repo '$PYTHONANYWHERE_APP_DIR' --db-path '$PYTHONANYWHERE_DB_PATH' --runtime-dir '$PYTHONANYWHERE_APP_DIR'"
+ssh "$PYTHONANYWHERE_SSH_TARGET" "cd '$PYTHONANYWHERE_APP_DIR' && python3 scripts/generate_status_json.py --output '$PYTHONANYWHERE_APP_DIR/status/popday_status.json' --source-repo '$PYTHONANYWHERE_APP_DIR' --db-path '$PYTHONANYWHERE_DB_PATH' --runtime-dir '$PYTHONANYWHERE_APP_DIR' --backup-root '$PYTHONANYWHERE_APP_DIR/backups'"
 
 run_live_verifiers_after_reload
 

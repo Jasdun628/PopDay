@@ -7,6 +7,7 @@ import argparse
 import datetime as dt
 import json
 import os
+import re
 import sqlite3
 import socket
 import subprocess
@@ -17,6 +18,7 @@ from typing import Any
 DEFAULT_RUNTIME_DIR = Path("/Users/jasondunne/PopDayRuntime")
 DEFAULT_BACKUP_ROOT = Path("/Users/jasondunne/PopDayBackups")
 DEFAULT_OUTPUT = DEFAULT_RUNTIME_DIR / "status" / "popday_status.json"
+_PA_BACKUP_FILE_RE = re.compile(r"^popday\.sqlite3\.(\d{8}T\d{6}Z)\.bak$")
 
 # Output-based canary thresholds. Process checks (did a scan run?) miss the
 # failure where a scan runs green but silently finds nothing — the shape of the
@@ -428,15 +430,48 @@ def _database_status(db_path: Path, now: dt.datetime) -> dict[str, Any]:
 
 
 def _backup_status(backup_root: Path) -> dict[str, Any]:
-    backups = sorted(path for path in backup_root.glob("*") if path.is_dir())
-    latest = backups[-1] if backups else None
+    """Summarize backups under backup_root, for display only.
+
+    Two conventions exist and this reads either: the Mac Mini's
+    backup_popday_runtime.py writes a timestamped subdirectory per backup
+    (with popday.sqlite3 and manifest.txt inside); PythonAnywhere's deploy
+    script instead writes a flat popday.sqlite3.<timestamp>.bak file per
+    backup directly under backup_root. Neither convention is changed here -
+    this only fixes how existing backups of either shape are counted and
+    reported.
+    """
+    dir_backups = sorted(path for path in backup_root.glob("*") if path.is_dir())
+    if dir_backups:
+        latest = dir_backups[-1]
+        return {
+            "backup_root": str(backup_root),
+            "retained_backups": len(dir_backups),
+            "latest_backup_at": latest.name,
+            "latest_backup_path": str(latest),
+            "live_database_backed_up": (latest / "popday.sqlite3").exists(),
+            "latest_manifest_path": str(latest / "manifest.txt") if (latest / "manifest.txt").exists() else None,
+        }
+
+    file_backups = sorted(path for path in backup_root.glob("popday.sqlite3.*.bak") if path.is_file())
+    if file_backups:
+        latest = file_backups[-1]
+        match = _PA_BACKUP_FILE_RE.match(latest.name)
+        return {
+            "backup_root": str(backup_root),
+            "retained_backups": len(file_backups),
+            "latest_backup_at": match.group(1) if match else latest.name,
+            "latest_backup_path": str(latest),
+            "live_database_backed_up": True,
+            "latest_manifest_path": None,
+        }
+
     return {
         "backup_root": str(backup_root),
-        "retained_backups": len(backups),
-        "latest_backup_at": latest.name if latest else None,
-        "latest_backup_path": str(latest) if latest else None,
-        "live_database_backed_up": bool(latest and (latest / "popday.sqlite3").exists()),
-        "latest_manifest_path": str(latest / "manifest.txt") if latest and (latest / "manifest.txt").exists() else None,
+        "retained_backups": 0,
+        "latest_backup_at": None,
+        "latest_backup_path": None,
+        "live_database_backed_up": False,
+        "latest_manifest_path": None,
     }
 
 

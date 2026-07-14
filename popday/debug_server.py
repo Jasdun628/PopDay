@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import html
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -519,17 +519,18 @@ def _friendly_dt(value: datetime) -> str:
 
 
 def _next_scheduled_run(now: datetime | None = None) -> datetime:
-    now = now or datetime.now().astimezone()
-    schedule = [(4, 30), (8, 0)]
-    for day_offset in range(8):
-        candidate_day = now + timedelta(days=day_offset)
-        if candidate_day.weekday() not in {1, 2, 3, 4, 5}:
-            continue
+    # PythonAnywhere's schedule API has no weekday selector, so (unlike the
+    # old Mac Mini launchd job, which skipped Sun/Mon) these tasks fire every
+    # day at 04:00 and 07:00 UTC.
+    now_utc = (now.astimezone(timezone.utc) if now else datetime.now(timezone.utc))
+    schedule = [(4, 0), (7, 0)]
+    for day_offset in range(4):
+        candidate_day = now_utc + timedelta(days=day_offset)
         for hour, minute in schedule:
             candidate = candidate_day.replace(hour=hour, minute=minute, second=0, microsecond=0)
-            if candidate > now:
-                return candidate
-    return now
+            if candidate > now_utc:
+                return candidate.astimezone()
+    return now_utc.astimezone()
 
 
 def _friendly_date_string(value: str) -> str:
@@ -622,7 +623,7 @@ def _help() -> str:
     cards = [
         (
             "Schedule",
-            "launchd runs PopDay Tuesday-Saturday at 04:30 and 08:00, scanning the previous SEC business day.",
+            "PythonAnywhere scheduled tasks run PopDay daily at 04:00 and 07:00 UTC, scanning the previous SEC business day.",
         ),
         (
             "Source",
