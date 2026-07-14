@@ -691,7 +691,7 @@
       </div>
       <div class="health-grid">
         <div class="health-item">
-          <div class="summary-label">Last Mac Mini scan</div>
+          <div class="summary-label">Last PopDay scan</div>
           <div class="summary-value">{{ status.latest_scan_started_at_display }}</div>
           <div class="summary-note">Filing date: {{ status.filing_date_scanned or "unknown" }}</div>
         </div>
@@ -732,7 +732,7 @@
         <div class="health-item">
           <div class="summary-label">Next scan</div>
           <div class="summary-value">{{ status.next_expected_scan_display|replace("UTC", "GMT") }}</div>
-          <div class="summary-note">Mac Mini launchd schedule.</div>
+          <div class="summary-note">PythonAnywhere scheduled tasks, daily.</div>
         </div>
         <div class="health-item">
           <div class="summary-label">Backup status</div>

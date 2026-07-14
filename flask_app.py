@@ -317,7 +317,7 @@ def _stale_front_door_summary(updated_at: datetime, *, broken: bool) -> str:
     return (
         f"{level}: PopDay is not current. "
         f"The browser is showing data last refreshed {age}; "
-        "Codex needs to refresh the Mac Mini to PythonAnywhere copy."
+        "Codex needs to refresh PopDay's status."
     )
 
 
@@ -337,10 +337,10 @@ def _fallback_status(message: str) -> dict:
         "health": {"level": "BROKEN", "summary": message},
         "public_level": "BROKEN",
         "level_class": "broken",
-        "architecture_note": "Scanner runs on Mac Mini. This page shows last synced Mac Mini status.",
+        "architecture_note": "Scanner runs on PythonAnywhere scheduled tasks.",
         "generated_at_display": "unknown",
         "status_file_updated_at_display": "missing",
-        "status_file_age_note": "No synced Mac Mini status file has been received.",
+        "status_file_age_note": "No PopDay status file was found.",
         "latest_scan_started_at_display": "unknown",
         "next_expected_scan_display": _next_scheduled_run(),
         "filing_date_scanned": None,
@@ -369,18 +369,18 @@ def _fallback_status(message: str) -> dict:
 def _load_public_status() -> dict:
     path = _status_path()
     if not path.exists():
-        return _fallback_status(f"BROKEN: no synced Mac Mini status file found at {path}.")
+        return _fallback_status(f"BROKEN: no PopDay status file found at {path}.")
     try:
         status = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        return _fallback_status(f"BROKEN: synced Mac Mini status file could not be read: {exc}.")
+        return _fallback_status(f"BROKEN: PopDay status file could not be read: {exc}.")
 
     status.setdefault("health", {})
     status["health"].setdefault("level", "UNKNOWN")
     status["health"].setdefault("summary", "Status file loaded, but no health summary was provided.")
     status.setdefault(
         "architecture_note",
-        "Scanner runs on Mac Mini. This page shows last synced Mac Mini status.",
+        "Scanner runs on PythonAnywhere scheduled tasks.",
     )
     status.setdefault("database_counts", {})
 
@@ -737,21 +737,24 @@ def _is_upcoming_announcement(item: dict, today: date | None = None) -> bool:
 
 
 def _next_scheduled_run() -> str:
-    now = datetime.now().astimezone()
-    for day_offset in range(8):
-        day = now + timedelta(days=day_offset)
-        if day.weekday() not in {1, 2, 3, 4, 5}:
-            continue
-        for hour, minute in [(4, 30), (8, 0)]:
+    # PythonAnywhere's schedule API has no weekday selector, so (unlike the
+    # old Mac Mini launchd job, which skipped Sun/Mon) these tasks fire every
+    # day at 04:00 and 07:00 UTC.
+    now_utc = datetime.now(timezone.utc)
+    for day_offset in range(4):
+        day = now_utc + timedelta(days=day_offset)
+        for hour, minute in [(4, 0), (7, 0)]:
             candidate = day.replace(hour=hour, minute=minute, second=0, microsecond=0)
-            if candidate > now:
-                d = candidate.day
+            if candidate > now_utc:
+                local = candidate.astimezone()
+                d = local.day
                 return (
-                    f"{_abbrev_weekday(candidate)} {d}{_day_suffix(d)} "
-                    f"{_abbrev_month_year(candidate)} {candidate.strftime('%H:%M %Z')}"
+                    f"{_abbrev_weekday(local)} {d}{_day_suffix(d)} "
+                    f"{_abbrev_month_year(local)} {local.strftime('%H:%M %Z')}"
                 )
-    d = now.day
-    return f"{_abbrev_weekday(now)} {d}{_day_suffix(d)} {_abbrev_month_year(now)} {now.strftime('%H:%M %Z')}"
+    local = now_utc.astimezone()
+    d = local.day
+    return f"{_abbrev_weekday(local)} {d}{_day_suffix(d)} {_abbrev_month_year(local)} {local.strftime('%H:%M %Z')}"
 
 
 def _launchd_health_rows_from_lines(lines: list[str]) -> list[dict]:
