@@ -93,23 +93,6 @@ def _assess_coverage(
     return {"level": "ok", "message": ""}
 
 
-def _no_scan_day_allowance_hours(last: dt.datetime, now: dt.datetime) -> int:
-    """Hours of extra staleness allowance for scheduled no-scan days.
-
-    PopDay's launchd schedule runs Tue-Sat only, so a Saturday-morning scan is
-    legitimately the newest one until Tuesday. Each Sunday or Monday inside
-    the gap stretches the staleness thresholds by 24h; without this the front
-    door went red every Monday on a perfectly healthy system.
-    """
-    allowance = 0
-    cursor = (last + dt.timedelta(days=1)).date()
-    while cursor <= now.date():
-        if cursor.weekday() in (6, 0):  # Sunday, Monday
-            allowance += 24
-        cursor += dt.timedelta(days=1)
-    return allowance
-
-
 def _utc_now() -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc)
 
@@ -513,9 +496,6 @@ def _health(
         error = (scan_health.get("last_run_error") or "").strip()
         last_success = _parse_iso(scan_health.get("last_success_utc"))
         success_age_h = (now - last_success).total_seconds() / 3600 if last_success else None
-        allowance_h = (
-            _no_scan_day_allowance_hours(last_success, now) if last_success else 0
-        )
 
         if run_status == "failed":
             detail = f" {error}" if error else ""
@@ -524,9 +504,9 @@ def _health(
             return {"level": "BROKEN", "summary": "BROKEN: no successful PopDay scan has ever been recorded."}
         if run_status == "running" and success_age_h is not None and success_age_h > 3:
             return {"level": "BROKEN", "summary": "BROKEN: a PopDay scan started but never finished."}
-        if success_age_h is not None and success_age_h > 50 + allowance_h:
+        if success_age_h is not None and success_age_h > 50:
             return {"level": "BROKEN", "summary": f"BROKEN: no successful PopDay scan in over {int(success_age_h)} hours."}
-        if success_age_h is not None and success_age_h > 26 + allowance_h:
+        if success_age_h is not None and success_age_h > 26:
             return {"level": "STALE", "summary": f"STALE: last successful PopDay scan was about {int(success_age_h)} hours ago."}
         # Output canary: a scan can run green yet silently find nothing.
         coverage = db_status.get("coverage_health") or {}
@@ -555,17 +535,16 @@ def _health(
         return {"level": "BROKEN", "summary": "BROKEN: latest scan time could not be parsed."}
 
     age_hours = (now - started).total_seconds() / 3600
-    log_allowance_h = _no_scan_day_allowance_hours(started, now)
     index_status = (latest_run.get("edgar_index_status") or "").strip().lower()
     err_size = err_log.stat().st_size if err_log.exists() else 0
 
-    if age_hours > 42 + log_allowance_h:
+    if age_hours > 42:
         return {"level": "BROKEN", "summary": "BROKEN: no successful PopDay scan in more than 42 hours."}
     if index_status == "error":
         return {"level": "BROKEN", "summary": "BROKEN: latest PopDay scan reported an EDGAR error."}
     if err_size > 0:
         return {"level": "BROKEN", "summary": "BROKEN: launchd error log is not empty."}
-    if age_hours > 18 + log_allowance_h:
+    if age_hours > 18:
         return {"level": "STALE", "summary": "STALE: latest PopDay scan is older than expected."}
     if "not yet" in index_status:
         return {"level": "STALE", "summary": "STALE: SEC EDGAR index was not yet available, but the scanner did not crash."}

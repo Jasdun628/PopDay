@@ -25,7 +25,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from popday.config import load_config
-from popday.coverage_gap import no_scan_day_allowance_hours
 from popday.db import Database
 from popday.emailer import send_ops_alert_email
 
@@ -60,13 +59,7 @@ def main() -> int:
         last_dt = None
 
     age_hours = (now - last_dt).total_seconds() / 3600 if last_dt else None
-    # Historical allowance from when the Mac Mini scanner ran Tue-Sat only;
-    # PA's scheduled tasks run daily (its schedule API has no weekday
-    # selector), so no day is actually skipped anymore. Left in place as
-    # harmless extra slack rather than a needed exemption.
-    threshold = STALE_HOURS + (
-        no_scan_day_allowance_hours(last_dt, now) if last_dt else 0
-    )
+    threshold = STALE_HOURS
     is_broken = age_hours is None or age_hours > threshold
 
     if is_broken:
