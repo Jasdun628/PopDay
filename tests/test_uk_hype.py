@@ -78,10 +78,35 @@ class UkHypeTests(unittest.TestCase):
         updated = update_uk_hype_from_index(self.config, self.db, index_day_two, date(2026, 7, 15))
         self.assertEqual(updated[0]["qualifying_count"], 2)
 
-    def test_outside_window_not_counted(self):
-        index = [_index_row("9200001", "GLEN", "Production Report")]
-        # After the event date: nothing counted, no crash.
-        updated = update_uk_hype_from_index(self.config, self.db, index, date(2026, 7, 25))
+    def test_post_event_finalises_label_without_counting(self):
+        # In-window observation first: status 'building' while the event is upcoming.
+        update_uk_hype_from_index(
+            self.config,
+            self.db,
+            [_index_row("9200001", "GLEN", "Production Report")],
+            date(2026, 7, 14),
+        )
+        # One observation under the default threshold (2): quiet while upcoming.
+        self.assertEqual(self.db.hype_tracking_for_candidate(501)["hype_status"], "quiet")
+        # After the event (inside the 7-day tail): new announcements are NOT
+        # counted, but the label finalises quiet -> non_hyped automatically.
+        updated = update_uk_hype_from_index(
+            self.config,
+            self.db,
+            [_index_row("9200099", "GLEN", "Another Announcement")],
+            date(2026, 7, 25),
+        )
+        self.assertEqual(len(updated), 1)
+        self.assertEqual(updated[0]["qualifying_count"], 1, "post-event rows must not be counted")
+        self.assertEqual(self.db.hype_tracking_for_candidate(501)["hype_status"], "non_hyped")
+
+    def test_before_announcement_not_touched(self):
+        updated = update_uk_hype_from_index(
+            self.config,
+            self.db,
+            [_index_row("9200001", "GLEN", "Production Report")],
+            date(2026, 6, 30),
+        )
         self.assertEqual(updated, [])
 
     def test_reclassify_preserves_market_and_filters(self):

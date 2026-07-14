@@ -158,6 +158,13 @@ def capture_uk_prices(
                 summary["error"] = "no price data returned"
                 results.append(summary)
                 continue
+            if not currency:
+                # Without the currency field the GBp/GBP distinction is
+                # unknowable - storing raw pence labelled 'unknown' would
+                # poison the table with 100x errors. Skip; retried next run.
+                summary["error"] = "currency metadata unavailable"
+                results.append(summary)
+                continue
             for close_date, raw_close in closes:
                 day = date.fromisoformat(close_date)
                 if not (item["window_start"] <= day <= item["window_end"]):

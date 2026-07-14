@@ -332,11 +332,17 @@ def update_uk_hype_from_index(
         event_date = _parse_iso_date(str(event["event_date"] or ""))
         if not announcement_date or not event_date:
             continue
-        if not (announcement_date < run_date <= event_date):
+        # New observations only count inside the paper's window
+        # (announcement, event]; after the event we still recompute so the
+        # label finalises building->hyped / quiet->non_hyped automatically
+        # (the US watcher does the same for ~5 days post-event) - the SQL
+        # window (event >= run_date - 7d) bounds how long that continues.
+        counting = announcement_date < run_date <= event_date
+        if run_date <= announcement_date:
             continue
 
         observations = []
-        for row in index_rows:
+        for row in index_rows if counting else []:
             if str(getattr(row, "company_identifier", "") or "").strip() != ticker:
                 continue
             if str(getattr(row, "dedup_key", "")) == str(event["accession_number"]):

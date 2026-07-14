@@ -244,10 +244,15 @@ class InvestegateClient:
             )
         return rows
 
-    def index_for_date(self, run_date: date, *, max_pages: int = 4) -> list[Announcement]:
+    def index_for_date(self, run_date: date, *, max_pages: int = 6) -> list[Announcement]:
         """Every announcement row for one UK calendar day (no headline
         filtering, no detail fetch) - the full day's index, deduplicated on
-        the numeric ID. Walks pages until a short page signals the end."""
+        the numeric ID. Walks pages until a short page signals the end.
+
+        max_pages=6 (1800 rows) is ~2x the busiest observed day (~700-900
+        rows); if a day ever exceeds it, the truncation is printed rather
+        than silent so a quiet-looking scan can't hide missing coverage.
+        """
         seen: dict[str, Announcement] = {}
         for page in range(1, max_pages + 1):
             html = self.get_html(self._day_url(run_date, page))
@@ -256,6 +261,11 @@ class InvestegateClient:
                 seen.setdefault(row.dedup_key, row)
             if len(rows) < 300:
                 break
+        else:
+            print(
+                f"WARNING - Investegate index for {run_date.isoformat()} still full at "
+                f"page {max_pages}; the day may be truncated ({len(seen)} rows collected)."
+            )
         self.stats.sources_used.append("index")
         return list(seen.values())
 
