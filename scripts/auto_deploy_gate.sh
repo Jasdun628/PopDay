@@ -27,6 +27,21 @@ if [[ -n "$(git status --porcelain)" ]]; then
   exit 0
 fi
 
+# Sync with GitHub first. macOS TCC blocks launchd jobs from ~/Documents, so
+# the scheduled job runs from a dedicated clone outside Documents and GitHub
+# is the hand-off point: only committed AND pushed code ever deploys, and PA
+# can never silently get ahead of GitHub. Fast-forward only - this checkout
+# is never hand-edited, and a non-ff state means something needs a human.
+current_branch="$(git rev-parse --abbrev-ref HEAD)"
+if ! git fetch "$GIT_REMOTE"; then
+  notify --broken "Automated deploy skipped: 'git fetch $GIT_REMOTE' failed. Nothing was deployed. Check GitHub connectivity/credentials on the Mac Mini."
+  exit 1
+fi
+if ! git merge --ff-only "$GIT_REMOTE/$current_branch"; then
+  notify --broken "Automated deploy skipped: local branch $current_branch has diverged from $GIT_REMOTE/$current_branch and cannot fast-forward. Reconcile manually; nothing was deployed."
+  exit 1
+fi
+
 current_head="$(git rev-parse HEAD)"
 last_deployed="$(cat "$MARKER_FILE" 2>/dev/null || echo "")"
 
@@ -42,7 +57,6 @@ if ! "$PYTHON_BIN" -m pytest tests/ -q; then
 fi
 
 echo "Tests passed. Pushing to GitHub..."
-current_branch="$(git rev-parse --abbrev-ref HEAD)"
 if ! git push "$GIT_REMOTE" "$current_branch"; then
   notify --broken "Automated deploy skipped: 'git push $GIT_REMOTE $current_branch' failed for commit $current_head. Nothing was deployed. Check GitHub connectivity/credentials on the Mac Mini."
   exit 1
