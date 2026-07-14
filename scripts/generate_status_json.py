@@ -725,6 +725,11 @@ def build_status(args: argparse.Namespace) -> dict[str, Any]:
         "database_counts": db_status["counts"],
         "scan_health": db_status.get("scan_health"),
         "coverage_health": db_status.get("coverage_health"),
+        # Per-source health (edgar/investegate) - flask_app.py's per-source
+        # banner reads this; without it, a UK-only outage silently has no
+        # way to surface on the live site regardless of the logic that
+        # consumes it.
+        "sources": db_status.get("sources") or {},
         "last_backup_at": backup["latest_backup_at"],
         "last_backup_path": backup["latest_backup_path"],
         "live_database_backed_up": backup["live_database_backed_up"],

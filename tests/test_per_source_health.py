@@ -7,7 +7,9 @@ pin the per-source plumbing in scripts/generate_status_json.py.
 from __future__ import annotations
 
 import importlib.util
+import os
 import sqlite3
+import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
@@ -147,6 +149,65 @@ class PerSourceScanHealthTests(unittest.TestCase):
         )
         self.assertEqual(verdict["level"], "BROKEN")
         self.assertIn("UK (Investegate)", verdict["summary"])
+
+
+class BuildStatusTopLevelOutputTests(unittest.TestCase):
+    """Regression test: build_status()'s _database_status() computes a
+    per-source block, but it must actually be copied into the top-level dict
+    that gets written to status.json - an internal-only computation is
+    invisible to flask_app.py's per-source banner (caught live 2026-07-14:
+    the first deploy silently wrote 'sources': {} to the real status file)."""
+
+    def setUp(self):
+        fd, self.db_path = tempfile.mkstemp(suffix=".sqlite3")
+        os.close(fd)
+        con = sqlite3.connect(self.db_path)
+        con.executescript(
+            """
+            CREATE TABLE scan_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, run_date TEXT, started_utc TEXT,
+                finished_utc TEXT, status TEXT, discovery_source TEXT,
+                filings_seen INTEGER DEFAULT 0, filings_parsed INTEGER DEFAULT 0,
+                alerts_sent INTEGER DEFAULT 0, error TEXT,
+                efts_total_hits INTEGER DEFAULT 0, discovery_control TEXT DEFAULT '',
+                run_kind TEXT DEFAULT 'scheduled', source TEXT DEFAULT 'edgar'
+            );
+            CREATE TABLE processed_filings (accession_number TEXT PRIMARY KEY);
+            CREATE TABLE detections (id INTEGER PRIMARY KEY, status TEXT,
+                created_timestamp TEXT, market TEXT DEFAULT 'US');
+            CREATE TABLE known_announcements (id INTEGER PRIMARY KEY);
+            CREATE TABLE alert_recipients (email TEXT PRIMARY KEY, active INTEGER);
+            """
+        )
+        con.execute(
+            "INSERT INTO scan_runs (run_date, started_utc, finished_utc, status, "
+            "discovery_source, source) VALUES ('2026-07-14', '2026-07-14T04:00:00+00:00', "
+            "'2026-07-14T04:01:00+00:00', 'ok', 'efts', 'edgar')"
+        )
+        con.execute(
+            "INSERT INTO scan_runs (run_date, started_utc, finished_utc, status, "
+            "discovery_source, source) VALUES ('2026-07-14', '2026-07-14T05:30:00+00:00', "
+            "'2026-07-14T05:31:00+00:00', 'ok', 'investegate-index', 'investegate')"
+        )
+        con.commit()
+        con.close()
+
+    def tearDown(self):
+        os.unlink(self.db_path)
+
+    def test_sources_block_present_in_final_output(self):
+        args = gsj.build_parser().parse_args(
+            ["--db-path", self.db_path, "--runtime-dir", tempfile.gettempdir()]
+        )
+        status = gsj.build_status(args)
+        self.assertIn("sources", status)
+        self.assertEqual(set(status["sources"].keys()), {"edgar", "investegate"})
+        self.assertEqual(
+            status["sources"]["edgar"]["scan_health"]["last_run_status"], "ok"
+        )
+        self.assertEqual(
+            status["sources"]["investegate"]["scan_health"]["last_run_status"], "ok"
+        )
 
 
 if __name__ == "__main__":
