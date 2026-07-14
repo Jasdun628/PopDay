@@ -1273,4 +1273,4 @@ def admin_candidate(detection_id):
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=5057, debug=True)
