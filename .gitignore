@@ -9,3 +9,6 @@ logs/
 backups/
 *.bak
 .last_deployed_commit
+CLAUDE_CODE_HANDOVER_*.md
+mac-mini-daily-active-project-summary-*.md
+next-day-handovers/
