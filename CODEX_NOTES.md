@@ -32,13 +32,19 @@ Back up first when risk justifies it, act, then report what changed.
 
 ## Source Of Truth
 
-The Mac Mini runtime database is the current operational dataset:
+As of the 14 Jul 2026 scan cutover, PythonAnywhere's database is the live
+operational dataset - PythonAnywhere's own scheduled tasks scan directly
+into it, so it is no longer a synced copy of anything:
 
 ```text
-/Users/jasondunne/PopDayRuntime/popday.sqlite3
+/home/Jasdun/popday/popday.sqlite3
 ```
 
-PythonAnywhere should receive a synced copy for the browser UI. Status JSON is derived from the same Mac Mini runtime state and must not become a competing data store.
+The Mac Mini's own `/Users/jasondunne/PopDayRuntime/popday.sqlite3` is now a
+frozen, dev-only local copy, refreshed only via a read-only pull during
+deploys - never written back. Status JSON is generated on PythonAnywhere
+itself from its own live database and must not become a competing data
+store.
 
 Actively search for duplicate sources of truth such as multiple databases, dashboards, runtime folders, status files, configuration files, deployment paths, or sync paths. Reduce to one source of truth whenever practical.
 

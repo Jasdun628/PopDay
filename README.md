@@ -81,9 +81,13 @@ python3 scripts/popday_ops.py check-pythonanywhere-db
 This keeps the Mac Mini PopDay repo as the source of truth while reducing
 approval prompts for routine live/runtime checks.
 
-The deploy script backs up the Mac Mini runtime database, syncs Mac Mini repo
-code into `/Users/jasondunne/PopDayRuntime`, copies code plus the runtime
-database to PythonAnywhere, reloads the PythonAnywhere app, then runs:
+The deploy script backs up the Mac Mini's local dev state (including a
+read-only pull of PythonAnywhere's live database, since PythonAnywhere holds
+the live scan data - see "Automatic Runs" below), syncs Mac Mini repo code
+into `/Users/jasondunne/PopDayRuntime` for local dev use, uploads code (never
+the database) to PythonAnywhere, refreshes the Price Reaction cache and
+status JSON on PythonAnywhere itself, reloads the PythonAnywhere app, then
+runs:
 
 ```bash
 python3 scripts/verify_live_popday.py
@@ -92,8 +96,8 @@ python3 scripts/verify_live_popday_buttons.py
 
 `verify_live_popday_buttons.py` is the public button smoke test. It opens the
 live public front door, follows the public navigation links for Investor Days,
-Research / Hype, Price Reaction, Scan Log, Schedule, System Health, and Help,
-and confirms the Email Alerts page redirects signed-out users to login.
+Research / Hype, Price Reaction, Scan Log, System Health, and Help, and
+confirms the Email Alerts page redirects signed-out users to login.
 
 After the scripts pass, use the in-app browser to click the affected live
 button/tab and inspect the visible result. A user-facing PopDay change is not
@@ -108,15 +112,19 @@ It shows rules, alert requirements, recent processed filings, and recent candida
 
 ## Automatic Runs
 
-The LaunchAgent template at `launchd/com.popday.alerts.plist` runs PopDay at
-04:30 and 08:00 Tuesday-Saturday, using the Mac's local time. It scans the
-previous SEC business day because SEC daily indexes often arrive late in the
-US evening, after same-day UK polling windows have already passed. It also runs
-once when loaded.
+As of the 14 Jul 2026 scan cutover, PopDay's scanner runs on PythonAnywhere,
+not the Mac Mini. Two PythonAnywhere scheduled tasks run
+`popday.py --date previous-business-day` at 04:00 and 07:00 UTC daily (the
+second run is a catch-up pass, since SEC daily indexes often arrive late in
+the US evening). PythonAnywhere's schedule API has no weekday selector, so
+unlike the old Mac Mini schedule these run every day, including weekends.
 
-The installed background runtime lives at `/Users/jasondunne/PopDayRuntime` so
-macOS privacy controls do not block a background process from reading files under
-`Documents`.
+The Mac Mini previously ran this via a launchd job
+(`~/Library/LaunchAgents/com.popday.alerts.plist`, Tue-Sat at 04:30/08:00
+local time) - that job still exists on disk but has been disabled
+(`launchctl unload`) and is not expected to run again. The Mac Mini's
+`/Users/jasondunne/PopDayRuntime` runtime directory is still used for local
+dev tooling, but is no longer scanned into.
 
 Logs are written to:
 
