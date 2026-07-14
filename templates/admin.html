@@ -135,7 +135,7 @@
 </div>
 {% endmacro %}
 
-{% macro price_reaction_table(rows, average, event_average) %}
+{% macro price_reaction_table(rows, average, event_average, show_event_average=true) %}
 <div class="table-scroll">
   <table class="price-reaction-table">
     <colgroup>
@@ -200,9 +200,13 @@
     </tbody>
     <tfoot>
       <tr class="total-row">
+        {% if show_event_average %}
         <td colspan="2" class="total-label {% if event_average.startswith('+') %}move-up{% elif event_average.startswith('-') %}move-down{% endif %}"><span class="tip-head" data-tip="Take every Investor Day Close move above and average them - how the stock typically fared on the big day itself. Only rows whose event has already happened count.">Average event-day return</span></td>
         <td class="number-cell {% if event_average.startswith('+') %}move-up{% elif event_average.startswith('-') %}move-down{% endif %}">{{ event_average }}</td>
         <td colspan="7" class="total-label {% if average.startswith('+') %}move-up{% elif average.startswith('-') %}move-down{% endif %}"><span class="tip-head" data-tip="The bottom line for this table: take every Interval Return above and average them - the typical total move a stock has made since its announcement.">Average interval return</span></td>
+        {% else %}
+        <td colspan="9" class="total-label {% if average.startswith('+') %}move-up{% elif average.startswith('-') %}move-down{% endif %}"><span class="tip-head" data-tip="The bottom line for this table: take every Interval Return above and average them - the typical total move a stock has made since its announcement.">Average interval return</span></td>
+        {% endif %}
         <td class="number-cell {% if average.startswith('+') %}move-up{% elif average.startswith('-') %}move-down{% endif %}">{{ average }}</td>
         <td colspan="2"></td>
       </tr>
@@ -861,7 +865,7 @@
     {% if price_reaction_rows %}
     <h3 class="split-heading split-heading-first">Upcoming</h3>
     {% if upcoming_price_reaction_rows %}
-      {{ price_reaction_table(upcoming_price_reaction_rows, upcoming_price_reaction_avg, upcoming_price_reaction_event_avg) }}
+      {{ price_reaction_table(upcoming_price_reaction_rows, upcoming_price_reaction_avg, upcoming_price_reaction_event_avg, show_event_average=false) }}
     {% else %}
       <div class="empty">No upcoming Price Reaction rows stored yet.</div>
     {% endif %}
