@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """Independent PopDay heartbeat check - run as its OWN PythonAnywhere
-scheduled task, separate from the Mac Mini scanner.
+scheduled task, separate from the scan tasks it watches.
 
-Why this has to live independently of the scanner: if the Mac Mini's launchd
-job stops firing at all (asleep, crashed, unplugged), the scanner process
-never runs and can never email anyone that it's dead - it doesn't exist to
-send the email. This script reads the synced database copy on PythonAnywhere
-(scripts/sync_status_to_pythonanywhere.sh already copies popday.sqlite3 there)
-and fires an ops alert purely from elapsed wall-clock time, independent of
-whether the Mac Mini is even switched on.
+As of the 14 Jul 2026 cutover, the scanner itself also runs on PythonAnywhere
+(scheduled tasks, not the Mac Mini's launchd job - that job is now disabled).
+This heartbeat still has to live independently of the scan tasks: if a scan
+task stops firing at all (disabled, PA outage, PA account CPU quota
+exhausted), the scanner process never runs and can never email anyone that
+it's dead - it doesn't exist to send the email. This script reads the
+database directly (same file the scan tasks write to, since both live on PA
+now) and fires an ops alert purely from elapsed wall-clock time, independent
+of whether the scan tasks are even enabled.
 
 Suggested PA scheduled task: run this hourly.
 """
@@ -58,8 +60,10 @@ def main() -> int:
         last_dt = None
 
     age_hours = (now - last_dt).total_seconds() / 3600 if last_dt else None
-    # The scanner runs Tue-Sat; Sunday and Monday stretch the threshold so a
-    # healthy weekend never alarms, while a missed Tuesday run still does.
+    # Historical allowance from when the Mac Mini scanner ran Tue-Sat only;
+    # PA's scheduled tasks run daily (its schedule API has no weekday
+    # selector), so no day is actually skipped anymore. Left in place as
+    # harmless extra slack rather than a needed exemption.
     threshold = STALE_HOURS + (
         no_scan_day_allowance_hours(last_dt, now) if last_dt else 0
     )
@@ -69,8 +73,8 @@ def main() -> int:
         detail = (
             f"No successful PopDay scan recorded in the last {threshold:.0f} hours "
             f"(last success: {last_ok['finished_utc'] if last_ok else 'never'}). "
-            "This heartbeat check runs independently on PythonAnywhere and does not "
-            "depend on the Mac Mini being awake - if the scheduler itself has died, "
+            "This heartbeat check runs as its own PythonAnywhere scheduled task and does "
+            "not depend on the scan tasks being enabled - if they've stopped firing, "
             "this is the only thing that will tell you."
         )
     else:
@@ -82,7 +86,7 @@ def main() -> int:
         send_ops_alert_email(
             config,
             "PopDay ALARM - scan heartbeat missing",
-            detail + "\n\nCheck the Mac Mini: is it awake, and is launchd running the job?",
+            detail + "\n\nCheck PythonAnywhere: are the 'Daily PopDay EDGAR scan' tasks enabled and running?",
         )
         print(f"Heartbeat alarm sent (new): {detail}")
     elif verdict == "still_failing":

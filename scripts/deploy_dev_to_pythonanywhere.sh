@@ -2,9 +2,7 @@
 set -euo pipefail
 
 SOURCE_REPO="${POPDAY_SOURCE_REPO:-/Users/jasondunne/Documents/PopDay}"
-RUNTIME_DB_PATH="${POPDAY_RUNTIME_DB_PATH:-/Users/jasondunne/PopDayRuntime/popday.sqlite3}"
 RUNTIME_DIR="${POPDAY_RUNTIME_DIR:-/Users/jasondunne/PopDayRuntime}"
-STATUS_PATH="${POPDAY_STATUS_PATH:-/Users/jasondunne/PopDayRuntime/status/popday_status.json}"
 PYTHONANYWHERE_SSH_TARGET="${PYTHONANYWHERE_SSH_TARGET:-Jasdun@ssh.pythonanywhere.com}"
 PYTHONANYWHERE_APP_DIR="${PYTHONANYWHERE_APP_DIR:-/home/Jasdun/popday}"
 PYTHONANYWHERE_WSGI_PATH="${PYTHONANYWHERE_WSGI_PATH:-/var/www/jasdun_pythonanywhere_com_wsgi.py}"
@@ -78,43 +76,48 @@ run_live_verifiers_after_reload() {
 
 cd "$SOURCE_REPO"
 
-if [[ ! -f "$RUNTIME_DB_PATH" ]]; then
-  echo "Missing Mac Mini PopDay runtime database: $RUNTIME_DB_PATH" >&2
-  exit 1
-fi
-
-"$PYTHON_BIN" scripts/backup_popday_runtime.py --reason "pre PythonAnywhere development deploy" --source-repo "$SOURCE_REPO"
+# Since the 14 Jul 2026 scan cutover, PythonAnywhere holds the LIVE database
+# (its own scheduled tasks scan directly into it) - see OPERATING_MODEL.md
+# Device Roles. This deploy script must never push the Mac Mini's local
+# runtime DB up to PA (it would silently destroy live scan data); it only
+# pulls a read-only copy of PA's DB down for the Mac Mini's own backup
+# retention. A missing/stale local runtime DB no longer blocks shipping a
+# code fix.
+backup_line="$("$PYTHON_BIN" scripts/backup_popday_runtime.py --reason "pre PythonAnywhere development deploy" --source-repo "$SOURCE_REPO")"
+echo "$backup_line"
+backup_dir="$(echo "$backup_line" | sed -n 's/^PopDay backup created: //p')"
 "$PYTHON_BIN" -m py_compile popday.py popday/*.py
 POPDAY_RUNTIME_DIR="$RUNTIME_DIR" PYTHON_BIN="$PYTHON_BIN" bash scripts/sync_runtime_code_from_repo.sh
-# Belt-and-braces: never ship a stale Price Reaction cache (it is also
-# refreshed automatically after every scan). Non-fatal — a price-feed blip
-# should not block deploying a fix.
-"$PYTHON_BIN" scripts/refresh_price_reaction.py --db-path "$RUNTIME_DB_PATH" \
-  || echo "WARNING: Price Reaction refresh failed; deploying existing cache." >&2
-"$PYTHON_BIN" scripts/generate_status_json.py \
-  --output "$STATUS_PATH" \
-  --source-repo "$SOURCE_REPO" \
-  --db-path "$RUNTIME_DB_PATH"
 
 deploy_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 ssh "$PYTHONANYWHERE_SSH_TARGET" "mkdir -p '$PYTHONANYWHERE_APP_DIR/templates' '$PYTHONANYWHERE_APP_DIR/scripts' '$PYTHONANYWHERE_APP_DIR/status' '$PYTHONANYWHERE_APP_DIR/backups' '$PYTHONANYWHERE_APP_DIR/popday'"
 ssh "$PYTHONANYWHERE_SSH_TARGET" "if [ -f '$PYTHONANYWHERE_DB_PATH' ]; then cp '$PYTHONANYWHERE_DB_PATH' '$PYTHONANYWHERE_APP_DIR/backups/popday.sqlite3.$deploy_stamp.bak'; fi"
+
+if [[ -n "$backup_dir" && -d "$backup_dir" ]]; then
+  scp "$PYTHONANYWHERE_SSH_TARGET:$PYTHONANYWHERE_DB_PATH" "$backup_dir/popday_pythonanywhere_live.sqlite3" \
+    || echo "WARNING: could not pull PythonAnywhere's live DB into the Mac Mini backup; continuing." >&2
+fi
 
 scp flask_app.py "$PYTHONANYWHERE_SSH_TARGET:$PYTHONANYWHERE_APP_DIR/flask_app.py"
 scp popday/*.py "$PYTHONANYWHERE_SSH_TARGET:$PYTHONANYWHERE_APP_DIR/popday/"
 scp templates/*.html "$PYTHONANYWHERE_SSH_TARGET:$PYTHONANYWHERE_APP_DIR/templates/"
 scp scripts/backup_popday_runtime.py "$PYTHONANYWHERE_SSH_TARGET:$PYTHONANYWHERE_APP_DIR/scripts/backup_popday_runtime.py"
 scp scripts/generate_status_json.py "$PYTHONANYWHERE_SSH_TARGET:$PYTHONANYWHERE_APP_DIR/scripts/generate_status_json.py"
-scp scripts/sync_status_to_pythonanywhere.sh "$PYTHONANYWHERE_SSH_TARGET:$PYTHONANYWHERE_APP_DIR/scripts/sync_status_to_pythonanywhere.sh"
+scp scripts/refresh_price_reaction.py "$PYTHONANYWHERE_SSH_TARGET:$PYTHONANYWHERE_APP_DIR/scripts/refresh_price_reaction.py"
 scp scripts/verify_live_popday.py "$PYTHONANYWHERE_SSH_TARGET:$PYTHONANYWHERE_APP_DIR/scripts/verify_live_popday.py"
 scp scripts/verify_live_popday_buttons.py "$PYTHONANYWHERE_SSH_TARGET:$PYTHONANYWHERE_APP_DIR/scripts/verify_live_popday_buttons.py"
 scp scripts/check_scan_heartbeat.py "$PYTHONANYWHERE_SSH_TARGET:$PYTHONANYWHERE_APP_DIR/scripts/check_scan_heartbeat.py"
-scp "$RUNTIME_DB_PATH" "$PYTHONANYWHERE_SSH_TARGET:$PYTHONANYWHERE_DB_PATH.tmp"
-ssh "$PYTHONANYWHERE_SSH_TARGET" "mv '$PYTHONANYWHERE_DB_PATH.tmp' '$PYTHONANYWHERE_DB_PATH'"
-scp "$STATUS_PATH" "$PYTHONANYWHERE_SSH_TARGET:$PYTHONANYWHERE_APP_DIR/status/popday_status.json"
 
 ssh "$PYTHONANYWHERE_SSH_TARGET" "rm -f '$PYTHONANYWHERE_APP_DIR/templates/status.html'"
-ssh "$PYTHONANYWHERE_SSH_TARGET" "cd '$PYTHONANYWHERE_APP_DIR' && python3 -m py_compile flask_app.py popday/*.py scripts/generate_status_json.py"
+ssh "$PYTHONANYWHERE_SSH_TARGET" "cd '$PYTHONANYWHERE_APP_DIR' && python3 -m py_compile flask_app.py popday/*.py scripts/generate_status_json.py scripts/refresh_price_reaction.py"
+
+# Belt-and-braces: never ship a stale Price Reaction cache or status JSON
+# (both are also refreshed automatically after every scan). These now run ON
+# PythonAnywhere against its own live DB, not the Mac Mini's copy. Non-fatal
+# — a price-feed blip should not block deploying a fix.
+ssh "$PYTHONANYWHERE_SSH_TARGET" "cd '$PYTHONANYWHERE_APP_DIR' && python3 scripts/refresh_price_reaction.py --db-path '$PYTHONANYWHERE_DB_PATH'" \
+  || echo "WARNING: PythonAnywhere Price Reaction refresh failed; deploying existing cache." >&2
+ssh "$PYTHONANYWHERE_SSH_TARGET" "cd '$PYTHONANYWHERE_APP_DIR' && python3 scripts/generate_status_json.py --output '$PYTHONANYWHERE_APP_DIR/status/popday_status.json' --source-repo '$PYTHONANYWHERE_APP_DIR' --db-path '$PYTHONANYWHERE_DB_PATH' --runtime-dir '$PYTHONANYWHERE_APP_DIR'"
 
 run_live_verifiers_after_reload
 

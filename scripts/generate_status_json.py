@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the small Mac Mini PopDay status JSON for PythonAnywhere."""
+"""Generate the small PopDay status JSON that drives the System Health tab."""
 
 from __future__ import annotations
 
@@ -140,10 +140,10 @@ def _read_tail(path: Path, line_count: int = 30) -> list[str]:
     return path.read_text(encoding="utf-8", errors="replace").splitlines()[-line_count:]
 
 
-def _launchd_rows(out_log: Path) -> list[dict[str, str]]:
+def _parse_launchd_lines(lines: list[str]) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
     current: dict[str, str] | None = None
-    for line in _read_tail(out_log, 600):
+    for line in lines:
         if line.startswith("PopDay launchd run started: "):
             if current:
                 rows.append(current)
@@ -168,6 +168,51 @@ def _launchd_rows(out_log: Path) -> list[dict[str, str]]:
     if current:
         rows.append(current)
     return rows
+
+
+def _launchd_rows(out_log: Path) -> list[dict[str, str]]:
+    return _parse_launchd_lines(_read_tail(out_log, 600))
+
+
+def _synth_log_lines_from_scan_runs(con: sqlite3.Connection, limit: int = 12) -> list[str]:
+    """Recreate the launchd-log text format from scan_runs rows, oldest first.
+
+    This used to be a tail of the Mac Mini's launchd stdout log. Now that
+    scans can run on PythonAnywhere (no such log file exists there), rebuild
+    the same lines from scan_runs - the actual source of truth for every
+    field this used to scrape out of text - so the format stays identical
+    and every downstream consumer (this script's own latest_run fields, and
+    flask_app.py's Scan Log tab) keeps working unchanged regardless of which
+    host ran the scan.
+    """
+    try:
+        rows = con.execute(
+            "SELECT started_utc, run_date, status, discovery_source, discovery_control, "
+            "filings_seen, filings_parsed, alerts_sent FROM scan_runs "
+            "WHERE run_kind != 'backfill' ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+    lines: list[str] = []
+    for row in reversed(rows):
+        if row["status"] == "failed" or row["discovery_control"] == "broken":
+            index_status = "error"
+        elif row["status"] in ("ok", "dry-run"):
+            index_status = "available"
+        else:
+            index_status = "unknown"
+        lines.append(f"PopDay launchd run started: {row['started_utc']}")
+        lines.append(f"Filing date scanned: {row['run_date'] or 'unknown'}")
+        lines.append(f"EDGAR index status: {index_status}")
+        parsed = row["filings_parsed"]
+        lines.append(f"Filings parsed: {parsed if parsed is not None else 0}")
+        # Total 8-K count isn't stored in scan_runs (only phrase-matching
+        # filings_seen is) - not available when reconstructing from the DB.
+        lines.append("8-K sanity count: n/a")
+        alerts = row["alerts_sent"]
+        lines.append(f"Qualifying PopDay alerts sent: {alerts if alerts is not None else 0}")
+    return lines
 
 
 def _count(con: sqlite3.Connection, table: str, where: str = "") -> int | None:
@@ -421,7 +466,7 @@ def _health(
     now: dt.datetime,
 ) -> dict[str, str]:
     if not db_status["exists"]:
-        return {"level": "BROKEN", "summary": "BROKEN: live Mac Mini database is missing."}
+        return {"level": "BROKEN", "summary": "BROKEN: live PopDay database is missing."}
 
     # Authoritative source of truth: the scan_runs dead-man's switch. A 403 or
     # any hard failure now records status='failed' with an error, so a blocked
@@ -439,15 +484,15 @@ def _health(
 
         if run_status == "failed":
             detail = f" {error}" if error else ""
-            return {"level": "BROKEN", "summary": f"BROKEN: the latest Mac Mini scan failed.{detail}"[:400]}
+            return {"level": "BROKEN", "summary": f"BROKEN: the latest PopDay scan failed.{detail}"[:400]}
         if last_success is None:
-            return {"level": "BROKEN", "summary": "BROKEN: no successful Mac Mini scan has ever been recorded."}
+            return {"level": "BROKEN", "summary": "BROKEN: no successful PopDay scan has ever been recorded."}
         if run_status == "running" and success_age_h is not None and success_age_h > 3:
-            return {"level": "BROKEN", "summary": "BROKEN: a Mac Mini scan started but never finished."}
+            return {"level": "BROKEN", "summary": "BROKEN: a PopDay scan started but never finished."}
         if success_age_h is not None and success_age_h > 50 + allowance_h:
-            return {"level": "BROKEN", "summary": f"BROKEN: no successful Mac Mini scan in over {int(success_age_h)} hours."}
+            return {"level": "BROKEN", "summary": f"BROKEN: no successful PopDay scan in over {int(success_age_h)} hours."}
         if success_age_h is not None and success_age_h > 26 + allowance_h:
-            return {"level": "STALE", "summary": f"STALE: last successful Mac Mini scan was about {int(success_age_h)} hours ago."}
+            return {"level": "STALE", "summary": f"STALE: last successful PopDay scan was about {int(success_age_h)} hours ago."}
         # Output canary: a scan can run green yet silently find nothing.
         coverage = db_status.get("coverage_health") or {}
         if coverage.get("level") == "broken":
@@ -457,18 +502,18 @@ def _health(
         if run_status in {"ok", "running", "dry-run"}:
             source = scan_health.get("last_run_source") or "?"
             if run_status == "running":
-                return {"level": "LIVE", "summary": "Healthy. A Mac Mini scan is currently running; the previous scan succeeded."}
+                return {"level": "LIVE", "summary": "Healthy. A PopDay scan is currently running; the previous scan succeeded."}
             if run_status == "dry-run":
                 # A manual dry-run after the last real success: harmless, and
                 # last_success_utc (checked above) is still the honest anchor.
                 return {"level": "LIVE", "summary": "Healthy. Latest activity was a manual dry-run; the last real scan succeeded."}
             alerts = latest_run.get("qualifying_alerts_sent") if latest_run else None
             if alerts and alerts not in {"0", ""}:
-                return {"level": "LIVE", "summary": f"LIVE: latest Mac Mini scan succeeded (via {source}) and sent alerts."}
-            return {"level": "LIVE", "summary": f"Healthy. Latest Mac Mini scan succeeded (via {source}); no qualifying alerts."}
+                return {"level": "LIVE", "summary": f"LIVE: latest PopDay scan succeeded (via {source}) and sent alerts."}
+            return {"level": "LIVE", "summary": f"Healthy. Latest PopDay scan succeeded (via {source}); no qualifying alerts."}
 
     if not latest_run:
-        return {"level": "BROKEN", "summary": "BROKEN: no Mac Mini scan runs found in the launchd log."}
+        return {"level": "BROKEN", "summary": "BROKEN: no PopDay scan runs found."}
 
     started = _parse_iso(latest_run.get("started_at"))
     if not started:
@@ -480,13 +525,13 @@ def _health(
     err_size = err_log.stat().st_size if err_log.exists() else 0
 
     if age_hours > 42 + log_allowance_h:
-        return {"level": "BROKEN", "summary": "BROKEN: no successful Mac Mini scan in more than 42 hours."}
+        return {"level": "BROKEN", "summary": "BROKEN: no successful PopDay scan in more than 42 hours."}
     if index_status == "error":
-        return {"level": "BROKEN", "summary": "BROKEN: latest Mac Mini scan reported an EDGAR error."}
+        return {"level": "BROKEN", "summary": "BROKEN: latest PopDay scan reported an EDGAR error."}
     if err_size > 0:
-        return {"level": "BROKEN", "summary": "BROKEN: Mac Mini launchd error log is not empty."}
+        return {"level": "BROKEN", "summary": "BROKEN: launchd error log is not empty."}
     if age_hours > 18 + log_allowance_h:
-        return {"level": "STALE", "summary": "STALE: latest Mac Mini scan is older than expected."}
+        return {"level": "STALE", "summary": "STALE: latest PopDay scan is older than expected."}
     if "not yet" in index_status:
         return {"level": "STALE", "summary": "STALE: SEC EDGAR index was not yet available, but the scanner did not crash."}
     if index_status == "available":
@@ -496,8 +541,8 @@ def _health(
                 "level": "LIVE",
                 "summary": "Healthy. No qualifying PopDay alerts found in latest scan.",
             }
-        return {"level": "LIVE", "summary": "LIVE: latest Mac Mini scan succeeded and sent alerts."}
-    return {"level": "STALE", "summary": "STALE: latest Mac Mini scan has an unclear EDGAR status."}
+        return {"level": "LIVE", "summary": "LIVE: latest PopDay scan succeeded and sent alerts."}
+    return {"level": "STALE", "summary": "STALE: latest PopDay scan has an unclear EDGAR status."}
 
 
 def build_status(args: argparse.Namespace) -> dict[str, Any]:
@@ -507,7 +552,19 @@ def build_status(args: argparse.Namespace) -> dict[str, Any]:
     err_log = runtime_dir / "logs" / "popday.launchd.err.log"
     now = _utc_now()
 
-    rows = _launchd_rows(out_log)
+    log_lines: list[str] = []
+    if db_path.exists():
+        con = sqlite3.connect(db_path)
+        con.row_factory = sqlite3.Row
+        try:
+            log_lines = _synth_log_lines_from_scan_runs(con, limit=12)
+        finally:
+            con.close()
+    if not log_lines:
+        # No scan_runs rows yet (fresh install) or a pre-scan_runs database:
+        # fall back to the historical Mac Mini launchd log, if any.
+        log_lines = _read_tail(out_log, 600)
+    rows = _parse_launchd_lines(log_lines)
     latest_run = rows[-1] if rows else None
     db_status = _database_status(db_path, now)
     latest_alert = db_status.get("latest_alert") or {}
@@ -516,7 +573,7 @@ def build_status(args: argparse.Namespace) -> dict[str, Any]:
 
     return {
         "generated_at": _iso(now),
-        "scanner_host": "Mac Mini",
+        "scanner_host": "PythonAnywhere",
         "source_repo": str(args.source_repo),
         "source_git_commit": _git_commit(args.source_repo),
         "runtime_dir": str(runtime_dir),
@@ -533,7 +590,7 @@ def build_status(args: argparse.Namespace) -> dict[str, Any]:
         "last_alert_sent_at": latest_alert.get("alert_sent_timestamp"),
         "last_alert_filing_url": latest_alert.get("source_url"),
         "days_since_last_alert": _days_since(latest_alert.get("alert_sent_timestamp"), now),
-        "latest_log_tail": _read_tail(out_log, 24),
+        "latest_log_tail": log_lines[-24:],
         "latest_error_log_tail": _read_tail(err_log, 12),
         "out_log_path": str(out_log),
         "out_log_modified_at": _log_mtime(out_log),
@@ -548,9 +605,9 @@ def build_status(args: argparse.Namespace) -> dict[str, Any]:
         "live_database_backed_up": backup["live_database_backed_up"],
         "retained_backups": backup["retained_backups"],
         "backup_status": backup,
-        "sync_status": "generated_on_mac_mini",
+        "sync_status": "generated_on_pythonanywhere",
         "health": health,
-        "architecture_note": "Scanner runs on Mac Mini. This page shows last synced Mac Mini status.",
+        "architecture_note": "Scanner runs on PythonAnywhere scheduled tasks.",
     }
 
 
