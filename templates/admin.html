@@ -481,6 +481,34 @@
     .split-table { table-layout: fixed; }
     .research-table { min-width: 1375px; table-layout: fixed; }
     .price-reaction-table { min-width: 1585px; table-layout: fixed; }
+    /* Sticky first column (company name + ticker) on wide scroll-container
+       tables, so it stays visible while the rest of a row scrolls
+       underneath - otherwise there's no way to tell which row you're on
+       once you've scrolled right on a narrow/mobile viewport. */
+    .table-scroll table td:first-child,
+    .table-scroll table thead tr:not(.group-row) th:first-child {
+      position: -webkit-sticky;
+      position: sticky;
+      left: 0;
+      z-index: 2;
+      background: var(--panel);
+      border-right: 1px solid var(--line);
+      box-shadow: 2px 0 4px -2px rgba(0, 0, 0, 0.15);
+    }
+    .table-scroll table thead tr:not(.group-row) th:first-child { z-index: 3; }
+    .table-scroll table tbody tr:nth-child(even) td:first-child { background: var(--panel-soft); }
+    .table-scroll table tbody tr:hover td:first-child { background: #eef5f8; }
+    /* price-reaction-table's grouped top header row and footer total-row
+       have a merged/label first cell that doesn't correspond 1:1 with the
+       sticky company column's width - leave those scrolling normally
+       rather than sticking a wider cell that would overlap the columns
+       beneath it. */
+    .table-scroll table thead tr.group-row th:first-child,
+    .table-scroll table tfoot td:first-child {
+      position: static;
+      box-shadow: none;
+      border-right: none;
+    }
     .number-cell { font-weight: 650; white-space: nowrap; }
     .tip-head { border-bottom: 1px dotted var(--muted); cursor: help; }
     .total-row td { border-top: 2px solid var(--line); }
@@ -634,6 +662,12 @@
       .rule-form { grid-template-columns: 1fr; }
       .recipient-form { grid-template-columns: 1fr; }
       table { display: block; overflow-x: auto; }
+      /* .table-scroll tables already scroll horizontally via their own
+         wrapper div (overflow-x:auto + a fixed min-width) - switching the
+         <table> itself to display:block on top of that breaks the sticky
+         first-column positioning above (it creates a second, competing
+         scroll context). Keep them as real tables here. */
+      .table-scroll table { display: table; overflow-x: visible; }
     }
   </style>
 </head>
