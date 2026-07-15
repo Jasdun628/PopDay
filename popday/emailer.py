@@ -10,6 +10,7 @@ from urllib.parse import quote
 
 from .config import Config
 from .date_extract import format_human_date
+from .filing_parser import split_sentences
 from .unsubscribe import unsubscribe_url
 
 
@@ -84,23 +85,97 @@ def _focus_announcement_sentence(sentence: str) -> str:
     return text[start:].strip(" ,;:-")
 
 
+_NUGGET_CONTEXT_WINDOW = 2  # sentences either side of the Key Excerpt anchor
+_NUGGET_SIMILARITY_LIMIT = 0.9  # token-overlap backstop vs Key Excerpt
+
+_CONTEXT_MARKER_KEYWORDS = (
+    "spin-off", "spinoff", "spin off", "inaugural", "first-time", "first ever",
+    "headquartered", "headquarters", "based in", "outlook", "guidance",
+)
+
+
+def _tokenize(text: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9]+", text.lower()))
+
+
+def _token_overlap_ratio(a: str, b: str) -> float:
+    """Fraction of the smaller sentence's tokens also present in the other -
+    a simple, dependency-free stand-in for a full similarity metric, used
+    only as a backstop guard against near-duplicate text."""
+    tokens_a, tokens_b = _tokenize(a), _tokenize(b)
+    if not tokens_a or not tokens_b:
+        return 0.0
+    return len(tokens_a & tokens_b) / min(len(tokens_a), len(tokens_b))
+
+
+def _has_context_marker(sentence: str) -> bool:
+    """True if a sentence carries a number/date/named-context signal - the
+    kind of thing worth a second, distinct nugget (a figure, a date, a
+    location, a spin-off/parent mention, an inaugural/first-time flag)."""
+    if re.search(r"\d", sentence):
+        return True
+    lowered = sentence.lower()
+    return any(marker in lowered for marker in _CONTEXT_MARKER_KEYWORDS)
+
+
+def _find_anchor_index(context_sentences: list[str], snippet: str) -> int | None:
+    """Locate the Key Excerpt's source sentence within the wider context.
+
+    snippet is drawn from the same source text via filing_parser.best_nugget
+    (which itself calls split_sentences), so under normal truncation-free
+    conditions it is byte-identical to one of context_sentences here (both
+    ultimately come from the same split_sentences() call over the same
+    text) - substring containment is the fallback for the truncated case
+    (best_nugget clips long sentences and appends "...").
+    """
+    normalized_snippet = _normalize_excerpt(snippet).rstrip(".")
+    if not normalized_snippet:
+        return None
+    snippet_prefix = (
+        normalized_snippet[:-3].rstrip() if normalized_snippet.endswith("...") else normalized_snippet
+    )
+    if not snippet_prefix:
+        return None
+    for idx, sentence in enumerate(context_sentences):
+        normalized_sentence = _normalize_excerpt(sentence).rstrip(".")
+        if normalized_sentence == normalized_snippet or snippet_prefix in normalized_sentence:
+            return idx
+    return None
+
+
 def _main_nugget(alert: object) -> str:
-    snippet = getattr(alert, "snippet", "") or ""
-    event_label = str(getattr(alert, "event_label", "") or "").lower()
-    cue_phrases = [
-        "will host",
-        "will hold",
-        "will present",
-        "plans to host",
-        "scheduled for",
-        "to be held",
+    """A distinct nugget from context near the Key Excerpt - not a
+    re-derivation of the same sentence. On a short press release with
+    nothing else worth surfacing, this is correctly empty rather than a
+    near-duplicate of Key Excerpt (2026-07-14: both fields were printing
+    near-identical text on short releases)."""
+    context_text = str(getattr(alert, "context_text", "") or "")
+    snippet = str(getattr(alert, "snippet", "") or "")
+    if not context_text or not snippet:
+        return ""
+
+    context_sentences = [
+        cleaned for raw in split_sentences(context_text) if (cleaned := _normalize_excerpt(raw))
     ]
-    for sentence in _excerpt_sentences(snippet):
-        lowered = sentence.lower()
-        if event_label and event_label in lowered:
-            return _trim_sentence(_focus_announcement_sentence(sentence))
-        if any(cue in lowered for cue in cue_phrases):
-            return _trim_sentence(_focus_announcement_sentence(sentence))
+    if not context_sentences:
+        return ""
+
+    anchor_idx = _find_anchor_index(context_sentences, snippet)
+    if anchor_idx is None:
+        return ""
+
+    key_excerpt = _key_excerpt(alert)
+    lo = max(0, anchor_idx - _NUGGET_CONTEXT_WINDOW)
+    hi = min(len(context_sentences), anchor_idx + _NUGGET_CONTEXT_WINDOW + 1)
+    for idx in range(lo, hi):
+        if idx == anchor_idx:
+            continue
+        candidate = context_sentences[idx]
+        if not _has_context_marker(candidate):
+            continue
+        if key_excerpt and _token_overlap_ratio(candidate, key_excerpt) > _NUGGET_SIMILARITY_LIMIT:
+            continue
+        return _trim_sentence(_focus_announcement_sentence(candidate))
     return ""
 
 

@@ -215,9 +215,9 @@
         {% else %}
         <td colspan="9"></td>
         {% endif %}
-        <td class="total-label {% if average.startswith('+') %}move-up{% elif average.startswith('-') %}move-down{% endif %}"><span class="tip-head" data-tip="The bottom line for this table: take every Interval Return above and average them - the typical total move a stock has made since its announcement.">Average interval return</span></td>
+        <td colspan="2" class="total-label {% if average.startswith('+') %}move-up{% elif average.startswith('-') %}move-down{% endif %}"><span class="tip-head" data-tip="The bottom line for this table: take every Interval Return above and average them - the typical total move a stock has made since its announcement.">Average interval return</span></td>
         <td class="number-cell {% if average.startswith('+') %}move-up{% elif average.startswith('-') %}move-down{% endif %}">{{ average }}</td>
-        <td colspan="2"></td>
+        <td colspan="1"></td>
       </tr>
     </tfoot>
   </table>

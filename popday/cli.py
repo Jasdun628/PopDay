@@ -58,6 +58,7 @@ class Alert:
     hype_provisional: bool = False
     recovered_from: str = ""  # missed scan date this alert was recovered from
     market: str = "US"
+    context_text: str = ""
 
 
 PRIVILEGED_TEST_RECIPIENT = "jd@jasondunne.co.uk"
@@ -116,6 +117,7 @@ def _alert_from_detection(
         event_url=str(getattr(detection, "event_url", "") or ""),
         evidence_url=str(getattr(detection, "evidence_url", "") or ""),
         evidence_label=str(getattr(detection, "evidence_label", "") or ""),
+        context_text=str(getattr(detection, "context_text", "") or ""),
     )
 
 
@@ -136,6 +138,7 @@ def _alert_from_uk_detection(
         evidence_url=str(getattr(detection, "evidence_url", "") or ""),
         evidence_label=str(getattr(detection, "evidence_label", "") or ""),
         market="UK",
+        context_text=str(getattr(detection, "context_text", "") or ""),
     )
 
 

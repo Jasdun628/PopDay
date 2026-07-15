@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 from .date_extract import extract_event_date
 from .db import utc_now
@@ -47,6 +47,25 @@ EVENT_LINK_HINTS = (
     "ir",
 )
 
+# XBRL/taxonomy namespace URIs (e.g. http://www.xbrl.org/2003/role/
+# presentationLinkbaseRef) are not content links - they're filing metadata,
+# but "presentation" is a substring of "presentationLinkbaseRef" and used to
+# score them as a real investor-presentation link (the Ligand bug, 14 Jul
+# 2026). These hosts/paths are always taxonomy artifacts, never content.
+_TAXONOMY_JUNK_HOSTS = {"xbrl.org", "fasb.org", "sec.gov", "w3.org", "xbrl.sec.gov"}
+_TAXONOMY_JUNK_PATH_MARKERS = ("/role/", "/linkbase/")
+
+
+def _is_taxonomy_junk_url(url: str) -> bool:
+    parsed = urlparse(url)
+    host = parsed.netloc.lower().split(":")[0]
+    if host in _TAXONOMY_JUNK_HOSTS or any(
+        host.endswith(f".{junk}") for junk in _TAXONOMY_JUNK_HOSTS
+    ):
+        return True
+    path = parsed.path.lower()
+    return any(marker in path for marker in _TAXONOMY_JUNK_PATH_MARKERS)
+
 
 @dataclass(frozen=True)
 class Detection:
@@ -65,6 +84,11 @@ class Detection:
     alert_sent: bool = False
     market: str = "US"
     ticker: str = ""
+    # Full text of the document snippet was drawn from, so the email builder
+    # can pick a genuinely distinct Main Nugget sentence from nearby context
+    # instead of re-deriving the same sentence as Key Excerpt. Not persisted
+    # to the DB (not in to_record()) - only used for same-run alert building.
+    context_text: str = ""
 
     def to_record(self) -> dict[str, object]:
         return {
@@ -225,6 +249,8 @@ def _best_event_url(parsed: ParsedFiling) -> str:
             text = str(link.get("text") or "").strip()
             if not url.lower().startswith(("http://", "https://")):
                 continue
+            if _is_taxonomy_junk_url(url):
+                continue
             combined = f"{text} {url}".lower()
             score = doc_score
             if "sec.gov" in combined:
@@ -245,13 +271,14 @@ def _best_event_signal(
     run_date: date,
     include_phrases: list[str],
     routine_phrases: list[str],
-) -> tuple[str | None, str | None, str | None, str | None, str, str]:
+) -> tuple[str | None, str | None, str | None, str | None, str, str, str]:
     best_phrase: str | None = None
     best_location: str | None = None
     best_snippet: str | None = None
     best_event_date: str | None = None
     best_evidence_url = ""
     best_evidence_label = ""
+    best_context_text = ""
     best_score = -1
 
     nugget = best_nugget(parsed, triggers=tuple(include_phrases))
@@ -305,7 +332,16 @@ def _best_event_signal(
                     best_event_date = event_date.isoformat()
                     best_evidence_url = document["evidence_url"]
                     best_evidence_label = document["evidence_label"]
-    return best_phrase, best_location, best_snippet, best_event_date, best_evidence_url, best_evidence_label
+                    best_context_text = text
+    return (
+        best_phrase,
+        best_location,
+        best_snippet,
+        best_event_date,
+        best_evidence_url,
+        best_evidence_label,
+        best_context_text,
+    )
 
 
 def _best_tbd_signal(
@@ -313,7 +349,7 @@ def _best_tbd_signal(
     filing_url: str,
     include_phrases: list[str],
     run_date: date,
-) -> tuple[str, str, str, str, str] | None:
+) -> tuple[str, str, str, str, str, str] | None:
     """A strong future investor-event announcement that names no concrete date yet.
 
     Only fires on press-release text with a clear announcement cue (e.g. "to hold",
@@ -321,7 +357,7 @@ def _best_tbd_signal(
     Investor Day" is surfaced as date-TBD rather than silently dropped.
     """
     nugget = best_nugget(parsed, triggers=tuple(include_phrases))
-    best: tuple[str, str, str, str, str] | None = None
+    best: tuple[str, str, str, str, str, str] | None = None
     best_score = -1
     for document in _candidate_documents(parsed, filing_url):
         if document["location"] != "press_release":
@@ -358,6 +394,7 @@ def _best_tbd_signal(
                         nugget or normalized,
                         document["evidence_url"],
                         document["evidence_label"],
+                        text,
                     )
     return best
 
@@ -373,7 +410,7 @@ def detect_in_parsed_filing(
     routine_phrases = routine_phrases if routine_phrases is not None else ROUTINE_PHRASES
     items = list(parsed.items)
 
-    matched_phrase, matched_location, snippet, event_date, evidence_url, evidence_label = _best_event_signal(
+    matched_phrase, matched_location, snippet, event_date, evidence_url, evidence_label, context_text = _best_event_signal(
         parsed, filing.filing_url, run_date, include_phrases, routine_phrases
     )
     if matched_phrase and matched_location and snippet and event_date:
@@ -391,6 +428,7 @@ def detect_in_parsed_filing(
                 evidence_label=evidence_label,
                 status="alert_candidate",
                 dismissal_reason=None,
+                context_text=context_text,
             )
         ]
 
@@ -400,7 +438,7 @@ def detect_in_parsed_filing(
     if has_phrase:
         tbd = _best_tbd_signal(parsed, filing.filing_url, include_phrases, run_date)
         if tbd:
-            phrase, location, snippet, evidence_url, evidence_label = tbd
+            phrase, location, snippet, evidence_url, evidence_label, tbd_context_text = tbd
             return [
                 Detection(
                     filing=filing,
@@ -415,6 +453,7 @@ def detect_in_parsed_filing(
                     evidence_label=evidence_label,
                     status="alert_candidate_tbd",
                     dismissal_reason=None,
+                    context_text=tbd_context_text,
                 )
             ]
 
@@ -635,6 +674,7 @@ def detect_in_uk_announcement(
                 dismissal_reason=None,
                 market="UK",
                 ticker=ticker,
+                context_text=text,
             )
         ]
 
@@ -657,6 +697,7 @@ def detect_in_uk_announcement(
                 dismissal_reason=None,
                 market="UK",
                 ticker=ticker,
+                context_text=text,
             )
         ]
 
