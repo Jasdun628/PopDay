@@ -79,3 +79,35 @@ class TickerPreferenceTests(unittest.TestCase):
             mapping = sr.fetch_cik_ticker_map(user_agent="ua")
         self.assertEqual(mapping[sr._normalize_cik(999001)], "BBCQ")
         self.assertEqual(mapping[sr._normalize_cik(999002)], "DRD")
+
+
+class ResolveTickerOverrideTests(unittest.TestCase):
+    """known_announcements rows have no real CIK (they're press-release-only
+    events that never touched EDGAR), so their ticker/cik_override columns
+    are the only way resolve_ticker can ever find them - found 2026-07-15
+    while auditing why the Sandisk Corp manual row showed blank everywhere."""
+
+    def test_ticker_override_used_directly(self):
+        from popday import stock_reaction as sr
+
+        announcement = {"ticker": "SNDK", "cik": None, "company_name": "Sandisk Corp"}
+        self.assertEqual(sr.resolve_ticker(announcement, cik_tickers={}), "SNDK")
+
+    def test_cik_override_resolves_via_the_normal_cik_ticker_map(self):
+        from popday import stock_reaction as sr
+
+        announcement = {"ticker": None, "cik": "2023554", "company_name": "Sandisk Corp"}
+        cik_tickers = {sr._normalize_cik("2023554"): "SNDK"}
+        self.assertEqual(sr.resolve_ticker(announcement, cik_tickers), "SNDK")
+
+    def test_no_override_and_no_map_hit_falls_back_to_hardcoded_overrides(self):
+        from popday import stock_reaction as sr
+
+        announcement = {"ticker": None, "cik": None, "company_name": "Radian Group Inc."}
+        self.assertEqual(sr.resolve_ticker(announcement, cik_tickers={}), "RDN")
+
+    def test_no_override_and_no_hardcoded_entry_resolves_to_blank(self):
+        from popday import stock_reaction as sr
+
+        announcement = {"ticker": None, "cik": None, "company_name": "Totally Unknown Co"}
+        self.assertEqual(sr.resolve_ticker(announcement, cik_tickers={}), "")

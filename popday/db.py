@@ -213,6 +213,15 @@ class Database:
             self.conn.execute(
                 "ALTER TABLE known_announcements ADD COLUMN alert_sent_timestamp TEXT"
             )
+        # known_announcements rows have no CIK by definition (they're
+        # press-release-only events that never touched EDGAR), so the normal
+        # CIK->ticker lookup can never resolve them. These let a manually-
+        # confirmed ticker or CIK be attached per row - same pattern as the
+        # UK ticker_mappings table's manual-override column.
+        if "ticker_override" not in columns:
+            self.conn.execute("ALTER TABLE known_announcements ADD COLUMN ticker_override TEXT")
+        if "cik_override" not in columns:
+            self.conn.execute("ALTER TABLE known_announcements ADD COLUMN cik_override TEXT")
         detection_columns = {
             row["name"] for row in self.conn.execute("PRAGMA table_info(detections)").fetchall()
         }
@@ -1001,7 +1010,7 @@ class Database:
         known_rows = self.conn.execute(
             f"""
             SELECT id AS source_id, 'known_announcements' AS source_table,
-                   company_name, NULL AS cik, NULL AS ticker, event_type, event_date, NULL AS form_type,
+                   company_name, cik_override AS cik, ticker_override AS ticker, event_type, event_date, NULL AS form_type,
                    announcement_date AS filing_date, NULL AS acceptance_datetime,
                    source_url, NULL AS accession_number,
                    source_url AS evidence_url, source_label AS evidence_label,

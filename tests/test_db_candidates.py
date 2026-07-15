@@ -277,6 +277,45 @@ class CandidateOrderingTests(unittest.TestCase):
             finally:
                 db.close()
 
+    def test_investor_day_announcements_surfaces_known_announcement_overrides(self):
+        """known_announcements rows have no real CIK (press-release-only
+        events that never touched EDGAR) - ticker_override/cik_override are
+        the only way resolve_ticker can ever find them. Regression test for
+        the Sandisk Corp row, which showed blank everywhere until this."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db = Database(str(Path(tmpdir) / "popday.sqlite3"))
+            try:
+                db.conn.execute(
+                    """
+                    INSERT INTO known_announcements
+                    (company_name, event_type, event_date, announcement_date, source_url,
+                     source_label, source_type, notes, created_timestamp, cik_override,
+                     ticker_override)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        "Sandisk Corp",
+                        "Investor Day",
+                        "2026-08-13",
+                        "2026-07-09",
+                        "https://www.sandisk.com/company/newsroom",
+                        "Sandisk newsroom",
+                        "press_release",
+                        "Press-release only, never filed with the SEC.",
+                        "2026-07-14T07:31:21+00:00",
+                        "0002023554",
+                        None,
+                    ),
+                )
+                db.conn.commit()
+
+                rows = db.investor_day_announcements()
+
+                self.assertEqual(rows[0]["company_name"], "Sandisk Corp")
+                self.assertEqual(rows[0]["cik"], "0002023554")
+            finally:
+                db.close()
+
     def test_latest_sent_alert_batch_handles_hype_join(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             db = Database(str(Path(tmpdir) / "popday.sqlite3"))
