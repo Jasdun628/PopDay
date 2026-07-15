@@ -150,9 +150,9 @@ def main() -> int:
     known_positions = [
         text.find(name)
         for name in (
-            "HARMONIC INC.",
+            "Harmonic Inc.",
             "Climb Global Solutions",
-            "SLB LIMITED/NV",
+            "SLB Limited/N.V.",
             "Samsara Inc.",
         )
     ]

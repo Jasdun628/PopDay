@@ -68,6 +68,15 @@ def _titleize_word(word: str) -> str:
     return "-".join(part[:1].upper() + part[1:].lower() if part else part for part in word.split("-"))
 
 
+def _display_company_token(token: str) -> str:
+    key = token.lower()
+    if key in _COMPANY_NAME_SUFFIX_EXCEPTIONS:
+        return _COMPANY_NAME_SUFFIX_EXCEPTIONS[key]
+    if token.isupper() and token.isalpha() and len(token) <= 5:
+        return token  # likely acronym (e.g. "ADI") - preserve as-is
+    return _titleize_word(token)
+
+
 def _display_company_name(raw: object) -> str:
     """Display-only casing normalization; never mutates the stored raw name."""
     name = str(raw or "").strip()
@@ -75,13 +84,8 @@ def _display_company_name(raw: object) -> str:
         return name
     words = []
     for word in name.split(" "):
-        key = word.lower()
-        if key in _COMPANY_NAME_SUFFIX_EXCEPTIONS:
-            words.append(_COMPANY_NAME_SUFFIX_EXCEPTIONS[key])
-        elif word.isupper() and word.isalpha() and len(word) <= 5:
-            words.append(word)  # likely acronym (e.g. "ADI") - preserve as-is
-        else:
-            words.append(_titleize_word(word))
+        # Compound tokens like "LIMITED/NV" are two casing decisions, not one.
+        words.append("/".join(_display_company_token(part) for part in word.split("/")))
     return " ".join(words)
 
 
