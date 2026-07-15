@@ -72,6 +72,12 @@ DEFAULT_COMPANY_WEBSITES = {
     "Resideo Technologies, Inc.": "https://www.resideo.com/",
     "Scotts Miracle-gro Co": "https://investor.scotts.com/",
     "Sandisk Corp": "https://www.sandisk.com/",
+    # Added 15 Jul 2026 for newly-surfaced Investor Day companies (URLs
+    # verified live - www.adiglobal.com confirmed via its own page metadata,
+    # the investor.adiglobal.com subdomain the filing itself named returns a
+    # Cloudflare bot-challenge to unattended clients, not usable as a link).
+    "Ligand Pharmaceuticals Inc": "https://www.ligand.com/",
+    "ADI Global Distribution Inc.": "https://www.adiglobal.com/",
 }
 
 
