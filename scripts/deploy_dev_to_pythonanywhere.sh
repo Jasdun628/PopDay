@@ -1,5 +1,26 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
+
+# Step-labeled failure reporting: every major phase calls step() to say what
+# it's about to do, so a failure anywhere prints "Deploy failed at: <step>"
+# with the actual failing command and its captured output, not just a bare
+# non-zero exit after the fact. Found 15 Jul 2026 (commit e37c47c): a
+# transient SSH connection drop during the status-JSON step aborted the
+# whole deploy with zero detail beyond "exited non-zero" - even though the
+# actual code sync (scp) had already completed successfully minutes
+# earlier. auto_deploy_gate.sh (the caller) captures this script's output
+# and forwards the specific failed-step line into the ops-alert email.
+CURRENT_STEP="startup"
+step() {
+  CURRENT_STEP="$1"
+  echo ">>> $CURRENT_STEP"
+}
+on_error() {
+  local exit_code=$?
+  echo "DEPLOY FAILED AT STEP: $CURRENT_STEP (line $1, command: $2, exit $exit_code)" >&2
+  exit "$exit_code"
+}
+trap 'on_error "$LINENO" "$BASH_COMMAND"' ERR
 
 SOURCE_REPO="${POPDAY_SOURCE_REPO:-/Users/jasondunne/Documents/PopDay}"
 RUNTIME_DIR="${POPDAY_RUNTIME_DIR:-/Users/jasondunne/PopDayRuntime}"
@@ -51,6 +72,7 @@ run_live_verifiers_after_reload() {
   local before_marker
   attempt=1
   while (( attempt <= POPDAY_DEPLOY_VERIFY_RETRIES )); do
+    step "reload confirmation (attempt $attempt/$POPDAY_DEPLOY_VERIFY_RETRIES)"
     echo "Requesting PythonAnywhere reload before verification attempt $attempt/$POPDAY_DEPLOY_VERIFY_RETRIES..."
     before_marker="$(last_reload_marker || true)"
     touch_pythonanywhere_wsgi
@@ -62,6 +84,7 @@ run_live_verifiers_after_reload() {
       echo "Waiting clear of PythonAnywhere's reload grace period before retrying..." >&2
       sleep 65
     fi
+    step "live verification (attempt $attempt/$POPDAY_DEPLOY_VERIFY_RETRIES)"
     if "$PYTHON_BIN" scripts/verify_live_popday.py && "$PYTHON_BIN" scripts/verify_live_popday_buttons.py; then
       return 0
     fi
@@ -83,21 +106,31 @@ cd "$SOURCE_REPO"
 # pulls a read-only copy of PA's DB down for the Mac Mini's own backup
 # retention. A missing/stale local runtime DB no longer blocks shipping a
 # code fix.
+step "pre-deploy backup (local)"
 backup_line="$("$PYTHON_BIN" scripts/backup_popday_runtime.py --reason "pre PythonAnywhere development deploy" --source-repo "$SOURCE_REPO")"
 echo "$backup_line"
 backup_dir="$(echo "$backup_line" | sed -n 's/^PopDay backup created: //p')"
+
+step "py_compile (local)"
 "$PYTHON_BIN" -m py_compile popday.py popday/*.py
+
+step "sync runtime code (local)"
 POPDAY_RUNTIME_DIR="$RUNTIME_DIR" PYTHON_BIN="$PYTHON_BIN" bash scripts/sync_runtime_code_from_repo.sh
 
+step "prepare PA directories"
 deploy_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 ssh "$PYTHONANYWHERE_SSH_TARGET" "mkdir -p '$PYTHONANYWHERE_APP_DIR/templates' '$PYTHONANYWHERE_APP_DIR/scripts' '$PYTHONANYWHERE_APP_DIR/status' '$PYTHONANYWHERE_APP_DIR/backups' '$PYTHONANYWHERE_APP_DIR/popday' '$PYTHONANYWHERE_APP_DIR/popday/sources'"
+
+step "backup PA database"
 ssh "$PYTHONANYWHERE_SSH_TARGET" "if [ -f '$PYTHONANYWHERE_DB_PATH' ]; then cp '$PYTHONANYWHERE_DB_PATH' '$PYTHONANYWHERE_APP_DIR/backups/popday.sqlite3.$deploy_stamp.bak'; fi"
 
+step "pull PA DB copy for Mac Mini backup (non-fatal)"
 if [[ -n "$backup_dir" && -d "$backup_dir" ]]; then
   scp "$PYTHONANYWHERE_SSH_TARGET:$PYTHONANYWHERE_DB_PATH" "$backup_dir/popday_pythonanywhere_live.sqlite3" \
     || echo "WARNING: could not pull PythonAnywhere's live DB into the Mac Mini backup; continuing." >&2
 fi
 
+step "sync code to PA (scp)"
 scp flask_app.py "$PYTHONANYWHERE_SSH_TARGET:$PYTHONANYWHERE_APP_DIR/flask_app.py"
 scp popday/*.py "$PYTHONANYWHERE_SSH_TARGET:$PYTHONANYWHERE_APP_DIR/popday/"
 scp popday/sources/*.py "$PYTHONANYWHERE_SSH_TARGET:$PYTHONANYWHERE_APP_DIR/popday/sources/"
@@ -111,17 +144,29 @@ scp scripts/check_scan_heartbeat.py "$PYTHONANYWHERE_SSH_TARGET:$PYTHONANYWHERE_
 scp scripts/capture_uk_prices.py "$PYTHONANYWHERE_SSH_TARGET:$PYTHONANYWHERE_APP_DIR/scripts/capture_uk_prices.py"
 scp scripts/migrate_uk_market.py "$PYTHONANYWHERE_SSH_TARGET:$PYTHONANYWHERE_APP_DIR/scripts/migrate_uk_market.py"
 
+step "clean up stale templates on PA"
 ssh "$PYTHONANYWHERE_SSH_TARGET" "rm -f '$PYTHONANYWHERE_APP_DIR/templates/status.html' '$PYTHONANYWHERE_APP_DIR/templates/index.html'"
+
+step "py_compile (PA)"
 ssh "$PYTHONANYWHERE_SSH_TARGET" "cd '$PYTHONANYWHERE_APP_DIR' && python3 -m py_compile flask_app.py popday/*.py popday/sources/*.py scripts/generate_status_json.py scripts/refresh_price_reaction.py scripts/capture_uk_prices.py"
 
 # Belt-and-braces: never ship a stale Price Reaction cache or status JSON
 # (both are also refreshed automatically after every scan). These now run ON
-# PythonAnywhere against its own live DB, not the Mac Mini's copy. Non-fatal
-# — a price-feed blip should not block deploying a fix.
+# PythonAnywhere against its own live DB, not the Mac Mini's copy. Both are
+# non-fatal, deliberately and identically — a price-feed blip or a transient
+# SSH drop here (e.g. commit e37c47c, 15 Jul 2026: "Connection closed" mid-
+# call) should never block deploying code that already synced successfully,
+# nor skip the live-verification step that would actually catch a real
+# problem.
+step "refresh Price Reaction cache (PA, non-fatal)"
 ssh "$PYTHONANYWHERE_SSH_TARGET" "cd '$PYTHONANYWHERE_APP_DIR' && python3 scripts/refresh_price_reaction.py --db-path '$PYTHONANYWHERE_DB_PATH'" \
   || echo "WARNING: PythonAnywhere Price Reaction refresh failed; deploying existing cache." >&2
-ssh "$PYTHONANYWHERE_SSH_TARGET" "cd '$PYTHONANYWHERE_APP_DIR' && python3 scripts/generate_status_json.py --output '$PYTHONANYWHERE_APP_DIR/status/popday_status.json' --source-repo '$PYTHONANYWHERE_APP_DIR' --db-path '$PYTHONANYWHERE_DB_PATH' --runtime-dir '$PYTHONANYWHERE_APP_DIR' --backup-root '$PYTHONANYWHERE_APP_DIR/backups'"
 
+step "generate status JSON (PA, non-fatal)"
+ssh "$PYTHONANYWHERE_SSH_TARGET" "cd '$PYTHONANYWHERE_APP_DIR' && python3 scripts/generate_status_json.py --output '$PYTHONANYWHERE_APP_DIR/status/popday_status.json' --source-repo '$PYTHONANYWHERE_APP_DIR' --db-path '$PYTHONANYWHERE_DB_PATH' --runtime-dir '$PYTHONANYWHERE_APP_DIR' --backup-root '$PYTHONANYWHERE_APP_DIR/backups'" \
+  || echo "WARNING: PythonAnywhere status JSON generation failed; deploying existing status.json." >&2
+
+step "reload + live verification"
 run_live_verifiers_after_reload
 
 echo "PopDay development front door deployed."

@@ -63,10 +63,27 @@ if ! git push "$GIT_REMOTE" "$current_branch"; then
 fi
 
 echo "Push succeeded. Running the PythonAnywhere deploy script..."
-if ! bash scripts/deploy_dev_to_pythonanywhere.sh; then
-  notify --broken "Automated deploy failed: deploy_dev_to_pythonanywhere.sh exited non-zero for commit $current_head after its own internal retries. GitHub has the new code, but PythonAnywhere may still be running the previous version - check manually."
+# Capture the deploy script's output (still streamed live to this script's
+# own stdout/stderr via tee, so the launchd log keeps the full transcript)
+# so a failure can be reported by its specific step, not just a bare exit
+# code. deploy_dev_to_pythonanywhere.sh prints "DEPLOY FAILED AT STEP: ..."
+# right before exiting on any step failure (added 15 Jul 2026, after commit
+# e37c47c's deploy failed with no detail beyond "exited non-zero").
+deploy_log="$(mktemp)"
+bash scripts/deploy_dev_to_pythonanywhere.sh 2>&1 | tee "$deploy_log"
+deploy_exit="${PIPESTATUS[0]}"
+if [[ "$deploy_exit" -ne 0 ]]; then
+  failed_step="$(grep -m1 '^DEPLOY FAILED AT STEP:' "$deploy_log" || true)"
+  if [[ -n "$failed_step" ]]; then
+    detail="Automated deploy failed for commit $current_head. GitHub has the new code, but PythonAnywhere may still be running the previous version - check manually. $failed_step"
+  else
+    detail="Automated deploy failed: deploy_dev_to_pythonanywhere.sh exited non-zero (exit $deploy_exit) for commit $current_head, but no step marker was captured - check the deploy log directly. GitHub has the new code, but PythonAnywhere may still be running the previous version."
+  fi
+  notify --broken "$detail"
+  rm -f "$deploy_log"
   exit 1
 fi
+rm -f "$deploy_log"
 
 echo "$current_head" > "$MARKER_FILE"
 notify --recovered ""
