@@ -143,11 +143,11 @@
 </div>
 {% endmacro %}
 
-{% macro price_reaction_table(rows, average, event_average, show_event_average=true) %}
+{% macro price_reaction_table(rows, average, event_average, show_event_average=true, show_event_day_close=true) %}
 <div class="table-scroll">
   <table class="price-reaction-table">
     <colgroup>
-      <col style="width: 185px"><col style="width: 135px"><col style="width: 120px">
+      <col style="width: 185px"><col style="width: 135px">{% if show_event_day_close %}<col style="width: 120px">{% endif %}
       <col style="width: 150px"><col style="width: 130px"><col style="width: 100px">
       <col style="width: 100px"><col style="width: 85px"><col style="width: 110px">
       <col style="width: 115px"><col style="width: 105px"><col style="width: 110px">
@@ -155,7 +155,7 @@
     </colgroup>
     <thead>
       <tr class="group-row">
-        <th colspan="3" class="grp grp-event"><span class="tip-head" data-tip="Who held the Investor Day, when it happened (or will), and where the stock closed on the day itself.">The event</span></th>
+        <th colspan="{{ 3 if show_event_day_close else 2 }}" class="grp grp-event"><span class="tip-head" data-tip="Who held the Investor Day, when it happened (or will), and where the stock closed on the day itself.">The event</span></th>
         <th colspan="2" class="grp grp-announce grp-start"><span class="tip-head" data-tip="When the news landed: the moment the SEC filing arrived, and the first trading day anyone could act on it.">The announcement</span></th>
         <th colspan="4" class="grp grp-reaction grp-start"><span class="tip-head" data-tip="What the stock did on day one after the announcement (AD) dropped - the market's knee-jerk verdict, long before the Investor Day itself.">First-day reaction to AD</span></th>
         <th colspan="3" class="grp grp-since grp-start"><span class="tip-head" data-tip="The bigger picture since the news: where the stock has drifted from just before that first reaction day to its latest close, and how bumpy the ride has been.">Since then</span></th>
@@ -164,7 +164,7 @@
       <tr>
         <th>Company</th>
         <th>Event Date</th>
-        <th><span class="tip-head" data-tip="Where the stock finished on the Investor Day itself - green if it ended up, red if down, with that day's move underneath. Blank until the event has actually happened.">Investor Day Close</span></th>
+        {% if show_event_day_close %}<th><span class="tip-head" data-tip="Where the stock finished on the Investor Day itself - green if it ended up, red if down, with that day's move underneath. Blank until the event has actually happened.">Investor Day Close</span></th>{% endif %}
         <th class="grp-start"><span class="tip-head" data-tip="The exact moment the filing hit the SEC. Anything accepted at or after 4pm ET missed the closing bell, so the market's first chance to react rolls to the next trading day.">Filed / Accepted</span></th>
         <th><span class="tip-head" data-tip="The first day traders could actually do anything about the news - same day if it landed during market hours, the next trading day if it came in after the close.">Reaction Day</span></th>
         <th class="grp-start"><span class="tip-head" data-tip="Where the stock stood the day before anyone knew - the starting line every move on this row is measured from.">Previous Close</span></th>
@@ -189,7 +189,7 @@
           {% if r.ticker and r.ticker != '—' %}<div class="ticker-sub"><a href="https://finance.yahoo.com/quote/{{ r.ticker }}" target="_blank" rel="noopener">{{ r.ticker }}</a></div>{% endif %}
         </td>
         <td class="date-strong">{{ r.event_date }}</td>
-        <td class="{{ 'move-up' if r.event_day_direction == 'up' else ('move-down' if r.event_day_direction == 'down' else 'number-cell') }}">{{ r.event_day_close }}{% if r.event_day_move_pct %}<div class="move-sub">{{ r.event_day_move_pct }}</div>{% endif %}</td>
+        {% if show_event_day_close %}<td class="{{ 'move-up' if r.event_day_direction == 'up' else ('move-down' if r.event_day_direction == 'down' else 'number-cell') }}">{{ r.event_day_close }}{% if r.event_day_move_pct %}<div class="move-sub">{{ r.event_day_move_pct }}</div>{% endif %}</td>{% endif %}
         <td class="grp-start {{ 'unknown-text' if r.accepted == '—' and r.filing_date == '—' else 'secondary-cell' }}">{% if r.accepted != '—' %}{{ r.accepted }}{% if r.accepted_time %}<div class="status-meta">{{ r.accepted_time }}</div>{% endif %}{% else %}{{ r.filing_date }}{% endif %}</td>
         <td class="{{ 'unknown-text' if r.reaction_date == '—' else 'date-strong' }}">{{ r.reaction_date }}</td>
         <td class="number-cell grp-start">{{ r.previous_close }}</td>
@@ -213,7 +213,7 @@
         <td class="number-cell {% if event_average.startswith('+') %}move-up{% elif event_average.startswith('-') %}move-down{% endif %}">{{ event_average }}</td>
         <td colspan="6"></td>
         {% else %}
-        <td colspan="9"></td>
+        <td colspan="{{ 9 if show_event_day_close else 8 }}"></td>
         {% endif %}
         <td colspan="2" class="total-label {% if average.startswith('+') %}move-up{% elif average.startswith('-') %}move-down{% endif %}"><span class="tip-head" data-tip="The bottom line for this table: take every Interval Return above and average them - the typical total move a stock has made since its announcement.">Average interval return</span></td>
         <td class="number-cell {% if average.startswith('+') %}move-up{% elif average.startswith('-') %}move-down{% endif %}">{{ average }}</td>
@@ -866,7 +866,7 @@
     {% if price_reaction_rows %}
     <h3 class="split-heading split-heading-first">Upcoming</h3>
     {% if upcoming_price_reaction_rows %}
-      {{ price_reaction_table(upcoming_price_reaction_rows, upcoming_price_reaction_avg, upcoming_price_reaction_event_avg, show_event_average=false) }}
+      {{ price_reaction_table(upcoming_price_reaction_rows, upcoming_price_reaction_avg, upcoming_price_reaction_event_avg, show_event_average=false, show_event_day_close=false) }}
     {% else %}
       <div class="empty">No upcoming Price Reaction rows stored yet.</div>
     {% endif %}
