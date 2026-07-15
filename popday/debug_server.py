@@ -668,7 +668,7 @@ def _summary(db: Database, db_path: str) -> str:
     rows = _launchd_health_rows(db_path)
     latest = rows[0] if rows else None
     if latest:
-        index_status = latest["index_status"] or "unknown"
+        index_status = latest["index_status"] or "—"
         alerts_sent = latest["alerts_sent"] or "0"
         filing_date = _friendly_date_string(latest.get("filing_date", ""))
         started = _friendly_datetime(latest["started"])

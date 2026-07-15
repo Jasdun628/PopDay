@@ -54,11 +54,42 @@ _PRICE_SOURCE_LABELS = {
 }
 
 
+# Corporate suffixes: SEC/RNS source data casing is inconsistent (e.g. all
+# caps "COMMERCIAL METALS Co"), so these render in one canonical casing.
+_COMPANY_NAME_SUFFIX_EXCEPTIONS = {
+    "inc": "Inc", "inc.": "Inc.", "co": "Co", "co.": "Co.",
+    "corp": "Corp", "corp.": "Corp.", "llc": "LLC", "ltd": "Ltd",
+    "ltd.": "Ltd.", "plc": "plc", "lp": "LP", "llp": "LLP",
+    "nv": "N.V.", "sa": "S.A.", "ag": "AG", "se": "SE",
+}
+
+
+def _titleize_word(word: str) -> str:
+    return "-".join(part[:1].upper() + part[1:].lower() if part else part for part in word.split("-"))
+
+
+def _display_company_name(raw: object) -> str:
+    """Display-only casing normalization; never mutates the stored raw name."""
+    name = str(raw or "").strip()
+    if not name:
+        return name
+    words = []
+    for word in name.split(" "):
+        key = word.lower()
+        if key in _COMPANY_NAME_SUFFIX_EXCEPTIONS:
+            words.append(_COMPANY_NAME_SUFFIX_EXCEPTIONS[key])
+        elif word.isupper() and word.isalpha() and len(word) <= 5:
+            words.append(word)  # likely acronym (e.g. "ADI") - preserve as-is
+        else:
+            words.append(_titleize_word(word))
+    return " ".join(words)
+
+
 def _price_source_label(value: object) -> str:
     """Friendly, short label for the price data source."""
     raw = str(value or "").strip()
     if not raw:
-        return "unknown"
+        return "—"
     return _PRICE_SOURCE_LABELS.get(raw, raw)
 
 
@@ -137,7 +168,7 @@ def _prepare_row(row: dict, today: date) -> dict:
     link = _sec_filing_url(source_url) if row.get("source_type") == "EDGAR" else source_url
 
     return {
-        "company_name": row["company_name"],
+        "company_name": _display_company_name(row["company_name"]),
         "company_url": _company_website(row["company_name"]),
         "event_type": row["event_type"] or "Investor Day",
         "event_date_display": _friendly_date(event_date_raw),
@@ -284,7 +315,7 @@ def _parse_datetime(value: object) -> datetime | None:
 def _friendly_datetime_value(value: object) -> str:
     parsed = _parse_datetime(value)
     if not parsed:
-        return "unknown"
+        return "—"
     local = parsed.astimezone()
     day = local.day
     return (
@@ -338,10 +369,10 @@ def _fallback_status(message: str) -> dict:
         "public_level": "BROKEN",
         "level_class": "broken",
         "architecture_note": "Scanner runs on PythonAnywhere scheduled tasks.",
-        "generated_at_display": "unknown",
+        "generated_at_display": "—",
         "status_file_updated_at_display": "missing",
         "status_file_age_note": "No PopDay status file was found.",
-        "latest_scan_started_at_display": "unknown",
+        "latest_scan_started_at_display": "—",
         "next_expected_scan_display": _next_scheduled_run(),
         "filing_date_scanned": None,
         "edgar_index_status": None,
@@ -361,7 +392,7 @@ def _fallback_status(message: str) -> dict:
             "level": "danger",
             "headline": "Status unavailable — cannot confirm scan health.",
             "detail": message,
-            "last_success_display": "unknown",
+            "last_success_display": "—",
         },
     }
 
@@ -397,9 +428,6 @@ def _load_public_status() -> dict:
 
     status["public_level"] = "LIVE / HEALTHY" if level == "LIVE" else level
     status["level_class"] = _level_class(level)
-    status["front_door_note"] = (
-        "This is the PopDay browser front door. If it is stale, Codex should refresh it."
-    )
     status["generated_at_display"] = _friendly_datetime_value(status.get("generated_at"))
     status["status_file_updated_at_display"] = _friendly_datetime_value(updated_at.isoformat())
     status["status_file_age_note"] = _status_age_note(updated_at)
@@ -444,7 +472,7 @@ def _load_public_status() -> dict:
         if _scan_health.get("last_success_utc")
         else "never"
     )
-    status["last_scan_source"] = _scan_health.get("last_run_source") or "unknown"
+    status["last_scan_source"] = _scan_health.get("last_run_source") or "—"
     status["recovered_days"] = [
         _friendly_date(str(d)) for d in (_scan_health.get("recovered_dates") or [])
     ]
@@ -576,12 +604,12 @@ def _parse_date_for_delta(value: object) -> date | None:
 
 def _unknown_text(value: object) -> str:
     text = str(value or "").strip()
-    return text or "unknown"
+    return text or "—"
 
 
 def _money_text(value: object) -> str:
     if value is None or value == "":
-        return "unknown"
+        return "—"
     try:
         return f"${float(value):,.2f}"
     except (TypeError, ValueError):
@@ -607,7 +635,7 @@ def _current_market() -> str | None:
 
 def _pct_text(value: object) -> str:
     if value is None or value == "":
-        return "unknown"
+        return "—"
     try:
         return f"{float(value):+.2f}%"
     except (TypeError, ValueError):
@@ -651,12 +679,12 @@ def _research_presentation_count(payload: list[dict]) -> int | None:
 def _latest_known_hype_filing(payload: list[dict]) -> str:
     dated = [filing for filing in payload if filing.get("filing_date")]
     if not dated:
-        return "unknown"
+        return "—"
     latest = max(dated, key=lambda filing: str(filing.get("filing_date") or ""))
     date_label = _friendly_date(str(latest.get("filing_date") or ""))
     form = str(latest.get("form") or "").strip()
     codes = ", ".join(str(code) for code in latest.get("item_codes") or [])
-    return " ".join(part for part in [date_label, form, codes] if part).strip() or "unknown"
+    return " ".join(part for part in [date_label, form, codes] if part).strip() or "—"
 
 
 def _announcement_sort_settings() -> tuple[str, str]:
@@ -832,16 +860,8 @@ def _build_admin_context(
     ctx: dict = {"status": status, "active_market": market}
     if tab == "summary":
         latest_run = synced_health_rows[0] if synced_health_rows else None
-        latest_alert = db.latest_sent_alert()
-        latest_alert_dict = dict(latest_alert) if latest_alert else None
-        if latest_alert_dict:
-            latest_alert_dict["company_url"] = _company_website(
-                latest_alert_dict["company_name"],
-                company_websites,
-            )
         ctx.update(
             announcement_count=db.investor_day_announcement_count(),
-            latest_alert=latest_alert_dict,
             next_run=_next_scheduled_run(),
             latest_run_started=_friendly_datetime_str(latest_run["started"]) if latest_run else "",
             latest_run_filing_date=_friendly_date(latest_run["filing_date"]) if latest_run and latest_run["filing_date"] else "—",
@@ -852,7 +872,7 @@ def _build_admin_context(
         sort_key, direction = _announcement_sort_settings()
         announcements = [
             {
-                "company_name": r["company_name"],
+                "company_name": _display_company_name(r["company_name"]),
                 "company_url": _company_website(r["company_name"], company_websites),
                 "event_type": r["event_type"] or "Investor Day",
                 "event_date": _friendly_date(r["event_date"]) if dict(r).get("event_date") else "Date TBD",
@@ -922,33 +942,33 @@ def _build_admin_context(
             source_label = row.get("evidence_label") or row.get("source_type") or "Source"
             research_rows.append(
                 {
-                    "company_name": row.get("company_name") or "",
+                    "company_name": _display_company_name(row.get("company_name") or ""),
                     "company_url": _company_website(row.get("company_name"), company_websites),
                     "ticker": _unknown_text(row.get("ticker")),
                     "event_type": row.get("event_type") or "Investor Day",
-                    "ad_date": _friendly_date(str(ad_raw)) if ad_raw else "unknown",
+                    "ad_date": _friendly_date(str(ad_raw)) if ad_raw else "—",
                     "ad_date_raw": str(ad_raw),
-                    "id_date": _friendly_date(str(id_raw)) if id_raw else "unknown",
+                    "id_date": _friendly_date(str(id_raw)) if id_raw else "—",
                     "id_date_raw": str(id_raw),
-                    "days": days if days is not None else "unknown",
+                    "days": days if days is not None else "—",
                     "days_sort": days,
-                    "raw_hype_count": "unknown",
+                    "raw_hype_count": "—",
                     "raw_hype_count_sort": None,
                     "investor_comms_count": (
-                        int(row["investor_comms_count"]) if has_hype_data else "unknown"
+                        int(row["investor_comms_count"]) if has_hype_data else "—"
                     ),
                     "investor_comms_count_sort": (
                         int(row["investor_comms_count"]) if has_hype_data else None
                     ),
-                    "item_701_count": item_701_count if item_701_count is not None else "unknown",
+                    "item_701_count": item_701_count if item_701_count is not None else "—",
                     "item_701_count_sort": item_701_count,
-                    "item_801_count": item_801_count if item_801_count is not None else "unknown",
+                    "item_801_count": item_801_count if item_801_count is not None else "—",
                     "item_801_count_sort": item_801_count,
                     "presentation_count": (
-                        presentation_count if presentation_count is not None else "unknown"
+                        presentation_count if presentation_count is not None else "—"
                     ),
                     "presentation_count_sort": presentation_count,
-                    "latest_filing": _latest_known_hype_filing(payload) if payload else "unknown",
+                    "latest_filing": _latest_known_hype_filing(payload) if payload else "—",
                     "source_url": source_url,
                     "source_label": source_label,
                 }
@@ -979,15 +999,15 @@ def _build_admin_context(
     elif tab == "price_reaction":
         price_reaction_rows = [
             {
-                "company_name": r["company_name"],
+                "company_name": _display_company_name(r["company_name"]),
                 "company_url": _company_website(r["company_name"], company_websites),
                 "ticker": _unknown_text(r["ticker"]),
                 "event_date_raw": dict(r).get("event_date") or "",
-                "event_date": _friendly_date(r["event_date"]) if dict(r).get("event_date") else "unknown",
-                "filing_date": _friendly_date(r["filing_date"]) if dict(r).get("filing_date") else "unknown",
-                "accepted": (_friendly_source_datetime_parts(r["acceptance_datetime"])[0] if dict(r).get("acceptance_datetime") else "unknown"),
+                "event_date": _friendly_date(r["event_date"]) if dict(r).get("event_date") else "Date TBD",
+                "filing_date": _friendly_date(r["filing_date"]) if dict(r).get("filing_date") else "—",
+                "accepted": (_friendly_source_datetime_parts(r["acceptance_datetime"])[0] if dict(r).get("acceptance_datetime") else "—"),
                 "accepted_time": (_friendly_source_datetime_parts(r["acceptance_datetime"])[1] if dict(r).get("acceptance_datetime") else ""),
-                "reaction_date": _friendly_date(r["reaction_date"]) if dict(r).get("reaction_date") else "unknown",
+                "reaction_date": _friendly_date(r["reaction_date"]) if dict(r).get("reaction_date") else "—",
                 "market": dict(r).get("market") or "US",
                 "previous_close": _money_text_for_market(r["previous_close"], dict(r).get("market")),
                 "reaction_close": _money_text_for_market(r["reaction_close"], dict(r).get("market")),
@@ -1000,7 +1020,7 @@ def _build_admin_context(
                 ),
                 "announcement_move_pct": _pct_text(r["announcement_move_pct"]),
                 "intraday_range_pct": _pct_text(r["intraday_range_pct"]),
-                "latest_close_date": _friendly_date(r["latest_close_date"]) if dict(r).get("latest_close_date") else "unknown",
+                "latest_close_date": _friendly_date(r["latest_close_date"]) if dict(r).get("latest_close_date") else "—",
                 "latest_close": _money_text_for_market(r["latest_close"], dict(r).get("market")),
                 "interval_return_pct": _pct_text(r["interval_return_pct"]),
                 "interval_return_raw": r["interval_return_pct"],
@@ -1008,7 +1028,7 @@ def _build_admin_context(
                 "status": _admin_display_text(r["status"]),
                 "notes": r["notes"] or "",
                 "source": _price_source_label(r["price_data_source"]),
-                "updated": _friendly_datetime_str(r["price_data_timestamp"]) if dict(r).get("price_data_timestamp") else "unknown",
+                "updated": _friendly_datetime_str(r["price_data_timestamp"]) if dict(r).get("price_data_timestamp") else "—",
             }
             for r in db.price_reaction_rows(market)
         ]
@@ -1043,7 +1063,7 @@ def _build_admin_context(
         ).fetchall()
         ctx["sent_alerts"] = [
             {
-                "company_name": r["company_name"],
+                "company_name": _display_company_name(r["company_name"]),
                 "company_url": _company_website(r["company_name"], company_websites),
                 "event_type": r["event_type"] or "Investor Day",
                 "event_date": r["event_date"] or "—",
@@ -1071,7 +1091,7 @@ def _build_admin_context(
                 "filing_date": _friendly_date(r["filing_date"]) if dict(r).get("filing_date") else "—",
                 "status": r["status"] or "",
                 "status_display": _admin_display_text(r["status"]),
-                "company_name": r["company_name"],
+                "company_name": _display_company_name(r["company_name"]),
                 "company_url": _company_website(r["company_name"], company_websites),
                 "matched_phrase": _matched_phrase_display(dict(r).get("matched_phrase")),
                 "event_date": _friendly_date(r["event_date"]) if dict(r).get("event_date") else "—",

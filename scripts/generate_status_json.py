@@ -201,15 +201,17 @@ def _synth_log_lines_from_scan_runs(con: sqlite3.Connection, limit: int = 12) ->
         elif row["status"] in ("ok", "dry-run"):
             index_status = "available"
         else:
-            index_status = "unknown"
+            index_status = "—"
         lines.append(f"PopDay launchd run started: {row['started_utc']}")
-        lines.append(f"Filing date scanned: {row['run_date'] or 'unknown'}")
+        lines.append(f"Filing date scanned: {row['run_date'] or '—'}")
         lines.append(f"EDGAR index status: {index_status}")
         parsed = row["filings_parsed"]
         lines.append(f"Filings parsed: {parsed if parsed is not None else 0}")
         # Total 8-K count isn't stored in scan_runs (only phrase-matching
         # filings_seen is) - not available when reconstructing from the DB.
-        lines.append("8-K sanity count: n/a")
+        # "—" per the sitewide missing-data convention (never "n/a"/"unknown"
+        # as literal text - see popday's Help tab).
+        lines.append("8-K sanity count: —")
         alerts = row["alerts_sent"]
         lines.append(f"Qualifying PopDay alerts sent: {alerts if alerts is not None else 0}")
     return lines

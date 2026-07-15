@@ -223,6 +223,60 @@ class CandidateOrderingTests(unittest.TestCase):
             finally:
                 db.close()
 
+    def test_research_hype_events_falls_back_to_price_reaction_ticker(self):
+        """The US detection path has never set detections.ticker directly
+        (only the UK path does) - research_hype_events must fall back to the
+        ticker price_reactions already resolved and cached for this company
+        after every scan, rather than showing a real gap as missing data
+        (found 2026-07-15: Ticker showed blank on every single US row)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db = Database(str(Path(tmpdir) / "popday.sqlite3"))
+            try:
+                db.conn.execute(
+                    """
+                    INSERT INTO detections
+                    (id, accession_number, company_name, cik, ticker, form_type, filing_date, filing_url,
+                     event_type, event_date, matched_phrase, matched_location, snippet, status,
+                     dismissal_reason, evidence_url, evidence_label, created_timestamp)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        2,
+                        "no-ticker-alert",
+                        "No Ticker Co",
+                        "0000000002",
+                        "",  # never populated on the US path
+                        "8-K",
+                        "20260617",
+                        "https://www.sec.gov/filing-index.htm",
+                        "Investor Day",
+                        "2026-09-20",
+                        "investor day",
+                        "press_release",
+                        "No Ticker Co will host an Investor Day.",
+                        "alert_candidate",
+                        None,
+                        "https://www.sec.gov/exhibit-991.htm",
+                        "Exhibit 99.1",
+                        "2026-06-17T01:00:00+00:00",
+                    ),
+                )
+                db.conn.execute(
+                    """
+                    INSERT INTO price_reactions
+                    (announcement_key, source_table, company_name, ticker, status)
+                    VALUES ('us|no-ticker-co', 'detections', 'No Ticker Co', 'NTC', 'ok')
+                    """
+                )
+                db.conn.commit()
+
+                rows = db.research_hype_events()
+
+                self.assertEqual(rows[0]["company_name"], "No Ticker Co")
+                self.assertEqual(rows[0]["ticker"], "NTC")
+            finally:
+                db.close()
+
     def test_latest_sent_alert_batch_handles_hype_join(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             db = Database(str(Path(tmpdir) / "popday.sqlite3"))

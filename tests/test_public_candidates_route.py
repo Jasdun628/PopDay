@@ -21,6 +21,16 @@ class PublicCandidatesRouteTests(unittest.TestCase):
             "https://example.com/",
         )
 
+    def test_display_company_name_normalizes_casing_without_mangling_acronyms(self):
+        from flask_app import _display_company_name
+
+        self.assertEqual(_display_company_name("HARMONIC INC."), "Harmonic Inc.")
+        self.assertEqual(_display_company_name("COMMERCIAL METALS Co"), "Commercial Metals Co")
+        self.assertEqual(_display_company_name("Scotts Miracle-gro Co"), "Scotts Miracle-Gro Co")
+        self.assertEqual(_display_company_name("ADI Global Distribution Inc."), "ADI Global Distribution Inc.")
+        self.assertEqual(_display_company_name("Ligand Pharmaceuticals Inc"), "Ligand Pharmaceuticals Inc")
+        self.assertEqual(_display_company_name(""), "")
+
     def test_front_door_opens_price_reaction_view(self):
         with tempfile.NamedTemporaryFile(suffix=".sqlite3") as db_file:
             os.environ["POPDAY_DB_PATH"] = db_file.name
@@ -133,7 +143,7 @@ class PublicCandidatesRouteTests(unittest.TestCase):
 
             self.assertEqual(response.status_code, 200)
             self.assertIn('href="https://www.harmonicinc.com/"', html)
-            self.assertIn(">HARMONIC INC.</a>", html)
+            self.assertIn(">Harmonic Inc.</a>", html)
 
     def test_investor_days_table_places_evidence_between_company_and_event_date(self):
         with tempfile.NamedTemporaryFile(suffix=".sqlite3") as db_file:

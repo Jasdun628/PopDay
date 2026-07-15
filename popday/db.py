@@ -1122,7 +1122,9 @@ class Database:
         params: tuple = (market,) if market else ()
         rows = self.conn.execute(
             f"""
-            SELECT d.id AS candidate_id, d.company_name, d.ticker, d.cik, d.event_type,
+            SELECT d.id AS candidate_id, d.company_name,
+                   COALESCE(NULLIF(d.ticker, ''), pr.ticker) AS ticker,
+                   d.cik, d.event_type,
                    d.event_date, COALESCE(h.announcement_date, d.filing_date) AS announcement_date,
                    d.acceptance_datetime, d.filing_url AS source_url, d.evidence_url, d.evidence_label,
                    d.created_timestamp,
@@ -1131,6 +1133,12 @@ class Database:
                    h.detected_json, h.last_checked, h.hype_definition_version, h.provisional
             FROM detections d
             LEFT JOIN hype_tracking h ON h.candidate_id = d.id
+            -- Ticker was never populated on the US detection path (only the
+            -- UK path sets it directly); price_reactions already resolves
+            -- and caches a ticker per company (via stock_reaction.py's SEC
+            -- CIK->ticker lookup) after every scan, so reuse it here rather
+            -- than re-deriving ticker resolution a second time.
+            LEFT JOIN price_reactions pr ON pr.company_name = d.company_name
             WHERE d.status = 'alert_candidate'
               AND d.event_type IS NOT NULL
               AND d.event_date IS NOT NULL{market_filter}
@@ -1138,17 +1146,19 @@ class Database:
             """,
             params,
         ).fetchall()
-        known_market_filter = " WHERE market = ?" if market else ""
+        known_market_filter = " WHERE k.market = ?" if market else ""
         known_rows = self.conn.execute(
             f"""
-            SELECT NULL AS candidate_id, company_name, NULL AS ticker, NULL AS cik, event_type,
-                   event_date, announcement_date, NULL AS acceptance_datetime, source_url,
-                   source_url AS evidence_url, source_label AS evidence_label,
-                   created_timestamp, source_type,
-                   market, NULL AS investor_comms_count, NULL AS detected_json, NULL AS last_checked,
+            SELECT NULL AS candidate_id, k.company_name, pr.ticker AS ticker, NULL AS cik,
+                   k.event_type, k.event_date, k.announcement_date, NULL AS acceptance_datetime,
+                   k.source_url, k.source_url AS evidence_url, k.source_label AS evidence_label,
+                   k.created_timestamp, k.source_type,
+                   k.market, NULL AS investor_comms_count, NULL AS detected_json, NULL AS last_checked,
                    NULL AS hype_definition_version, NULL AS provisional
-            FROM known_announcements{known_market_filter}
-            ORDER BY event_date DESC, created_timestamp DESC
+            FROM known_announcements k
+            LEFT JOIN price_reactions pr ON pr.company_name = k.company_name
+            {known_market_filter}
+            ORDER BY k.event_date DESC, k.created_timestamp DESC
             """,
             params,
         ).fetchall()

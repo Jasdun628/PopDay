@@ -101,7 +101,7 @@
         <th>{{ research_sort_header("AD date", "ad", tip="Announcement Date - when the SEC filing about this event first became public.") }}</th>
         <th>{{ research_sort_header("ID date", "id", tip="Investor Day date - when the event itself is scheduled to happen, or happened.") }}</th>
         <th>{{ research_sort_header("Days AD-ID", "days", tip="How many days sit between the announcement and the event itself - the run-up window PopDay watches for hype filings.") }}</th>
-        <th>{{ research_sort_header("Raw Hype Count", "raw", tip="Reserved for a future count of hype signals. Not populated yet, so this always shows unknown for now.") }}</th>
+        <th>{{ research_sort_header("Raw Hype Count", "raw", tip="Reserved for a future count of hype signals. Not populated yet, so this always shows — for now.") }}</th>
         <th>{{ research_sort_header("Investor Comms Count", "investor_comms", tip="How many qualifying voluntary 8-Ks (items 2.02, 7.01, or 8.01) PopDay has found for this company by checking SEC's own filing feed directly - kept fresh independently of the original detection.") }}</th>
         <th><span class="tip-head" data-tip="How many of those qualifying filings were Item 7.01 (Regulation FD Disclosure) - a company sharing material information outside a formal earnings release.">8-K 7.01 Count</span></th>
         <th><span class="tip-head" data-tip="How many of those qualifying filings were Item 8.01 (Other Events) - a catch-all disclosure item companies use for material news that doesn't fit a more specific 8-K item.">8-K 8.01 Count</span></th>
@@ -119,16 +119,16 @@
           {{ r.company_name }}
           {% endif %}
         </td>
-        <td class="{{ 'unknown-text' if r.ticker == 'unknown' else 'secondary-cell' }}">{{ r.ticker }}</td>
+        <td class="{{ 'unknown-text' if r.ticker == '—' else 'secondary-cell' }}">{{ r.ticker }}</td>
         <td>{{ r.event_type }}</td>
         <td class="date-muted">{{ r.ad_date }}</td>
         <td class="date-strong">{{ r.id_date }}</td>
-        <td class="{{ 'unknown-text' if r.days == 'unknown' else 'date-strong' }}">{{ r.days }}</td>
+        <td class="{{ 'unknown-text' if r.days == '—' else 'date-strong' }}">{{ r.days }}</td>
         <td class="unknown-text">{{ r.raw_hype_count }}</td>
-        <td class="{{ 'unknown-text' if r.investor_comms_count == 'unknown' else 'date-strong' }}">{{ r.investor_comms_count }}</td>
-        <td class="{{ 'unknown-text' if r.item_701_count == 'unknown' else 'date-strong' }}">{{ r.item_701_count }}</td>
-        <td class="{{ 'unknown-text' if r.item_801_count == 'unknown' else 'date-strong' }}">{{ r.item_801_count }}</td>
-        <td class="{{ 'unknown-text' if r.latest_filing == 'unknown' else 'secondary-cell' }}">{{ r.latest_filing }}</td>
+        <td class="{{ 'unknown-text' if r.investor_comms_count == '—' else 'date-strong' }}">{{ r.investor_comms_count }}</td>
+        <td class="{{ 'unknown-text' if r.item_701_count == '—' else 'date-strong' }}">{{ r.item_701_count }}</td>
+        <td class="{{ 'unknown-text' if r.item_801_count == '—' else 'date-strong' }}">{{ r.item_801_count }}</td>
+        <td class="{{ 'unknown-text' if r.latest_filing == '—' else 'secondary-cell' }}">{{ r.latest_filing }}</td>
         <td>
           {% if r.source_url %}
           <a href="{{ r.source_url }}" target="_blank" rel="noopener" class="evidence-link">{{ r.source_label }}</a>
@@ -186,12 +186,12 @@
           {% else %}
           {{ r.company_name }}
           {% endif %}
-          {% if r.ticker and r.ticker != 'unknown' %}<div class="ticker-sub"><a href="https://finance.yahoo.com/quote/{{ r.ticker }}" target="_blank" rel="noopener">{{ r.ticker }}</a></div>{% endif %}
+          {% if r.ticker and r.ticker != '—' %}<div class="ticker-sub"><a href="https://finance.yahoo.com/quote/{{ r.ticker }}" target="_blank" rel="noopener">{{ r.ticker }}</a></div>{% endif %}
         </td>
         <td class="date-strong">{{ r.event_date }}</td>
         <td class="{{ 'move-up' if r.event_day_direction == 'up' else ('move-down' if r.event_day_direction == 'down' else 'number-cell') }}">{{ r.event_day_close }}{% if r.event_day_move_pct %}<div class="move-sub">{{ r.event_day_move_pct }}</div>{% endif %}</td>
-        <td class="grp-start {{ 'unknown-text' if r.accepted == 'unknown' and r.filing_date == 'unknown' else 'secondary-cell' }}">{% if r.accepted != 'unknown' %}{{ r.accepted }}{% if r.accepted_time %}<div class="status-meta">{{ r.accepted_time }}</div>{% endif %}{% else %}{{ r.filing_date }}{% endif %}</td>
-        <td class="{{ 'unknown-text' if r.reaction_date == 'unknown' else 'date-strong' }}">{{ r.reaction_date }}</td>
+        <td class="grp-start {{ 'unknown-text' if r.accepted == '—' and r.filing_date == '—' else 'secondary-cell' }}">{% if r.accepted != '—' %}{{ r.accepted }}{% if r.accepted_time %}<div class="status-meta">{{ r.accepted_time }}</div>{% endif %}{% else %}{{ r.filing_date }}{% endif %}</td>
+        <td class="{{ 'unknown-text' if r.reaction_date == '—' else 'date-strong' }}">{{ r.reaction_date }}</td>
         <td class="number-cell grp-start">{{ r.previous_close }}</td>
         <td class="number-cell">{{ r.reaction_close }}</td>
         <td class="number-cell">{{ r.announcement_move_pct }}</td>
@@ -700,7 +700,6 @@
         <div>
           <div class="summary-label">Scanner health</div>
           <div class="health-title">{{ status.health.summary }}</div>
-          <p>{{ status.front_door_note }}</p>
         </div>
         <span class="health-badge health-badge-{{ status.level_class }}">{{ status.public_level }}</span>
       </div>
@@ -708,16 +707,16 @@
         <div class="health-item">
           <div class="summary-label">Last PopDay scan</div>
           <div class="summary-value">{{ status.latest_scan_started_at_display }}</div>
-          <div class="summary-note">Filing date: {{ status.filing_date_scanned or "unknown" }}</div>
+          <div class="summary-note">Filing date: {{ status.filing_date_scanned or "—" }}</div>
         </div>
         <div class="health-item">
           <div class="summary-label">Last successful scan</div>
-          <div class="summary-value">{{ status.last_successful_scan_display or "unknown" }}</div>
-          <div class="summary-note">Discovery source: {{ status.last_scan_source or "unknown" }}</div>
+          <div class="summary-value">{{ status.last_successful_scan_display or "—" }}</div>
+          <div class="summary-note">Discovery source: {{ status.last_scan_source or "—" }}</div>
         </div>
         <div class="health-item">
           <div class="summary-label">Last new candidate found</div>
-          <div class="summary-value">{{ status.last_candidate_display or "unknown" }}</div>
+          <div class="summary-value">{{ status.last_candidate_display or "—" }}</div>
           <div class="summary-note">Recent discovery: {{ status.coverage_health.recent_filings_seen if status.coverage_health else "?" }} filings / last {{ status.coverage_health.recent_runs_considered if status.coverage_health else "?" }} scans</div>
         </div>
         <div class="health-item">
@@ -752,7 +751,7 @@
         <div class="health-item">
           <div class="summary-label">Backup status</div>
           <div class="summary-value">{{ "Backed up" if status.live_database_backed_up else "No backup found" }}</div>
-          <div class="summary-note">Latest: {{ status.last_backup_at or "unknown" }}; retained: {{ status.retained_backups or 0 }}</div>
+          <div class="summary-note">Latest: {{ status.last_backup_at or "—" }}; retained: {{ status.retained_backups or 0 }}</div>
         </div>
         {% if status.recovered_days %}
         <div class="health-item">
@@ -763,27 +762,10 @@
         {% endif %}
         <div class="health-item">
           <div class="summary-label">Latest scan facts</div>
-          <div class="summary-value">{{ status.edgar_index_status or "unknown" }}</div>
+          <div class="summary-value">{{ status.edgar_index_status or "—" }}</div>
           <div class="summary-note">{{ status.filings_parsed or "0" }} filings parsed; {{ status.eight_k_sanity_count or "0" }} 8-Ks; {{ status.qualifying_alerts_sent or "0" }} alerts.</div>
         </div>
       </div>
-    </div>
-
-    <div class="status-banner">
-      {% if latest_alert %}
-      <div class="status-title">
-        {% if latest_alert.company_url %}
-        <a href="{{ latest_alert.company_url }}" target="_blank" rel="noopener" class="company-link">{{ latest_alert.company_name }}</a>
-        {% else %}
-        {{ latest_alert.company_name }}
-        {% endif %}
-        announced {{ latest_alert.event_type or 'an Investor Day' }}
-      </div>
-      <div class="status-meta">Event date: {{ latest_alert.event_date }}</div>
-      {% else %}
-      <div class="status-title">No qualifying EDGAR Investor Day alerts yet</div>
-      <div class="status-meta">This does not cover announcements not filed as an 8-K or 6-K.</div>
-      {% endif %}
     </div>
 
     <div class="summary-grid">
@@ -1192,8 +1174,9 @@
       {% for title, text in [
         ("Price Reaction",      "Cached daily market-data view for confirmed announcements, split into Upcoming and Legacy by Investor Day date. The cache refreshes automatically after every scan, so newly detected companies appear here without manual steps. Columns are grouped by theme (the event, the announcement, first-day reaction to AD, since then). It shows the closing price on the actual Investor Day coloured green when the stock rose and red when it fell, the reaction-day move, latest available close, interval return, average event-day return, average interval return, and daily volatility. UK rows show £ and US rows show $; use the All / US / UK filter above the table to focus on one market."),
         ("Investor Days",       "Confirmed Investor Day, Analyst Day, and Capital Markets Day announcements PopDay has found, split into Upcoming and Legacy, with Evidence links to the source. Events announced without a firm date yet appear as Date TBD under Upcoming. Covers both US filings (SEC EDGAR, evidence links to the SEC) and UK RNS announcements (via Investegate, evidence links to the Investegate page — use the All / US / UK filter above the table to pick one market)."),
-        ("Research / Hype",     "Research view for already detected events. It is split into Upcoming and Legacy using the Investor Day date, and shows unknown where PopDay does not yet have enough data. Filterable by market like Investor Days."),
+        ("Research / Hype",     "Research view for already detected events. It is split into Upcoming and Legacy using the Investor Day date, and shows — where PopDay does not yet have enough data. Filterable by market like Investor Days."),
         ("Scan Log",            "Inspection view for filings PopDay examined, including dismissed false positives. It shows why something did or did not qualify, plus the next expected scan time and a collapsible history of recent scan runs."),
+        ("Missing data",        "PopDay shows — wherever a value has not been computed or does not apply, and reserves 0 strictly for a real computed zero. The one exception is the System Health state badge (LIVE / STALE / BROKEN / UNKNOWN), which is system-state vocabulary rather than a missing-value placeholder."),
         ("System Health",       "Current front-door health, freshness, backup state, and latest scan facts. It shows the last successful scan (with its discovery source — SEC full-text search or the UK RNS wire via Investegate, each tracked separately) and the last time a new investor-day candidate was found. Two kinds of warning banner appear on every tab: a red one if a scan fails, none has succeeded in over 26 hours, or PopDay stops finding filings altogether; and an amber one if no new candidate has appeared in over a week, which is worth a look. US and UK scanning are tracked independently, so a problem with one market's scan can never be hidden by the other running fine. This makes both a broken scan and a silently under-performing one impossible to miss. After any downtime, the first healthy scan automatically sweeps the missed business days and repopulates anything found — a 'Downtime recovery' card here lists the recovered days, and any alerts from them arrive in one combined email labelled as recovered. Problems also email the operator directly: a failed scan sends an immediate alarm (with at most one reminder every 12 hours while it persists), an independent hourly heartbeat check alarms if no successful scan has been recorded for over a day, even if the scan tasks themselves have stopped firing or a bug is silently breaking every run — and one all-clear email follows when scans recover."),
         ("Help",                "Short guide to the public PopDay tabs.")
       ] %}
