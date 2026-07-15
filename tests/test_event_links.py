@@ -128,6 +128,52 @@ https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany.</p>
         self.assertEqual(detections[0].status, "alert_candidate")
         self.assertEqual(detections[0].event_url, "")
 
+    def test_ifrs_taxonomy_urls_are_never_picked_as_event_url(self):
+        """Regression test found during a historical event_url cleanup
+        (2026-07-15): foreign private issuers (6-K/20-F) use the IFRS
+        taxonomy namespace (xbrl.ifrs.org) instead of xbrl.org, and its
+        "NonadjustingEventsAfterReportingPeriod" URI slug contains "events" -
+        one of the EVENT_LINK_HINTS keywords - so it used to score as a real
+        link once it dodged the xbrl.org-only host filter."""
+        raw = """
+<SEC-HEADER>
+ACCESSION NUMBER: 0000000000-26-000004
+CONFORMED SUBMISSION TYPE: 6-K
+COMPANY CONFORMED NAME: EXAMPLE PLC
+CENTRAL INDEX KEY: 0000000001
+FILED AS OF DATE: 20260714
+ITEM INFORMATION: 7.01
+</SEC-HEADER>
+<DOCUMENT>
+<TYPE>EX-99.1
+<FILENAME>d123dex991.htm
+<DESCRIPTION>Press release
+<TEXT>
+<html><body>
+<p>Example plc will host an Investor Day on September 15, 2026, offering
+a detailed look at strategy and growth.</p>
+<p>See https://xbrl.ifrs.org/taxonomy/2024-03-27/full_ifrs/full_ifrs-cor_2024-03-27.xsd#ifrs-full_NonadjustingEventsAfterReportingPeriodAxis
+for taxonomy details.</p>
+</body></html>
+</TEXT>
+</DOCUMENT>
+"""
+        parsed = parse_sec_filing(raw)
+        filing = Filing(
+            accession_number="0000000000-26-000004",
+            cik="0000000001",
+            company_name="Example plc",
+            form_type="6-K",
+            filing_date="2026-07-14",
+            filing_url="https://www.sec.gov/Archives/edgar/data/1/0000000000-26-000004.txt",
+            primary_document="example.htm",
+        )
+
+        detections = detect_in_parsed_filing(filing, parsed, date(2026, 7, 14))
+
+        self.assertEqual(detections[0].status, "alert_candidate")
+        self.assertEqual(detections[0].event_url, "")
+
     def test_dateless_investor_day_is_flagged_as_date_tbd(self):
         raw = """
 <SEC-HEADER>

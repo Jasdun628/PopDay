@@ -52,7 +52,15 @@ EVENT_LINK_HINTS = (
 # but "presentation" is a substring of "presentationLinkbaseRef" and used to
 # score them as a real investor-presentation link (the Ligand bug, 14 Jul
 # 2026). These hosts/paths are always taxonomy artifacts, never content.
-_TAXONOMY_JUNK_HOSTS = {"xbrl.org", "fasb.org", "sec.gov", "w3.org", "xbrl.sec.gov"}
+_TAXONOMY_JUNK_HOSTS = {
+    "xbrl.org", "fasb.org", "sec.gov", "w3.org", "xbrl.sec.gov",
+    # IFRS taxonomy, used by foreign private issuers (6-K/20-F filers) -
+    # same junk-link problem, different namespace host (found 2026-07-15
+    # during a historical event_url cleanup: e.g. an EX-99.1 exhibit whose
+    # only link was an IFRS "NonadjustingEventsAfterReportingPeriod" taxonomy
+    # URI, which scored as real because its own name contains "events").
+    "xbrl.ifrs.org", "ifrs.org",
+}
 _TAXONOMY_JUNK_PATH_MARKERS = ("/role/", "/linkbase/")
 
 
