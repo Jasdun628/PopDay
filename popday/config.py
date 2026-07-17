@@ -78,6 +78,10 @@ DEFAULT_COMPANY_WEBSITES = {
     # Cloudflare bot-challenge to unattended clients, not usable as a link).
     "Ligand Pharmaceuticals Inc": "https://www.ligand.com/",
     "ADI Global Distribution Inc.": "https://www.adiglobal.com/",
+    # Added 17 Jul 2026 for newly-surfaced Investor Day companies (URLs verified live).
+    "ASML Holding NV": "https://www.asml.com/",
+    "Hanover Insurance Group, Inc.": "https://www.hanover.com/",
+    "Smith & Wesson Brands, Inc.": "https://www.smith-wesson.com/",
 }
 
 
