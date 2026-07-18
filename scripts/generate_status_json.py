@@ -404,7 +404,7 @@ def _latest_alert(con: sqlite3.Connection) -> dict[str, Any] | None:
             dict(row)
             for row in con.execute(
                 """
-                SELECT company_name, event_type, event_date, filing_url AS source_url,
+                SELECT company_name, cik, event_type, event_date, filing_url AS source_url,
                        alert_sent_timestamp, 'EDGAR' AS source_type
                 FROM detections
                 WHERE alert_sent = 1 AND alert_sent_timestamp IS NOT NULL
@@ -420,7 +420,7 @@ def _latest_alert(con: sqlite3.Connection) -> dict[str, Any] | None:
             dict(row)
             for row in con.execute(
                 """
-                SELECT company_name, event_type, event_date, source_url,
+                SELECT company_name, cik_override AS cik, event_type, event_date, source_url,
                        alert_sent_timestamp, source_type
                 FROM known_announcements
                 WHERE alert_sent = 1 AND alert_sent_timestamp IS NOT NULL
@@ -713,6 +713,7 @@ def build_status(args: argparse.Namespace) -> dict[str, Any]:
         "eight_k_sanity_count": latest_run.get("eight_k_sanity_count") if latest_run else None,
         "qualifying_alerts_sent": latest_run.get("qualifying_alerts_sent") if latest_run else None,
         "last_alert_company": latest_alert.get("company_name"),
+        "last_alert_cik": latest_alert.get("cik"),
         "last_alert_date": latest_alert.get("event_date"),
         "last_alert_sent_at": latest_alert.get("alert_sent_timestamp"),
         "last_alert_filing_url": latest_alert.get("source_url"),

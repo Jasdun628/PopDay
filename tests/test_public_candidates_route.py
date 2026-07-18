@@ -21,6 +21,46 @@ class PublicCandidatesRouteTests(unittest.TestCase):
             "https://example.com/",
         )
 
+    def test_curated_link_wins_over_edgar_link(self):
+        from flask_app import _company_website
+
+        self.assertEqual(
+            _company_website(
+                "Example Co",
+                {"Example Co": "https://curated.example.com/"},
+                "0000000001",
+                {"0000000001": "https://edgar.example.com/"},
+            ),
+            "https://curated.example.com/",
+        )
+
+    def test_edgar_link_fills_gap_when_no_curated_link(self):
+        from flask_app import _company_website
+
+        self.assertEqual(
+            _company_website(
+                "Uncurated Co",
+                {},
+                "0000000001",
+                {"0000000001": "https://edgar.example.com/"},
+            ),
+            "https://edgar.example.com/",
+        )
+
+    def test_edgar_lookup_normalizes_unpadded_cik(self):
+        from flask_app import _company_website
+
+        self.assertEqual(
+            _company_website("Uncurated Co", {}, "1", {"0000000001": "https://edgar.example.com/"}),
+            "https://edgar.example.com/",
+        )
+
+    def test_no_curated_no_edgar_is_empty_not_a_guess(self):
+        from flask_app import _company_website
+
+        self.assertEqual(_company_website("Mystery Co", {}, "0000000001", {}), "")
+        self.assertEqual(_company_website("Mystery Co", {}, None, {"0000000001": "https://x.com/"}), "")
+
     def test_display_company_name_normalizes_casing_without_mangling_acronyms(self):
         from flask_app import _display_company_name
 

@@ -11,6 +11,7 @@ from pathlib import Path
 
 from flask import Flask, redirect, render_template, request, session, url_for
 
+from popday.company_websites import resolve_company_website
 from popday.config import DEFAULT_COMPANY_WEBSITES, load_config
 from popday.db import Database
 
@@ -143,17 +144,20 @@ def _sec_filing_url(filing_url: str) -> str:
     )
 
 
-def _company_key(company_name: object) -> str:
-    return " ".join(str(company_name or "").strip().lower().split())
-
-
 def _company_website(
     company_name: object,
     company_websites: dict[str, str] | None = None,
+    cik: object = None,
+    edgar_websites: dict[str, str] | None = None,
 ) -> str:
-    websites = company_websites or DEFAULT_COMPANY_WEBSITES
-    lookup = {_company_key(name): url for name, url in websites.items()}
-    return lookup.get(_company_key(company_name), "")
+    """Curated (config.json override, then DEFAULT_COMPANY_WEBSITES) always
+    wins; EDGAR's self-reported website (keyed by CIK, captured at scan time
+    - see popday/company_websites.py) only fills a gap curation hasn't
+    reached; otherwise empty, same as always - unlinked plain text, never a
+    guessed link."""
+    return resolve_company_website(
+        company_name, cik, company_websites or DEFAULT_COMPANY_WEBSITES, edgar_websites
+    )
 
 
 def _get_db() -> Database:
@@ -384,6 +388,7 @@ def _fallback_status(message: str) -> dict:
         "eight_k_sanity_count": None,
         "qualifying_alerts_sent": None,
         "last_alert_company": None,
+        "last_alert_cik": None,
         "last_alert_date": None,
         "days_since_last_alert": None,
         "last_alert_filing_url": None,
@@ -852,13 +857,17 @@ def _build_admin_context(
     tab: str,
     *,
     company_websites: dict[str, str],
+    edgar_websites: dict[str, str] | None = None,
     market: str | None = None,
 ) -> dict:
+    edgar_websites = edgar_websites or {}
     status = _load_public_status()
     if status.get("last_alert_company"):
         status["last_alert_company_url"] = _company_website(
             status.get("last_alert_company"),
             company_websites,
+            status.get("last_alert_cik"),
+            edgar_websites,
         )
     synced_health_rows = _launchd_health_rows_from_lines(status.get("latest_log_tail") or [])
     ctx: dict = {"status": status, "active_market": market}
@@ -877,7 +886,9 @@ def _build_admin_context(
         announcements = [
             {
                 "company_name": _display_company_name(r["company_name"]),
-                "company_url": _company_website(r["company_name"], company_websites),
+                "company_url": _company_website(
+                    r["company_name"], company_websites, dict(r).get("cik"), edgar_websites
+                ),
                 "event_type": r["event_type"] or "Investor Day",
                 "event_date": _friendly_date(r["event_date"]) if dict(r).get("event_date") else "Date TBD",
                 "event_date_raw": dict(r).get("event_date") or "",
@@ -947,7 +958,9 @@ def _build_admin_context(
             research_rows.append(
                 {
                     "company_name": _display_company_name(row.get("company_name") or ""),
-                    "company_url": _company_website(row.get("company_name"), company_websites),
+                    "company_url": _company_website(
+                        row.get("company_name"), company_websites, row.get("cik"), edgar_websites
+                    ),
                     "ticker": _unknown_text(row.get("ticker")),
                     "event_type": row.get("event_type") or "Investor Day",
                     "ad_date": _friendly_date(str(ad_raw)) if ad_raw else "—",
@@ -1004,7 +1017,9 @@ def _build_admin_context(
         price_reaction_rows = [
             {
                 "company_name": _display_company_name(r["company_name"]),
-                "company_url": _company_website(r["company_name"], company_websites),
+                "company_url": _company_website(
+                    r["company_name"], company_websites, dict(r).get("cik"), edgar_websites
+                ),
                 "ticker": _unknown_text(r["ticker"]),
                 "event_date_raw": dict(r).get("event_date") or "",
                 "event_date": _friendly_date(r["event_date"]) if dict(r).get("event_date") else "Date TBD",
@@ -1060,7 +1075,7 @@ def _build_admin_context(
         ]
         sent_rows = db.conn.execute(
             """
-            SELECT company_name, event_type, event_date, alert_sent_timestamp
+            SELECT company_name, cik, event_type, event_date, alert_sent_timestamp
             FROM detections WHERE alert_sent = 1
             ORDER BY alert_sent_timestamp DESC LIMIT 20
             """
@@ -1068,7 +1083,9 @@ def _build_admin_context(
         ctx["sent_alerts"] = [
             {
                 "company_name": _display_company_name(r["company_name"]),
-                "company_url": _company_website(r["company_name"], company_websites),
+                "company_url": _company_website(
+                    r["company_name"], company_websites, r["cik"], edgar_websites
+                ),
                 "event_type": r["event_type"] or "Investor Day",
                 "event_date": r["event_date"] or "—",
                 "sent_at": _friendly_datetime_str(r["alert_sent_timestamp"]),
@@ -1096,7 +1113,9 @@ def _build_admin_context(
                 "status": r["status"] or "",
                 "status_display": _admin_display_text(r["status"]),
                 "company_name": _display_company_name(r["company_name"]),
-                "company_url": _company_website(r["company_name"], company_websites),
+                "company_url": _company_website(
+                    r["company_name"], company_websites, dict(r).get("cik"), edgar_websites
+                ),
                 "matched_phrase": _matched_phrase_display(dict(r).get("matched_phrase")),
                 "event_date": _friendly_date(r["event_date"]) if dict(r).get("event_date") else "—",
                 "matched_location": _admin_display_text(dict(r).get("matched_location")),
@@ -1128,7 +1147,11 @@ def _render_main_ui(tab: str, *, is_admin: bool) -> str:
     db = Database(config.db_path)
     try:
         ctx = _build_admin_context(
-            db, tab, company_websites=config.company_websites, market=market
+            db,
+            tab,
+            company_websites=config.company_websites,
+            edgar_websites=db.company_websites_by_cik(),
+            market=market,
         )
     finally:
         db.close()
@@ -1285,6 +1308,7 @@ def admin_candidate(detection_id):
     db = Database(config.db_path)
     try:
         row = db.detection(detection_id)
+        edgar_websites = db.company_websites_by_cik()
     finally:
         db.close()
     if not row:
@@ -1320,7 +1344,12 @@ def admin_candidate(detection_id):
 
     return render_template(
         "admin_candidate.html",
-        row=dict(row) | {"company_url": _company_website(row["company_name"], config.company_websites)},
+        row=dict(row)
+        | {
+            "company_url": _company_website(
+                row["company_name"], config.company_websites, row["cik"], edgar_websites
+            )
+        },
         preview=preview,
         fetch_error=fetch_error,
         sec_url=sec_url,

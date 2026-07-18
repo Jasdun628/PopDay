@@ -179,6 +179,20 @@ CREATE TABLE IF NOT EXISTS ops_alerts (
     last_sent_utc TEXT,
     detail TEXT
 );
+
+-- One row per CIK (the stable EDGAR identity; company_name casing varies
+-- across filings for the same CIK - see HANDOFF.md). edgar_website is
+-- EDGAR's self-reported website field, captured once per company and never
+-- overwriting a curated (DEFAULT_COMPANY_WEBSITES / config.json) link. NULL
+-- means "checked, EDGAR had nothing usable" - distinct from "never checked"
+-- (no row at all), which is what gates a repeat fetch.
+CREATE TABLE IF NOT EXISTS companies (
+    cik TEXT PRIMARY KEY,
+    company_name TEXT NOT NULL,
+    market TEXT NOT NULL DEFAULT 'US',
+    edgar_website TEXT,
+    edgar_website_checked_utc TEXT NOT NULL
+);
 """
 
 
@@ -724,7 +738,7 @@ class Database:
         params: tuple = (market, limit) if market else (limit,)
         return self.conn.execute(
             f"""
-            SELECT d.id, d.created_timestamp, d.company_name, d.form_type, d.filing_date, d.event_type, d.event_date,
+            SELECT d.id, d.created_timestamp, d.company_name, d.cik, d.form_type, d.filing_date, d.event_type, d.event_date,
                    d.matched_phrase, d.matched_location, d.status, d.dismissal_reason, d.filing_url,
                    d.acceptance_datetime, d.event_url, d.evidence_url, d.evidence_label, d.market,
                    h.qualifying_count, h.hype_status, h.hype_definition_version, h.provisional
@@ -1302,3 +1316,61 @@ class Database:
     def delete_alert_recipient(self, email: str) -> None:
         self.conn.execute("DELETE FROM alert_recipients WHERE email = ?", (email,))
         self.conn.commit()
+
+    # ------------------------------------------------------- company websites
+
+    def has_company_website_row(self, cik: str) -> bool:
+        """True once a company's EDGAR website has been checked (successfully
+        or not) - gates the scan-time capture so it fires only the first time
+        a company is discovered, never on every later filing from it."""
+        row = self.conn.execute(
+            "SELECT 1 FROM companies WHERE cik = ?", (cik,)
+        ).fetchone()
+        return row is not None
+
+    def upsert_company_website(
+        self, *, cik: str, company_name: str, edgar_website: str, market: str = "US"
+    ) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO companies (cik, company_name, market, edgar_website, edgar_website_checked_utc)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(cik) DO UPDATE SET
+                company_name = excluded.company_name,
+                market = excluded.market,
+                edgar_website = excluded.edgar_website,
+                edgar_website_checked_utc = excluded.edgar_website_checked_utc
+            """,
+            (cik, company_name, market, edgar_website or None, utc_now()),
+        )
+        self.conn.commit()
+
+    def company_websites_by_cik(self) -> dict[str, str]:
+        """EDGAR-resolved websites, keyed by CIK - the fallback layer under
+        curated links wherever company_url is rendered."""
+        rows = self.conn.execute(
+            "SELECT cik, edgar_website FROM companies "
+            "WHERE edgar_website IS NOT NULL AND edgar_website != ''"
+        ).fetchall()
+        return {str(row["cik"]): str(row["edgar_website"]) for row in rows}
+
+    def distinct_detection_companies(self, market: str = "US") -> list[sqlite3.Row]:
+        """Every distinct CIK ever detected in this market - the backfill
+        target universe for the EDGAR website fill (one row per company, most
+        recently seen name wins so a later, better-cased filing is preferred)."""
+        return self.conn.execute(
+            """
+            SELECT cik, company_name
+            FROM (
+                SELECT cik, company_name,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY cik ORDER BY created_timestamp DESC
+                       ) AS rn
+                FROM detections
+                WHERE market = ? AND cik IS NOT NULL AND cik != ''
+            )
+            WHERE rn = 1
+            ORDER BY company_name
+            """,
+            (market,),
+        ).fetchall()

@@ -8,6 +8,7 @@ from dataclasses import dataclass, replace as dc_replace
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
+from .company_websites import fetch_edgar_website, normalize_cik
 from .config import load_config
 from .coverage_gap import missed_business_days
 from .date_extract import format_human_date
@@ -264,6 +265,27 @@ def _refresh_downstream_caches(config, db) -> str:
     return "; ".join(notes)
 
 
+def _ensure_company_website(db: Database, client: EdgarClient, filing: Filing) -> str:
+    """Capture EDGAR's self-reported website once, the first time a company
+    is discovered - not at page-render time (see popday/company_websites.py).
+    Cosmetic data: a fetch failure (403, network) is logged, never swallowed,
+    but must never block the scan or touch the ops-alarm state machine - the
+    company simply stays uncaptured until a later scan or the backfill
+    script retries it. Returns the freshly-captured website ("" if none, or
+    if already captured/skipped/failed).
+    """
+    cik = normalize_cik(filing.cik)
+    if not cik or db.has_company_website_row(cik):
+        return ""
+    try:
+        website = fetch_edgar_website(client, cik)
+    except Exception as exc:  # noqa: BLE001 - cosmetic data must never block alerting
+        print(f"WARNING - could not capture EDGAR website for {filing.company_name} ({cik}): {exc}")
+        return ""
+    db.upsert_company_website(cik=cik, company_name=filing.company_name, edgar_website=website)
+    return website
+
+
 @dataclass
 class _DayScanOutcome:
     """Result of scanning one filing date, email deliberately deferred.
@@ -437,6 +459,8 @@ def _scan_single_date(
 
             raw = client.get_text(filing.filing_url)
             filings_parsed += 1
+            if not args.dry_run:
+                _ensure_company_website(db, client, filing)
             if args.legacy_parser:
                 sections = parse_filing_sections(raw)
                 detections = detect_in_sections(
