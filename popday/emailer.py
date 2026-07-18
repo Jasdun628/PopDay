@@ -205,6 +205,15 @@ def _recovered_note(alert: object) -> str:
     return f"Recovered from downtime (missed scan day {human})"
 
 
+def _missing_website_note(alert: object) -> str:
+    """Informational only (see popday/company_websites.py) - never blocks
+    the alert, just flags that this company still shows as plain text on
+    the site until a link is curated or EDGAR later reports one."""
+    if not getattr(alert, "company_url_missing", False):
+        return ""
+    return "No website on file for this company yet - it will show as plain text until curated."
+
+
 _MARKET_SECTION_LABELS = {
     "US": "US - SEC EDGAR",
     "UK": "UK - RNS (via Investegate)",
@@ -263,6 +272,9 @@ def build_alert_body(alerts: list[object], unsubscribe_link: str | None = None) 
         recovered_note = _recovered_note(alert)
         if recovered_note:
             lines.append(f"Note:    {recovered_note}")
+        missing_website_note = _missing_website_note(alert)
+        if missing_website_note:
+            lines.append(f"Note:    {missing_website_note}")
         nugget = _main_nugget(alert)
         if nugget:
             lines.append("")
@@ -360,6 +372,9 @@ def build_alert_html(alerts: list[object], unsubscribe_link: str | None = None) 
         recovered_note = _recovered_note(alert)
         if recovered_note:
             parts.append(f"<br><em>{html.escape(recovered_note)}</em>")
+        missing_website_note = _missing_website_note(alert)
+        if missing_website_note:
+            parts.append(f"<br><em>{html.escape(missing_website_note)}</em>")
         parts.append("</p>")
         nugget = _main_nugget(alert)
         if nugget:

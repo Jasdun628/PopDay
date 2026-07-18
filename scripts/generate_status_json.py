@@ -11,8 +11,14 @@ import re
 import sqlite3
 import socket
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from popday.company_websites import resolve_company_website  # noqa: E402
+from popday.config import load_config  # noqa: E402
 
 
 DEFAULT_RUNTIME_DIR = Path("/Users/jasondunne/PopDayRuntime")
@@ -436,6 +442,64 @@ def _latest_alert(con: sqlite3.Connection) -> dict[str, Any] | None:
     return max(rows, key=lambda row: str(row.get("alert_sent_timestamp") or ""))
 
 
+def _missing_company_websites(con: sqlite3.Connection) -> dict[str, Any]:
+    """Companies on the public Investor Days tab whose resolved link (curated
+    + EDGAR) is still empty - mirrors db.investor_day_announcements()'s
+    display universe and flask_app.py's _company_website() resolution order,
+    via the shared resolve_company_website() so the two never drift apart.
+    Informational only (see popday/company_websites.py) - this never blocks
+    anything, it just makes the gap visible on the System Health tab.
+    """
+    try:
+        curated_websites = load_config().company_websites
+    except Exception:
+        curated_websites = {}
+    try:
+        edgar_websites = {
+            str(row[0]): str(row[1])
+            for row in con.execute(
+                "SELECT cik, edgar_website FROM companies "
+                "WHERE edgar_website IS NOT NULL AND edgar_website != ''"
+            ).fetchall()
+        }
+    except sqlite3.Error:
+        edgar_websites = {}
+
+    pairs: list[tuple[str, str | None]] = []
+    try:
+        pairs.extend(
+            (str(row[0]), str(row[1]) if row[1] is not None else None)
+            for row in con.execute(
+                """
+                SELECT company_name, cik FROM detections
+                WHERE event_type IS NOT NULL
+                  AND ((status = 'alert_candidate' AND event_date IS NOT NULL)
+                       OR status = 'alert_candidate_tbd')
+                """
+            ).fetchall()
+        )
+    except sqlite3.Error:
+        pass
+    try:
+        pairs.extend(
+            (str(row[0]), str(row[1]) if row[1] is not None else None)
+            for row in con.execute(
+                "SELECT company_name, cik_override FROM known_announcements"
+            ).fetchall()
+        )
+    except sqlite3.Error:
+        pass
+
+    missing = sorted(
+        {
+            name
+            for name, cik in pairs
+            if not resolve_company_website(name, cik, curated_websites, edgar_websites)
+        }
+    )
+    return {"count": len(missing), "companies": missing}
+
+
 def _database_status(db_path: Path, now: dt.datetime) -> dict[str, Any]:
     status: dict[str, Any] = {
         "path": str(db_path),
@@ -445,6 +509,7 @@ def _database_status(db_path: Path, now: dt.datetime) -> dict[str, Any]:
         "latest_alert": None,
         "scan_health": None,
         "coverage_health": None,
+        "missing_company_websites": None,
         "error": "",
     }
     if not db_path.exists():
@@ -460,6 +525,7 @@ def _database_status(db_path: Path, now: dt.datetime) -> dict[str, Any]:
             "active_recipients": _count(con, "alert_recipients", "WHERE active = 1"),
         }
         status["latest_alert"] = _latest_alert(con)
+        status["missing_company_websites"] = _missing_company_websites(con)
         status["scan_health"] = _scan_health(con)
         # Per-source health so a UK outage is never masked by a healthy US
         # run (and vice versa). Keyed by discovery source; each entry pairs
@@ -728,6 +794,7 @@ def build_status(args: argparse.Namespace) -> dict[str, Any]:
         "database_counts": db_status["counts"],
         "scan_health": db_status.get("scan_health"),
         "coverage_health": db_status.get("coverage_health"),
+        "missing_company_websites": db_status.get("missing_company_websites"),
         # Per-source health (edgar/investegate) - flask_app.py's per-source
         # banner reads this; without it, a UK-only outage silently has no
         # way to surface on the live site regardless of the logic that

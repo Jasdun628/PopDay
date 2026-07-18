@@ -799,6 +799,19 @@
           <div class="summary-value">{{ status.edgar_index_status or "—" }}</div>
           <div class="summary-note">{{ status.filings_parsed or "0" }} filings parsed; {{ status.eight_k_sanity_count or "0" }} 8-Ks; {{ status.qualifying_alerts_sent or "0" }} alerts.</div>
         </div>
+        {% if status.missing_company_websites %}
+        <div class="health-item">
+          <div class="summary-label">Missing website links</div>
+          <div class="summary-value">{{ status.missing_company_websites.count }} compan{{ "y" if status.missing_company_websites.count == 1 else "ies" }}</div>
+          <div class="summary-note">
+            {% if status.missing_company_websites.count %}
+            {{ status.missing_company_websites.companies|join(", ") }}
+            {% else %}
+            Every Investor Days company has a resolved website link (curated or EDGAR).
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
       </div>
     </div>
 

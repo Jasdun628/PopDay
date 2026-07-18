@@ -392,6 +392,7 @@ def _fallback_status(message: str) -> dict:
         "last_alert_date": None,
         "days_since_last_alert": None,
         "last_alert_filing_url": None,
+        "missing_company_websites": None,
         "live_database_backed_up": False,
         "last_backup_at": None,
         "retained_backups": 0,

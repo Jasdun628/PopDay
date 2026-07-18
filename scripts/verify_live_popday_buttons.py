@@ -224,11 +224,16 @@ def check(name: str, ok: bool, failures: list[str], detail: str = "") -> None:
 
 def check_advisory(name: str, ok: bool, detail: str = "") -> None:
     # Non-blocking: for data-curation gaps (e.g. a newly-surfaced company
-    # not yet in DEFAULT_COMPANY_WEBSITES) that are expected to occur
-    # continuously as daily scans find new companies, and must never be
-    # able to block the deploy gate. The deploy gate tests "is the app
-    # serving correctly," not "is every row's data fully curated" - see
-    # HANDOFF.md. Still printed so the gap stays visible in deploy logs.
+    # resolving to neither a curated DEFAULT_COMPANY_WEBSITES entry nor an
+    # EDGAR self-reported website - see popday/company_websites.py) that are
+    # expected to occur continuously as daily scans find new companies, and
+    # must never be able to block the deploy gate. This check reads the live
+    # rendered page, so it already reflects both resolution layers - it only
+    # warns on a company neither layer covers. The deploy gate tests "is the
+    # app serving correctly," not "is every row's data fully curated" - see
+    # HANDOFF.md. Still printed so the gap stays visible in deploy logs (the
+    # System Health tab's "Missing website links" line is the persistent,
+    # non-log-diving view of the same gap).
     suffix = f" - {detail}" if detail else ""
     print(f"{name}: {'OK' if ok else 'WARN'}{suffix}")
 

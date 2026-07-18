@@ -8,7 +8,7 @@ from dataclasses import dataclass, replace as dc_replace
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-from .company_websites import fetch_edgar_website, normalize_cik
+from .company_websites import fetch_edgar_website, normalize_cik, resolve_company_website
 from .config import load_config
 from .coverage_gap import missed_business_days
 from .date_extract import format_human_date
@@ -60,6 +60,11 @@ class Alert:
     recovered_from: str = ""  # missed scan date this alert was recovered from
     market: str = "US"
     context_text: str = ""
+    # True when this company's resolved link (curated + EDGAR) is still
+    # empty at alert time - drives one informational note line in the alert
+    # email (see popday/emailer.py). Never blocks anything; see
+    # popday/company_websites.py for the resolution order.
+    company_url_missing: bool = False
 
 
 PRIVILEGED_TEST_RECIPIENT = "jd@jasondunne.co.uk"
@@ -324,6 +329,7 @@ def _scan_single_date(
     include_phrases = db.active_phrases("include")
     routine_phrases = db.active_phrases("routine_context")
     recovered_from = run_date.isoformat() if run_kind == "backfill" else ""
+    edgar_websites = db.company_websites_by_cik()
 
     scan_run_id = db.start_scan_run(run_date, run_kind=run_kind)
 
@@ -460,7 +466,9 @@ def _scan_single_date(
             raw = client.get_text(filing.filing_url)
             filings_parsed += 1
             if not args.dry_run:
-                _ensure_company_website(db, client, filing)
+                captured = _ensure_company_website(db, client, filing)
+                if captured:
+                    edgar_websites[normalize_cik(filing.cik)] = captured
             if args.legacy_parser:
                 sections = parse_filing_sections(raw)
                 detections = detect_in_sections(
@@ -498,10 +506,12 @@ def _scan_single_date(
                             dismissal_reason="event_already_alerted",
                         )
                 detection_id = 0 if args.dry_run else db.insert_detection(detection)
-                if detection.status == "alert_candidate" and detection_id:
-                    alerts.append(_alert_from_detection(detection_id, detection, recovered_from))
-                elif detection.status == "alert_candidate" and args.dry_run:
-                    alerts.append(_alert_from_detection(0, detection, recovered_from))
+                if detection.status == "alert_candidate" and (detection_id or args.dry_run):
+                    alert = _alert_from_detection(detection_id, detection, recovered_from)
+                    missing = not resolve_company_website(
+                        alert.company_name, filing.cik, config.company_websites, edgar_websites
+                    )
+                    alerts.append(dc_replace(alert, company_url_missing=missing))
 
             if not args.dry_run:
                 db.mark_processed(filing)
@@ -717,14 +727,12 @@ def _scan_single_date_uk(
                         dismissal_reason="event_already_alerted",
                     )
                 detection_id = 0 if args.dry_run else db.insert_detection(detection)
-                if detection.status == "alert_candidate" and detection_id:
-                    alerts.append(
-                        _alert_from_uk_detection(detection_id, detection, recovered_from)
+                if detection.status == "alert_candidate" and (detection_id or args.dry_run):
+                    alert = _alert_from_uk_detection(detection_id, detection, recovered_from)
+                    missing = not resolve_company_website(
+                        alert.company_name, None, config.company_websites, None
                     )
-                elif detection.status == "alert_candidate" and args.dry_run:
-                    alerts.append(
-                        _alert_from_uk_detection(0, detection, recovered_from)
-                    )
+                    alerts.append(dc_replace(alert, company_url_missing=missing))
             if not args.dry_run:
                 db.mark_processed(
                     Filing(

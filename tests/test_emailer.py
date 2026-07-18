@@ -2,7 +2,7 @@ import unittest
 from dataclasses import dataclass
 from datetime import date
 
-from popday.emailer import _sec_readable_url, build_alert_body
+from popday.emailer import _sec_readable_url, build_alert_body, build_alert_html
 
 
 @dataclass(frozen=True)
@@ -27,6 +27,7 @@ class Alert:
     hype_count: int = 0
     hype_provisional: bool = True
     context_text: str = ""
+    company_url_missing: bool = False
 
 
 class EmailerTests(unittest.TestCase):
@@ -122,6 +123,27 @@ class EmailerTests(unittest.TestCase):
 
         self.assertIn("COMPANY EVENT / IR LINK", body)
         self.assertIn("https://investor.example.com/events/investor-day", body)
+
+    def test_alert_body_notes_missing_company_website(self):
+        alert = Alert(company_url_missing=True)
+
+        body = build_alert_body([alert])
+
+        self.assertIn("Note:    No website on file for this company yet", body)
+
+    def test_alert_body_omits_missing_website_note_when_resolved(self):
+        alert = Alert(company_url_missing=False)
+
+        body = build_alert_body([alert])
+
+        self.assertNotIn("No website on file", body)
+
+    def test_alert_html_notes_missing_company_website(self):
+        alert = Alert(company_url_missing=True)
+
+        html = build_alert_html([alert])
+
+        self.assertIn("No website on file for this company yet", html)
 
     def test_sec_complete_submission_url_becomes_readable_index_page(self):
         url = "https://www.sec.gov/Archives/edgar/data/851310/0001193125-26-273457.txt"
