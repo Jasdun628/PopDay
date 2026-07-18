@@ -82,6 +82,8 @@ DEFAULT_COMPANY_WEBSITES = {
     "ASML Holding NV": "https://www.asml.com/",
     "Hanover Insurance Group, Inc.": "https://www.hanover.com/",
     "Smith & Wesson Brands, Inc.": "https://www.smith-wesson.com/",
+    # Added 18 Jul 2026 for a newly-surfaced Investor Day company (URL verified live).
+    "BOS Better Online Solutions Ltd": "https://www.boscom.com",
 }
 
 
