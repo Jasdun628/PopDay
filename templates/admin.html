@@ -198,7 +198,15 @@
         <td class="number-cell">{{ r.announcement_move_pct }}</td>
         <td class="number-cell">{{ r.intraday_range_pct }}</td>
         <td class="number-cell grp-start">{{ r.latest_close }}<div class="status-meta">{{ r.latest_close_date }}</div></td>
-        <td class="number-cell">{{ r.interval_return_pct }}</td>
+        <td class="number-cell">
+          {% if r.interval_return_raw is not none %}
+          <span class="return-pill {{ 'return-pill-up' if r.interval_return_raw > 0 else ('return-pill-down' if r.interval_return_raw < 0 else 'return-pill-flat') }}">
+            {% if r.interval_return_raw > 0 %}<span class="return-arrow">&#9650;</span>{% elif r.interval_return_raw < 0 %}<span class="return-arrow">&#9660;</span>{% endif %}{{ r.interval_return_pct }}
+          </span>
+          {% else %}
+          {{ r.interval_return_pct }}
+          {% endif %}
+        </td>
         <td class="number-cell">{{ r.interval_daily_volatility_pct }}</td>
         <td class="grp-start {{ 'status-good' if r.status == 'Ok' else 'secondary-cell' }}">
           {{ r.status }}
@@ -492,6 +500,14 @@
     .move-up { color: var(--ok); font-weight: 750; white-space: nowrap; }
     .move-down { color: var(--danger); font-weight: 750; white-space: nowrap; }
     .move-sub { font-size: 12px; font-weight: 650; margin-top: 3px; }
+    .return-pill {
+      align-items: center; border-radius: 999px; display: inline-flex;
+      font-weight: 700; gap: 4px; padding: 3px 9px; white-space: nowrap;
+    }
+    .return-pill-up { background: var(--ok-bg); color: var(--ok); }
+    .return-pill-down { background: var(--danger-bg); color: var(--danger); }
+    .return-pill-flat { background: var(--neutral-bg); color: var(--muted); }
+    .return-arrow { font-size: 9px; }
     .ticker-sub { font-size: 11px; margin-top: 3px; }
     .ticker-sub a { color: var(--muted); font-weight: 650; letter-spacing: 0.3px; text-decoration: none; }
     .ticker-sub a:hover { color: var(--link); text-decoration: underline; }
