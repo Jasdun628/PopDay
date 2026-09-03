@@ -444,11 +444,12 @@ def _latest_alert(con: sqlite3.Connection) -> dict[str, Any] | None:
 
 def _missing_company_websites(con: sqlite3.Connection) -> dict[str, Any]:
     """Companies on the public Investor Days tab whose resolved link (curated
-    + EDGAR) is still empty - mirrors db.investor_day_announcements()'s
-    display universe and flask_app.py's _company_website() resolution order,
-    via the shared resolve_company_website() so the two never drift apart.
-    Informational only (see popday/company_websites.py) - this never blocks
-    anything, it just makes the gap visible on the System Health tab.
+    + EDGAR + heuristic auto-resolve) is still empty - mirrors
+    db.investor_day_announcements()'s display universe and
+    flask_app.py's _company_website() resolution order, via the shared
+    resolve_company_website() so the two never drift apart. Informational
+    only (see popday/company_websites.py) - this never blocks anything, it
+    just makes the gap visible on the System Health tab.
     """
     try:
         curated_websites = load_config().company_websites
@@ -464,6 +465,16 @@ def _missing_company_websites(con: sqlite3.Connection) -> dict[str, Any]:
         }
     except sqlite3.Error:
         edgar_websites = {}
+    try:
+        resolved_websites = {
+            str(row[0]): str(row[1])
+            for row in con.execute(
+                "SELECT company_key, resolved_website FROM resolved_company_websites "
+                "WHERE resolved_website IS NOT NULL AND resolved_website != ''"
+            ).fetchall()
+        }
+    except sqlite3.Error:
+        resolved_websites = {}
 
     pairs: list[tuple[str, str | None]] = []
     try:
@@ -494,7 +505,9 @@ def _missing_company_websites(con: sqlite3.Connection) -> dict[str, Any]:
         {
             name
             for name, cik in pairs
-            if not resolve_company_website(name, cik, curated_websites, edgar_websites)
+            if not resolve_company_website(
+                name, cik, curated_websites, edgar_websites, resolved_websites
+            )
         }
     )
     return {"count": len(missing), "companies": missing}

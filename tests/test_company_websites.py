@@ -8,6 +8,7 @@ from unittest import mock
 from popday.company_websites import (
     fetch_edgar_website,
     normalize_cik,
+    resolve_company_website,
     select_edgar_website,
 )
 
@@ -77,6 +78,50 @@ class FetchEdgarWebsiteTests(unittest.TestCase):
         client.get_json.side_effect = EdgarBlockedError("url", 403)
         with self.assertRaises(EdgarBlockedError):
             fetch_edgar_website(client, "1005516")
+
+
+class ResolveCompanyWebsiteTests(unittest.TestCase):
+    """Priority order: curated > EDGAR > heuristic auto-resolve > "" -
+    manual corrections must always win, and the auto-resolver must never
+    override an EDGAR-sourced link either."""
+
+    def test_curated_wins_over_everything(self):
+        result = resolve_company_website(
+            "Example Co",
+            "0000000001",
+            {"Example Co": "https://curated.example.com/"},
+            {"0000000001": "https://edgar.example.com/"},
+            {"example co": "https://resolved.example.com/"},
+        )
+        self.assertEqual(result, "https://curated.example.com/")
+
+    def test_edgar_wins_over_resolved_when_curated_empty(self):
+        result = resolve_company_website(
+            "Example Co",
+            "0000000001",
+            {},
+            {"0000000001": "https://edgar.example.com/"},
+            {"example co": "https://resolved.example.com/"},
+        )
+        self.assertEqual(result, "https://edgar.example.com/")
+
+    def test_resolved_fills_gap_when_curated_and_edgar_empty(self):
+        result = resolve_company_website(
+            "Example Co", "0000000001", {}, {}, {"example co": "https://resolved.example.com/"}
+        )
+        self.assertEqual(result, "https://resolved.example.com/")
+
+    def test_resolved_lookup_works_without_a_cik(self):
+        """UK companies pass cik=None - the resolved layer must still match
+        by company name."""
+        result = resolve_company_website(
+            "Some UK plc", None, {}, {}, {"some uk plc": "https://someukplc.co.uk/"}
+        )
+        self.assertEqual(result, "https://someukplc.co.uk/")
+
+    def test_nothing_resolved_anywhere_returns_empty(self):
+        self.assertEqual(resolve_company_website("Example Co", "0000000001", {}, {}, {}), "")
+        self.assertEqual(resolve_company_website("Example Co", "0000000001", {}, {}, None), "")
 
 
 if __name__ == "__main__":

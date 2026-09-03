@@ -149,14 +149,16 @@ def _company_website(
     company_websites: dict[str, str] | None = None,
     cik: object = None,
     edgar_websites: dict[str, str] | None = None,
+    resolved_websites: dict[str, str] | None = None,
 ) -> str:
     """Curated (config.json override, then DEFAULT_COMPANY_WEBSITES) always
     wins; EDGAR's self-reported website (keyed by CIK, captured at scan time
-    - see popday/company_websites.py) only fills a gap curation hasn't
-    reached; otherwise empty, same as always - unlinked plain text, never a
-    guessed link."""
+    - see popday/company_websites.py) fills a gap curation hasn't reached;
+    the heuristic auto-resolver (popday/website_resolver.py, cached at scan
+    time) fills whatever's left; otherwise empty, same as always - unlinked
+    plain text, never a guessed link."""
     return resolve_company_website(
-        company_name, cik, company_websites or DEFAULT_COMPANY_WEBSITES, edgar_websites
+        company_name, cik, company_websites or DEFAULT_COMPANY_WEBSITES, edgar_websites, resolved_websites
     )
 
 
@@ -859,9 +861,11 @@ def _build_admin_context(
     *,
     company_websites: dict[str, str],
     edgar_websites: dict[str, str] | None = None,
+    resolved_websites: dict[str, str] | None = None,
     market: str | None = None,
 ) -> dict:
     edgar_websites = edgar_websites or {}
+    resolved_websites = resolved_websites or {}
     status = _load_public_status()
     if status.get("last_alert_company"):
         status["last_alert_company_url"] = _company_website(
@@ -869,6 +873,7 @@ def _build_admin_context(
             company_websites,
             status.get("last_alert_cik"),
             edgar_websites,
+            resolved_websites,
         )
     synced_health_rows = _launchd_health_rows_from_lines(status.get("latest_log_tail") or [])
     ctx: dict = {"status": status, "active_market": market}
@@ -888,7 +893,7 @@ def _build_admin_context(
             {
                 "company_name": _display_company_name(r["company_name"]),
                 "company_url": _company_website(
-                    r["company_name"], company_websites, dict(r).get("cik"), edgar_websites
+                    r["company_name"], company_websites, dict(r).get("cik"), edgar_websites, resolved_websites
                 ),
                 "event_type": r["event_type"] or "Investor Day",
                 "event_date": _friendly_date(r["event_date"]) if dict(r).get("event_date") else "Date TBD",
@@ -960,7 +965,7 @@ def _build_admin_context(
                 {
                     "company_name": _display_company_name(row.get("company_name") or ""),
                     "company_url": _company_website(
-                        row.get("company_name"), company_websites, row.get("cik"), edgar_websites
+                        row.get("company_name"), company_websites, row.get("cik"), edgar_websites, resolved_websites
                     ),
                     "ticker": _unknown_text(row.get("ticker")),
                     "event_type": row.get("event_type") or "Investor Day",
@@ -1019,7 +1024,7 @@ def _build_admin_context(
             {
                 "company_name": _display_company_name(r["company_name"]),
                 "company_url": _company_website(
-                    r["company_name"], company_websites, dict(r).get("cik"), edgar_websites
+                    r["company_name"], company_websites, dict(r).get("cik"), edgar_websites, resolved_websites
                 ),
                 "ticker": _unknown_text(r["ticker"]),
                 "event_date_raw": dict(r).get("event_date") or "",
@@ -1085,7 +1090,7 @@ def _build_admin_context(
             {
                 "company_name": _display_company_name(r["company_name"]),
                 "company_url": _company_website(
-                    r["company_name"], company_websites, r["cik"], edgar_websites
+                    r["company_name"], company_websites, r["cik"], edgar_websites, resolved_websites
                 ),
                 "event_type": r["event_type"] or "Investor Day",
                 "event_date": r["event_date"] or "—",
@@ -1115,7 +1120,7 @@ def _build_admin_context(
                 "status_display": _admin_display_text(r["status"]),
                 "company_name": _display_company_name(r["company_name"]),
                 "company_url": _company_website(
-                    r["company_name"], company_websites, dict(r).get("cik"), edgar_websites
+                    r["company_name"], company_websites, dict(r).get("cik"), edgar_websites, resolved_websites
                 ),
                 "matched_phrase": _matched_phrase_display(dict(r).get("matched_phrase")),
                 "event_date": _friendly_date(r["event_date"]) if dict(r).get("event_date") else "—",
@@ -1152,6 +1157,7 @@ def _render_main_ui(tab: str, *, is_admin: bool) -> str:
             tab,
             company_websites=config.company_websites,
             edgar_websites=db.company_websites_by_cik(),
+            resolved_websites=db.resolved_websites_by_key(),
             market=market,
         )
     finally:
@@ -1310,6 +1316,7 @@ def admin_candidate(detection_id):
     try:
         row = db.detection(detection_id)
         edgar_websites = db.company_websites_by_cik()
+        resolved_websites = db.resolved_websites_by_key()
     finally:
         db.close()
     if not row:
@@ -1348,7 +1355,7 @@ def admin_candidate(detection_id):
         row=dict(row)
         | {
             "company_url": _company_website(
-                row["company_name"], config.company_websites, row["cik"], edgar_websites
+                row["company_name"], config.company_websites, row["cik"], edgar_websites, resolved_websites
             )
         },
         preview=preview,

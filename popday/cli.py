@@ -8,13 +8,14 @@ from dataclasses import dataclass, replace as dc_replace
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-from .company_websites import fetch_edgar_website, normalize_cik, resolve_company_website
+from .company_websites import company_key, fetch_edgar_website, normalize_cik, resolve_company_website
 from .config import load_config
 from .coverage_gap import missed_business_days
 from .date_extract import format_human_date
 from .db import Database
 from .detector import detect_in_parsed_filing, detect_in_sections, detect_in_uk_announcement
 from .debug_server import serve_debug_ui
+from .website_resolver import RESOLUTION_METHOD, resolve_website_heuristic
 from .edgar_fetch import (
     EdgarBlockedError,
     EdgarClient,
@@ -291,6 +292,36 @@ def _ensure_company_website(db: Database, client: EdgarClient, filing: Filing) -
     return website
 
 
+def _ensure_resolved_website(
+    db: Database, config, company_name: str, cik: str = ""
+) -> str:
+    """Heuristic auto-resolve, attempted once per company - the lowest
+    priority fill layer, only worth trying when curation and EDGAR have
+    both already come up empty (checked by the caller). Same honest-failure
+    contract as _ensure_company_website: never raises, never blocks the
+    scan, and a failed/unconfident attempt is still recorded (as an empty
+    result) so it isn't retried on every subsequent filing.
+    """
+    key = company_key(company_name)
+    if not key or db.has_resolved_website_row(key):
+        return ""
+    try:
+        website = resolve_website_heuristic(
+            company_name, config.sec_user_agent, delay_seconds=config.request_delay_seconds
+        )
+    except Exception as exc:  # noqa: BLE001 - cosmetic data must never block alerting
+        print(f"WARNING - could not auto-resolve website for {company_name}: {exc}")
+        return ""
+    db.upsert_resolved_website(
+        company_key=key,
+        company_name=company_name,
+        cik=normalize_cik(cik),
+        resolved_website=website,
+        resolution_method=RESOLUTION_METHOD,
+    )
+    return website
+
+
 @dataclass
 class _DayScanOutcome:
     """Result of scanning one filing date, email deliberately deferred.
@@ -330,6 +361,7 @@ def _scan_single_date(
     routine_phrases = db.active_phrases("routine_context")
     recovered_from = run_date.isoformat() if run_kind == "backfill" else ""
     edgar_websites = db.company_websites_by_cik()
+    resolved_websites = db.resolved_websites_by_key()
 
     scan_run_id = db.start_scan_run(run_date, run_kind=run_kind)
 
@@ -488,6 +520,17 @@ def _scan_single_date(
                     include_phrases=include_phrases,
                     routine_phrases=routine_phrases,
                 )
+            # Keyed by company name (see popday/website_resolver.py), so this
+            # must run against the same filing.company_name that ends up on
+            # the Alert below - the parsed/enriched name, not the
+            # discovery-time one, or the cache write and the lookup below
+            # would use different keys for the same company.
+            if not args.dry_run and not resolve_company_website(
+                filing.company_name, filing.cik, config.company_websites, edgar_websites
+            ):
+                resolved = _ensure_resolved_website(db, config, filing.company_name, filing.cik)
+                if resolved:
+                    resolved_websites[company_key(filing.company_name)] = resolved
 
             for detection in detections:
                 if detection.status == "alert_candidate" and detection.event_type and detection.event_date:
@@ -509,7 +552,8 @@ def _scan_single_date(
                 if detection.status == "alert_candidate" and (detection_id or args.dry_run):
                     alert = _alert_from_detection(detection_id, detection, recovered_from)
                     missing = not resolve_company_website(
-                        alert.company_name, filing.cik, config.company_websites, edgar_websites
+                        alert.company_name, filing.cik, config.company_websites,
+                        edgar_websites, resolved_websites,
                     )
                     alerts.append(dc_replace(alert, company_url_missing=missing))
 
@@ -610,6 +654,7 @@ def _scan_single_date_uk(
     alerts: list[Alert] = []
     filings_parsed = 0
     recovered_from = run_date.isoformat() if run_kind == "backfill" else ""
+    resolved_websites = db.resolved_websites_by_key()
     scan_run_id = db.start_scan_run(run_date, run_kind=run_kind, source="investegate")
 
     def _fail_scan(reason: str, detail: str) -> _DayScanOutcome:
@@ -710,6 +755,12 @@ def _scan_single_date_uk(
             detections = detect_in_uk_announcement(
                 enriched, run_date, config.uk_include_phrases, routine_phrases
             )
+            if not args.dry_run and not resolve_company_website(
+                row.company_name, None, config.company_websites, None, resolved_websites
+            ):
+                resolved = _ensure_resolved_website(db, config, row.company_name)
+                if resolved:
+                    resolved_websites[company_key(row.company_name)] = resolved
             for detection in detections:
                 if (
                     detection.status == "alert_candidate"
@@ -730,7 +781,7 @@ def _scan_single_date_uk(
                 if detection.status == "alert_candidate" and (detection_id or args.dry_run):
                     alert = _alert_from_uk_detection(detection_id, detection, recovered_from)
                     missing = not resolve_company_website(
-                        alert.company_name, None, config.company_websites, None
+                        alert.company_name, None, config.company_websites, None, resolved_websites
                     )
                     alerts.append(dc_replace(alert, company_url_missing=missing))
             if not args.dry_run:

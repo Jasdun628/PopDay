@@ -193,6 +193,22 @@ CREATE TABLE IF NOT EXISTS companies (
     edgar_website TEXT,
     edgar_website_checked_utc TEXT NOT NULL
 );
+
+-- Keyed by company_key (see popday/company_websites.py's normalisation),
+-- not CIK - UK companies have no CIK and still need a cache slot. The
+-- lowest-priority fill layer under curated and EDGAR (resolve_company_website()
+-- in popday/company_websites.py); NULL resolved_website means "attempted, no
+-- confident domain match" - distinct from "never attempted" (no row), which
+-- is what gates a repeat attempt so we don't re-guess the same company on
+-- every scan.
+CREATE TABLE IF NOT EXISTS resolved_company_websites (
+    company_key TEXT PRIMARY KEY,
+    company_name TEXT NOT NULL,
+    cik TEXT,
+    resolved_website TEXT,
+    resolution_method TEXT NOT NULL DEFAULT 'heuristic_domain_guess',
+    resolved_checked_utc TEXT NOT NULL
+);
 """
 
 
@@ -1353,6 +1369,52 @@ class Database:
             "WHERE edgar_website IS NOT NULL AND edgar_website != ''"
         ).fetchall()
         return {str(row["cik"]): str(row["edgar_website"]) for row in rows}
+
+    # ---------------------------------------------- resolved (auto) websites
+
+    def has_resolved_website_row(self, company_key: str) -> bool:
+        """True once a company's heuristic auto-resolve has been attempted
+        (successfully or not) - gates the fetch so it fires only the first
+        time, never re-guessing the same company on every later scan."""
+        row = self.conn.execute(
+            "SELECT 1 FROM resolved_company_websites WHERE company_key = ?", (company_key,)
+        ).fetchone()
+        return row is not None
+
+    def upsert_resolved_website(
+        self,
+        *,
+        company_key: str,
+        company_name: str,
+        cik: str = "",
+        resolved_website: str,
+        resolution_method: str = "heuristic_domain_guess",
+    ) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO resolved_company_websites
+                (company_key, company_name, cik, resolved_website, resolution_method, resolved_checked_utc)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(company_key) DO UPDATE SET
+                company_name = excluded.company_name,
+                cik = excluded.cik,
+                resolved_website = excluded.resolved_website,
+                resolution_method = excluded.resolution_method,
+                resolved_checked_utc = excluded.resolved_checked_utc
+            """,
+            (company_key, company_name, cik or None, resolved_website or None, resolution_method, utc_now()),
+        )
+        self.conn.commit()
+
+    def resolved_websites_by_key(self) -> dict[str, str]:
+        """Heuristically auto-resolved websites, keyed by company_key - the
+        fallback layer under curated links and EDGAR wherever company_url is
+        rendered."""
+        rows = self.conn.execute(
+            "SELECT company_key, resolved_website FROM resolved_company_websites "
+            "WHERE resolved_website IS NOT NULL AND resolved_website != ''"
+        ).fetchall()
+        return {str(row["company_key"]): str(row["resolved_website"]) for row in rows}
 
     def distinct_detection_companies(self, market: str = "US") -> list[sqlite3.Row]:
         """Every distinct CIK ever detected in this market - the backfill
