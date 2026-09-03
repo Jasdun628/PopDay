@@ -456,6 +456,7 @@ class PublicCandidatesRouteTests(unittest.TestCase):
                         "price_data_timestamp": "2026-07-01T08:00:00+00:00",
                         "status": "ok",
                         "notes": None,
+                        "market": "US",
                     }
                 )
             finally:
