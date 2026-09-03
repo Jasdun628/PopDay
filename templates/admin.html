@@ -144,6 +144,7 @@
 {% endmacro %}
 
 {% macro price_reaction_table(rows, average, event_average, show_event_average=true, show_event_day_close=true) %}
+<div class="pr-table-wrap" data-page-size="25">
 <div class="table-scroll">
   <table class="price-reaction-table">
     <colgroup>
@@ -221,6 +222,12 @@
       </tr>
     </tfoot>
   </table>
+</div>
+<div class="pr-pager">
+  <button type="button" class="pr-page-btn pr-prev">Prev</button>
+  <span class="pr-page-label"></span>
+  <button type="button" class="pr-page-btn pr-next">Next</button>
+</div>
 </div>
 {% endmacro %}
 <!doctype html>
@@ -397,6 +404,18 @@
     .recent-runs-details { margin: 4px 0 18px; }
     .recent-runs-details summary { cursor: pointer; color: var(--muted); font-size: 13px; font-weight: 650; padding: 4px 0; }
     .recent-runs-details table { margin-top: 8px; }
+    .pr-pager {
+      align-items: center; display: flex; gap: 10px; justify-content: flex-end;
+      margin: 8px 0 4px;
+    }
+    .pr-page-label { color: var(--muted); font-size: 13px; }
+    .pr-page-btn {
+      background: none; border: 1px solid var(--border); border-radius: 999px;
+      color: var(--muted); cursor: pointer; font-size: 13px; font-weight: 600;
+      padding: 3px 12px;
+    }
+    .pr-page-btn:hover:not(:disabled) { border-color: var(--ink); color: var(--ink); }
+    .pr-page-btn:disabled { cursor: default; opacity: 0.4; }
     .split-heading {
       border-top: 1px solid var(--line);
       font-size: 14px;
@@ -1281,6 +1300,36 @@
     document.addEventListener('click', function () { if (pinned) { pinned = null; hide(); } });
     window.addEventListener('scroll', function () { pinned = null; hide(); }, true);
     window.addEventListener('resize', function () { pinned = null; hide(); });
+  })();
+
+  // Price Reaction tables: client-side pagination. Rows arrive already sorted
+  // (most recent first); this only slices what's shown, it never reorders.
+  (function () {
+    document.querySelectorAll('.pr-table-wrap').forEach(function (wrap) {
+      var rows = Array.prototype.slice.call(wrap.querySelectorAll('tbody tr'));
+      var pageSize = parseInt(wrap.getAttribute('data-page-size'), 10) || 25;
+      var pager = wrap.querySelector('.pr-pager');
+      var totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+      if (rows.length <= pageSize) { if (pager) pager.style.display = 'none'; return; }
+
+      var current = 1;
+      var label = pager.querySelector('.pr-page-label');
+      var prevBtn = pager.querySelector('.pr-prev');
+      var nextBtn = pager.querySelector('.pr-next');
+
+      function render() {
+        rows.forEach(function (row, i) {
+          var onPage = i >= (current - 1) * pageSize && i < current * pageSize;
+          row.style.display = onPage ? '' : 'none';
+        });
+        label.textContent = 'Page ' + current + ' of ' + totalPages;
+        prevBtn.disabled = current === 1;
+        nextBtn.disabled = current === totalPages;
+      }
+      prevBtn.addEventListener('click', function () { if (current > 1) { current -= 1; render(); } });
+      nextBtn.addEventListener('click', function () { if (current < totalPages) { current += 1; render(); } });
+      render();
+    });
   })();
 </script>
 </body>
