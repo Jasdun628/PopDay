@@ -42,6 +42,27 @@ _PARKED_MARKERS = (
     "godaddy.com/domainfor sale",
 )
 
+# Real company homepages carry substantial visible text (nav, footer, copy).
+# A page below this threshold is either a parked placeholder or a
+# client-side redirect/bot-gate whose only "content" is script - the exact
+# shape of the domain-squatter incident below.
+_MIN_VISIBLE_TEXT_CHARS = 80
+
+_SCRIPT_STYLE_RE = re.compile(r"<(script|style|noscript)\b.*?</\1>", re.IGNORECASE | re.DOTALL)
+_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _visible_text(html: str) -> str:
+    """Plain text a human reader would actually see - script/style content
+    stripped first. Content-matching and the parked-domain check both run
+    against this, never raw HTML: a domain-squatter redirect page can
+    legitimately contain its own hostname inside a <script> block (see
+    "Kyivstar Group Ltd." -> a JS window.location.replace() gate that
+    echoed "kyivstar.com" in its own redirect URL and would otherwise have
+    passed as a "content match" for zero real content)."""
+    without_scripts = _SCRIPT_STYLE_RE.sub(" ", html)
+    return re.sub(r"\s+", " ", _TAG_RE.sub(" ", without_scripts)).strip()
+
 
 def _words(company_name: object) -> list[str]:
     text = re.sub(r"[^a-z0-9\s]", " ", str(company_name or "").lower())
@@ -71,25 +92,25 @@ def domain_candidates(company_name: object) -> list[str]:
     return candidates
 
 
-def _looks_parked(body_lower: str) -> bool:
-    return any(marker in body_lower for marker in _PARKED_MARKERS)
+def _looks_parked(visible_text_lower: str) -> bool:
+    return any(marker in visible_text_lower for marker in _PARKED_MARKERS)
 
 
-def _content_matches_company(body_lower: str, company_name: object) -> bool:
-    """Light confidence signal beyond "the domain is live": the page text
-    must mention the company's most distinctive name word. A short/generic
-    anchor (e.g. "SES", "3M") is exactly the case where a coincidental
-    concatenation is most likely to already be someone else's registered
-    domain (see the "SES S.a." -> sessa.com incident this guarded against
-    in testing) - so it's rejected outright rather than waved through on
-    liveness alone. "Omit rather than show wrong data"."""
+def _content_matches_company(visible_text_lower: str, company_name: object) -> bool:
+    """Light confidence signal beyond "the domain is live": the page's
+    visible text must mention the company's most distinctive name word. A
+    short/generic anchor (e.g. "SES", "3M") is exactly the case where a
+    coincidental concatenation is most likely to already be someone else's
+    registered domain (see the "SES S.a." -> sessa.com incident this
+    guarded against in testing) - so it's rejected outright rather than
+    waved through on liveness alone. "Omit rather than show wrong data"."""
     words = _words(company_name)
     if not words:
         return False
     anchor = max(words, key=len)
     if len(anchor) < 4:
         return False
-    return anchor in body_lower
+    return anchor in visible_text_lower
 
 
 class WebsiteCandidateChecker:
@@ -123,8 +144,11 @@ class WebsiteCandidateChecker:
         except (urllib.error.URLError, TimeoutError, ValueError, OSError):
             return ""
 
-        body_lower = body.lower()
-        if _looks_parked(body_lower) or not _content_matches_company(body_lower, company_name):
+        visible = _visible_text(body)
+        if len(visible) < _MIN_VISIBLE_TEXT_CHARS:
+            return ""
+        visible_lower = visible.lower()
+        if _looks_parked(visible_lower) or not _content_matches_company(visible_lower, company_name):
             return ""
 
         parsed = urlparse(final_url)

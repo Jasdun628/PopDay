@@ -50,12 +50,44 @@ class WebsiteCandidateCheckerTests(unittest.TestCase):
     def test_confirms_live_html_page_mentioning_company(self):
         checker = WebsiteCandidateChecker("PopDay/0.1 test")
         response = self._mock_response(
-            body=b"<html><title>Commercial Metals</title>Welcome to Commercial Metals</html>",
+            body=(
+                b"<html><head><title>Commercial Metals</title></head><body>"
+                b"<nav>Home About Products Investors Careers Contact</nav>"
+                b"<h1>Welcome to Commercial Metals</h1>"
+                b"<p>Commercial Metals Company is a global leader in "
+                b"steel and metal recycling, manufacturing, and fabrication.</p>"
+                b"<footer>Copyright Commercial Metals Company. All rights reserved.</footer>"
+                b"</body></html>"
+            ),
             final_url="https://www.commercialmetals.com/",
         )
         with mock.patch("urllib.request.urlopen", return_value=response):
             result = checker.verify("commercialmetals.com", "Commercial Metals Co")
         self.assertEqual(result, "https://www.commercialmetals.com/")
+
+    def test_rejects_thin_client_side_redirect_gate(self):
+        # Regression test for a real production incident: "Kyivstar Group
+        # Ltd." resolved to kyivstar.com, a domain-squatted page whose only
+        # "content" is a <script>window.location.replace(...)</script>
+        # redirect gate that ultimately leads to an unrelated scam survey
+        # site. The redirect URL happened to echo the domain's own hostname
+        # ("kyivstar.com"), which passed the old raw-HTML content-match
+        # check even though a human visiting the page sees nothing real.
+        # Fixed by requiring a minimum amount of *visible* (script/style
+        # stripped) text before any content match is even attempted.
+        checker = WebsiteCandidateChecker("PopDay/0.1 test")
+        response = self._mock_response(
+            body=(
+                b"<html><head><title>Loading...</title></head><body>"
+                b"<script>window.location.replace("
+                b"'https://kyivstar.com/?ch=1&js=eyJhbGciOiJIUzI1NiJ9');</script>"
+                b"</body></html>"
+            ),
+            final_url="https://kyivstar.com/",
+        )
+        with mock.patch("urllib.request.urlopen", return_value=response):
+            result = checker.verify("kyivstar.com", "Kyivstar Group Ltd.")
+        self.assertEqual(result, "")
 
     def test_rejects_parked_domain_page(self):
         checker = WebsiteCandidateChecker("PopDay/0.1 test")
