@@ -152,11 +152,10 @@ def _company_website(
     resolved_websites: dict[str, str] | None = None,
 ) -> str:
     """Curated (config.json override, then DEFAULT_COMPANY_WEBSITES) always
-    wins; EDGAR's self-reported website (keyed by CIK, captured at scan time
-    - see popday/company_websites.py) fills a gap curation hasn't reached;
-    the heuristic auto-resolver (popday/website_resolver.py, cached at scan
-    time) fills whatever's left; otherwise empty, same as always - unlinked
-    plain text, never a guessed link."""
+    wins; the resolved-websites cache (popday/wikidata_resolver.py, cached
+    at scan time) fills a gap curation hasn't reached; EDGAR's self-reported
+    website (keyed by CIK) is the last resort; otherwise empty, same as
+    always - unlinked plain text, never a guessed link."""
     return resolve_company_website(
         company_name, cik, company_websites or DEFAULT_COMPANY_WEBSITES, edgar_websites, resolved_websites
     )

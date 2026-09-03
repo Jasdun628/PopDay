@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Backfill the heuristic auto-resolved website for existing PopDay companies
+"""Backfill the Wikidata-resolved website for existing PopDay companies
 whose link is still missing after curation and EDGAR.
 
 Targets the exact same universe scripts/generate_status_json.py's
@@ -26,19 +26,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from popday.company_websites import company_key, normalize_cik, resolve_company_website
 from popday.config import load_config
 from popday.db import Database
-from popday.website_resolver import RESOLUTION_METHOD, resolve_website_heuristic
+from popday.stock_reaction import fetch_cik_ticker_map
+from popday.wikidata_resolver import resolve_website_wikidata
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--db-path", help="SQLite database path. Defaults to PopDay config.")
     parser.add_argument("--limit", type=int, help="Maximum companies to process (debug/testing).")
-    parser.add_argument(
-        "--delay-seconds",
-        type=float,
-        default=0.5,
-        help="Delay between candidate-domain requests (default 0.5s - politeness to third-party sites).",
-    )
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -104,6 +99,12 @@ def main() -> int:
             missing = missing[: args.limit]
         print(f"Companies missing a link (curated + EDGAR): {len(missing)}.")
 
+        try:
+            cik_tickers = fetch_cik_ticker_map(user_agent=config.sec_user_agent)
+        except Exception as exc:  # noqa: BLE001 - ticker is a disambiguation nicety, not required
+            print(f"WARNING - could not fetch CIK-ticker map: {exc}")
+            cik_tickers = {}
+
         for company_name, cik in missing:
             key = company_key(company_name)
             if not args.recheck and db.has_resolved_website_row(key):
@@ -111,15 +112,14 @@ def main() -> int:
                 continue
 
             checked += 1
-            website = resolve_website_heuristic(
-                company_name, config.sec_user_agent, delay_seconds=args.delay_seconds
-            )
+            ticker = cik_tickers.get(normalize_cik(cik), "") if cik else ""
+            website = resolve_website_wikidata(company_name, config.sec_user_agent, ticker=ticker)
             if website:
                 found += 1
                 stored.append((company_name, cik, website))
                 print(f"{'would store' if args.dry_run else 'stored':<11}{company_name}: {website}")
             else:
-                print(f"{'—':<11}{company_name}: no confident domain match")
+                print(f"{'—':<11}{company_name}: no confident Wikidata match")
 
             if not args.dry_run:
                 db.upsert_resolved_website(
@@ -127,7 +127,7 @@ def main() -> int:
                     company_name=company_name,
                     cik=normalize_cik(cik),
                     resolved_website=website,
-                    resolution_method=RESOLUTION_METHOD,
+                    resolution_method="wikidata",
                 )
     finally:
         db.close()

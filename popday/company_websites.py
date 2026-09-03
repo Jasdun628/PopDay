@@ -79,22 +79,25 @@ def resolve_company_website(
 ) -> str:
     """The one company_url resolution order used everywhere it's rendered:
     curated (config.json override, then DEFAULT_COMPANY_WEBSITES) always
-    wins; EDGAR's self-reported website (by CIK) fills a gap curation hasn't
-    reached; the heuristic auto-resolver (popday/website_resolver.py, keyed
-    by company name since it also covers UK companies with no CIK) fills
-    whatever's left; otherwise "" - never a guessed link. Kept independent
-    of Flask so non-web callers (e.g. the missing-link count in
-    scripts/generate_status_json.py) share this exact logic.
+    wins; the resolved-websites cache (popday/wikidata_resolver.py - curated
+    Wikidata structured data, keyed by company name since it also covers UK
+    companies with no CIK) fills a gap curation hasn't reached; EDGAR's
+    self-reported website (by CIK) is the last resort, kept only because
+    it's a harmless, already-fetched value on the rare filer that sets it
+    (near-zero coverage in practice - see HANDOFF.md); otherwise "" - never
+    a guessed link. Kept independent of Flask so non-web callers (e.g. the
+    missing-link count in scripts/generate_status_json.py) share this exact
+    logic.
     """
     lookup = {company_key(name): url for name, url in (curated_websites or {}).items()}
     key = company_key(company_name)
     curated = lookup.get(key, "")
     if curated:
         return curated
-    if cik and edgar_websites:
-        edgar = edgar_websites.get(normalize_cik(cik), "")
-        if edgar:
-            return edgar
     if resolved_websites:
-        return resolved_websites.get(key, "")
+        resolved = resolved_websites.get(key, "")
+        if resolved:
+            return resolved
+    if cik and edgar_websites:
+        return edgar_websites.get(normalize_cik(cik), "")
     return ""

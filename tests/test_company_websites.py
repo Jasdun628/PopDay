@@ -81,9 +81,10 @@ class FetchEdgarWebsiteTests(unittest.TestCase):
 
 
 class ResolveCompanyWebsiteTests(unittest.TestCase):
-    """Priority order: curated > EDGAR > heuristic auto-resolve > "" -
-    manual corrections must always win, and the auto-resolver must never
-    override an EDGAR-sourced link either."""
+    """Priority order: curated > resolved (Wikidata) cache > EDGAR > "" -
+    manual corrections always win, and Wikidata's curated structured data
+    outranks EDGAR's near-zero-coverage self-reported field (see
+    popday/wikidata_resolver.py)."""
 
     def test_curated_wins_over_everything(self):
         result = resolve_company_website(
@@ -95,7 +96,7 @@ class ResolveCompanyWebsiteTests(unittest.TestCase):
         )
         self.assertEqual(result, "https://curated.example.com/")
 
-    def test_edgar_wins_over_resolved_when_curated_empty(self):
+    def test_resolved_wins_over_edgar_when_curated_empty(self):
         result = resolve_company_website(
             "Example Co",
             "0000000001",
@@ -103,13 +104,13 @@ class ResolveCompanyWebsiteTests(unittest.TestCase):
             {"0000000001": "https://edgar.example.com/"},
             {"example co": "https://resolved.example.com/"},
         )
-        self.assertEqual(result, "https://edgar.example.com/")
-
-    def test_resolved_fills_gap_when_curated_and_edgar_empty(self):
-        result = resolve_company_website(
-            "Example Co", "0000000001", {}, {}, {"example co": "https://resolved.example.com/"}
-        )
         self.assertEqual(result, "https://resolved.example.com/")
+
+    def test_edgar_fills_gap_when_curated_and_resolved_empty(self):
+        result = resolve_company_website(
+            "Example Co", "0000000001", {}, {"0000000001": "https://edgar.example.com/"}, {}
+        )
+        self.assertEqual(result, "https://edgar.example.com/")
 
     def test_resolved_lookup_works_without_a_cik(self):
         """UK companies pass cik=None - the resolved layer must still match

@@ -15,7 +15,7 @@ from .date_extract import format_human_date
 from .db import Database
 from .detector import detect_in_parsed_filing, detect_in_sections, detect_in_uk_announcement
 from .debug_server import serve_debug_ui
-from .website_resolver import RESOLUTION_METHOD, resolve_website_heuristic
+from .wikidata_resolver import resolve_website_wikidata
 from .edgar_fetch import (
     EdgarBlockedError,
     EdgarClient,
@@ -37,7 +37,7 @@ from .emailer import (
 )
 from .filing_parser import parse_sec_filing
 from .hype import reclassify_hype_tracking, update_uk_hype_from_index, watch_hype_candidates
-from .stock_reaction import refresh_price_reactions
+from .stock_reaction import fetch_cik_ticker_map, refresh_price_reactions
 from .parser import parse_filing_sections
 from .rules import ALERT_REQUIREMENTS
 
@@ -293,22 +293,25 @@ def _ensure_company_website(db: Database, client: EdgarClient, filing: Filing) -
 
 
 def _ensure_resolved_website(
-    db: Database, config, company_name: str, cik: str = ""
+    db: Database, config, company_name: str, cik: str = "", ticker: str = ""
 ) -> str:
-    """Heuristic auto-resolve, attempted once per company - the lowest
-    priority fill layer, only worth trying when curation and EDGAR have
-    both already come up empty (checked by the caller). Same honest-failure
-    contract as _ensure_company_website: never raises, never blocks the
-    scan, and a failed/unconfident attempt is still recorded (as an empty
+    """Wikidata-backed auto-resolve, attempted once per company - runs
+    ahead of the alert email (see the call sites below), never after. This
+    replaced a heuristic domain-guesser retired after a production
+    incident: a guessed domain for a real company turned out to be
+    squatted by a cloaking redirect gate to an unrelated site. Wikidata's
+    P856 "official website" is curated structured data, not a guess - see
+    popday/wikidata_resolver.py for the confidence gating (never a
+    malformed/junk URL). Same honest-failure contract as
+    _ensure_company_website: never raises, never blocks the scan/alert,
+    and a failed/unconfident attempt is still recorded (as an empty
     result) so it isn't retried on every subsequent filing.
     """
     key = company_key(company_name)
     if not key or db.has_resolved_website_row(key):
         return ""
     try:
-        website = resolve_website_heuristic(
-            company_name, config.sec_user_agent, delay_seconds=config.request_delay_seconds
-        )
+        website = resolve_website_wikidata(company_name, config.sec_user_agent, ticker=ticker)
     except Exception as exc:  # noqa: BLE001 - cosmetic data must never block alerting
         print(f"WARNING - could not auto-resolve website for {company_name}: {exc}")
         return ""
@@ -317,7 +320,7 @@ def _ensure_resolved_website(
         company_name=company_name,
         cik=normalize_cik(cik),
         resolved_website=website,
-        resolution_method=RESOLUTION_METHOD,
+        resolution_method="wikidata",
     )
     return website
 
@@ -362,6 +365,21 @@ def _scan_single_date(
     recovered_from = run_date.isoformat() if run_kind == "backfill" else ""
     edgar_websites = db.company_websites_by_cik()
     resolved_websites = db.resolved_websites_by_key()
+    cik_tickers: dict[str, str] = {}
+    cik_tickers_loaded = False
+
+    def _ticker_for_cik(cik: str) -> str:
+        # Fetched at most once per scan run, and only if a company actually
+        # needs Wikidata disambiguation - a quiet day with nothing new to
+        # resolve never pays for SEC's full company_tickers.json.
+        nonlocal cik_tickers_loaded
+        if not cik_tickers_loaded:
+            try:
+                cik_tickers.update(fetch_cik_ticker_map(user_agent=config.sec_user_agent))
+            except Exception as exc:  # noqa: BLE001 - ticker is a disambiguation nicety, not required
+                print(f"WARNING - could not fetch CIK-ticker map for website resolution: {exc}")
+            cik_tickers_loaded = True
+        return cik_tickers.get(normalize_cik(cik), "")
 
     scan_run_id = db.start_scan_run(run_date, run_kind=run_kind)
 
@@ -520,15 +538,21 @@ def _scan_single_date(
                     include_phrases=include_phrases,
                     routine_phrases=routine_phrases,
                 )
-            # Keyed by company name (see popday/website_resolver.py), so this
-            # must run against the same filing.company_name that ends up on
-            # the Alert below - the parsed/enriched name, not the
+            # Keyed by company name (see popday/wikidata_resolver.py), so
+            # this must run against the same filing.company_name that ends
+            # up on the Alert below - the parsed/enriched name, not the
             # discovery-time one, or the cache write and the lookup below
-            # would use different keys for the same company.
+            # would use different keys for the same company. Only checked
+            # against curated + the resolved cache (not EDGAR) - Wikidata
+            # outranks EDGAR's self-reported field, so it's worth attempting
+            # even when EDGAR already has something (see
+            # resolve_company_website()'s priority order).
             if not args.dry_run and not resolve_company_website(
-                filing.company_name, filing.cik, config.company_websites, edgar_websites
+                filing.company_name, None, config.company_websites, None, resolved_websites
             ):
-                resolved = _ensure_resolved_website(db, config, filing.company_name, filing.cik)
+                resolved = _ensure_resolved_website(
+                    db, config, filing.company_name, filing.cik, _ticker_for_cik(filing.cik)
+                )
                 if resolved:
                     resolved_websites[company_key(filing.company_name)] = resolved
 
