@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import sqlite3
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -34,6 +35,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--db-path", help="SQLite database path. Defaults to PopDay config.")
     parser.add_argument("--limit", type=int, help="Maximum companies to process (debug/testing).")
+    parser.add_argument(
+        "--delay-seconds",
+        type=float,
+        default=0.5,
+        help=(
+            "Delay between companies (default 0.5s). Politeness to Wikidata's public API, and "
+            "avoids its rate limiting silently masquerading as 'no confident match' - a burst of "
+            "back-to-back requests over ~80 companies was observed to trigger exactly that during "
+            "testing, incorrectly pulling links that resolve fine in isolation."
+        ),
+    )
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -111,6 +123,8 @@ def main() -> int:
                 skipped_existing += 1
                 continue
 
+            if checked:
+                time.sleep(args.delay_seconds)
             checked += 1
             ticker = cik_tickers.get(normalize_cik(cik), "") if cik else ""
             website = resolve_website_wikidata(company_name, config.sec_user_agent, ticker=ticker)
