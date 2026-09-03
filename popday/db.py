@@ -1108,7 +1108,7 @@ class Database:
              announcement_move_pct, intraday_range_pct, latest_close_date, latest_close,
              interval_return_pct, interval_daily_volatility_pct,
              event_day_close_date, event_day_close, event_day_move_pct, price_data_source,
-             price_data_timestamp, status, notes)
+             price_data_timestamp, status, notes, market)
             VALUES
             (:announcement_key, :source_table, :source_id, :company_name, :cik, :ticker,
              :event_date, :filing_date, :acceptance_datetime, :reaction_date, :previous_close_date,
@@ -1116,7 +1116,7 @@ class Database:
              :announcement_move_pct, :intraday_range_pct, :latest_close_date, :latest_close,
              :interval_return_pct, :interval_daily_volatility_pct,
              :event_day_close_date, :event_day_close, :event_day_move_pct, :price_data_source,
-             :price_data_timestamp, :status, :notes)
+             :price_data_timestamp, :status, :notes, :market)
             ON CONFLICT(announcement_key) DO UPDATE SET
                 source_table = excluded.source_table,
                 source_id = excluded.source_id,
@@ -1145,7 +1145,8 @@ class Database:
                 price_data_source = excluded.price_data_source,
                 price_data_timestamp = excluded.price_data_timestamp,
                 status = excluded.status,
-                notes = excluded.notes
+                notes = excluded.notes,
+                market = excluded.market
             """,
             row,
         )

@@ -16,14 +16,23 @@ import urllib.request
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from .db import Database, utc_now
+from .prices import normalize_close, resolve_yahoo_symbol
 
 
 SEC_COMPANY_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 STOOQ_DAILY_URL = "https://stooq.com/q/d/l/"
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/"
 PRICE_DATA_SOURCE = "yahoo_chart_daily_json"
+UK_PRICE_DATA_SOURCE = "yfinance"
+LONDON_TZ = ZoneInfo("Europe/London")
+# LSE's continuous trading session closes 16:30 London time - unlike the US
+# path's time(16, 0) UTC-naive cutoff, this must be timezone-aware since
+# London alternates BST/GMT (a fixed UTC cutoff would misclassify RNS
+# announcements near the close for roughly half the year).
+UK_MARKET_CLOSE = time(16, 30)
 
 COMPANY_TICKER_OVERRIDES = {
     "barnes & noble education, inc.": "BNED",
@@ -170,6 +179,51 @@ def fetch_daily_bars(ticker: str, *, user_agent: str) -> tuple[list[PriceBar], s
     return fetch_yahoo_daily_bars(ticker, user_agent=user_agent), "yahoo_chart_daily_json"
 
 
+def fetch_uk_daily_bars(yahoo_symbol: str) -> list[PriceBar]:
+    """OHLC daily bars for an LSE Yahoo symbol (e.g. "DGE.L") via the
+    `yfinance` package - the same source popday/prices.py's capture-only
+    path already uses, per the UK extension's standing plan, rather than
+    Stooq (US-only symbol format) or the raw Yahoo chart endpoint (no
+    currency handling). Every OHLC value is passed through
+    popday/prices.py's normalize_close() - GBp (pence) divided by 100 and
+    relabelled 'GBP', matching capture exactly; any other/unresolvable
+    currency is treated as unusable data and skipped entirely (never a
+    guessed FX conversion, never a mislabeled pence value 100x too high).
+    """
+    import yfinance  # imported lazily, same convention as popday/prices.py
+
+    ticker = yfinance.Ticker(yahoo_symbol)
+    history = ticker.history(
+        start=date(2024, 1, 1), end=date.today() + timedelta(days=3), interval="1d"
+    )
+    if history.empty:
+        return []
+    currency = str((getattr(ticker, "history_metadata", None) or {}).get("currency") or "")
+    if currency not in {"GBp", "GBP"}:
+        # Real LSE equities are always quoted in one of these two by Yahoo;
+        # anything else (missing metadata, or a USD/EUR-denominated line) is
+        # exactly the case normalize_close() refuses to guess at - skip
+        # rather than risk a wrong-currency number under a "£" label.
+        return []
+    bars: list[PriceBar] = []
+    for index, row in history.iterrows():
+        raw = (row.get("Open"), row.get("High"), row.get("Low"), row.get("Close"))
+        if any(value is None or value != value for value in raw):  # NaN guard
+            continue
+        normalized = [normalize_close(float(value), currency)[0] for value in raw]
+        bars.append(
+            PriceBar(
+                date=index.date(),
+                open=normalized[0],
+                high=normalized[1],
+                low=normalized[2],
+                close=normalized[3],
+            )
+        )
+    bars.sort(key=lambda bar: bar.date)
+    return bars
+
+
 def parse_daily_bars(text: str) -> list[PriceBar]:
     bars: list[PriceBar] = []
     for row in csv.DictReader(io.StringIO(text)):
@@ -207,6 +261,22 @@ def reaction_anchor_date(announcement: dict[str, Any]) -> date | None:
         if accepted.time() >= time(16, 0):
             return accepted.date() + timedelta(days=1)
         return accepted.date()
+    return _parse_date(announcement.get("filing_date"))
+
+
+def reaction_anchor_date_uk(announcement: dict[str, Any]) -> date | None:
+    """Same "same day if before the close, next trading day if after" rule
+    as reaction_anchor_date(), but against the LSE's actual 16:30 London
+    close rather than a fixed UTC clock time - RNS acceptance_datetime is
+    stored UTC-converted (see popday/sources/investegate.py), so a bare
+    time(16, 0) comparison would misclassify announcements near the close
+    for roughly half the year (BST vs GMT)."""
+    accepted = _parse_acceptance_datetime(announcement.get("acceptance_datetime"))
+    if accepted:
+        london = accepted.astimezone(LONDON_TZ)
+        if london.time() >= UK_MARKET_CLOSE:
+            return london.date() + timedelta(days=1)
+        return london.date()
     return _parse_date(announcement.get("filing_date"))
 
 
@@ -250,7 +320,12 @@ def compute_price_reaction(
     bars: list[PriceBar],
     price_data_source: str = PRICE_DATA_SOURCE,
     timestamp: str | None = None,
+    anchor_date: date | None = None,
 ) -> dict[str, Any]:
+    """Market-agnostic reaction math - same methodology for every market.
+    `anchor_date`, when given, overrides the default US reaction_anchor_date()
+    computation (used for UK rows, whose acceptance_datetime needs a
+    London-close-aware anchor - see reaction_anchor_date_uk())."""
     key = f"{announcement.get('source_table') or 'announcement'}:{announcement.get('source_id') or _company_key(announcement.get('company_name'))}"
     base = {
         "announcement_key": key,
@@ -259,6 +334,7 @@ def compute_price_reaction(
         "company_name": announcement.get("company_name") or "",
         "cik": announcement.get("cik") or None,
         "ticker": ticker or None,
+        "market": str(announcement.get("market") or "US"),
         "event_date": announcement.get("event_date") or None,
         "filing_date": announcement.get("filing_date") or None,
         "acceptance_datetime": announcement.get("acceptance_datetime") or None,
@@ -285,7 +361,7 @@ def compute_price_reaction(
     }
     if not ticker:
         return base | {"status": "missing_ticker", "notes": "No ticker found from CIK or override."}
-    anchor = reaction_anchor_date(announcement)
+    anchor = anchor_date if anchor_date is not None else reaction_anchor_date(announcement)
     if not anchor:
         return base | {"status": "missing_announcement_date", "notes": "No filing or acceptance date."}
     if not bars:
@@ -331,21 +407,13 @@ def compute_price_reaction(
     }
 
 
-def refresh_price_reactions(db: Database, *, user_agent: str) -> list[dict[str, Any]]:
-    # US-only by design: this cache resolves tickers via SEC's CIK-ticker map
-    # and US Yahoo/Stooq symbols. UK events get daily closes captured into the
-    # separate `prices` table instead (popday/prices.py) - capture only, no
-    # reaction math, per the UK extension's scope guard.
-    announcements = [
-        dict(row)
-        for row in db.investor_day_announcements()
-        if str(dict(row).get("market") or "US") == "US"
-    ]
+def _refresh_us_price_reactions(
+    db: Database, announcements: list[dict[str, Any]], *, user_agent: str, timestamp: str
+) -> list[dict[str, Any]]:
     cik_tickers = fetch_cik_ticker_map(user_agent=user_agent)
     bars_by_ticker: dict[str, list[PriceBar]] = {}
     source_by_ticker: dict[str, str] = {}
     refreshed: list[dict[str, Any]] = []
-    timestamp = utc_now()
     for announcement in announcements:
         ticker = resolve_ticker(announcement, cik_tickers)
         bars: list[PriceBar] = []
@@ -382,4 +450,70 @@ def refresh_price_reactions(db: Database, *, user_agent: str) -> list[dict[str, 
         )
         db.upsert_price_reaction(row)
         refreshed.append(row)
+    return refreshed
+
+
+def _refresh_uk_price_reactions(
+    db: Database, announcements: list[dict[str, Any]], *, timestamp: str
+) -> list[dict[str, Any]]:
+    """Same reaction math as US (compute_price_reaction is market-agnostic),
+    fed from yfinance LSE bars instead of SEC-ticker-resolved Yahoo/Stooq
+    ones, and anchored against the LSE's actual close (reaction_anchor_date_uk)
+    rather than the US function's UTC-naive 16:00 cutoff."""
+    bars_by_symbol: dict[str, list[PriceBar]] = {}
+    refreshed: list[dict[str, Any]] = []
+    for announcement in announcements:
+        epic = str(announcement.get("ticker") or "").strip()
+        yahoo_symbol = resolve_yahoo_symbol(db, epic) if epic else ""
+        bars: list[PriceBar] = []
+        if yahoo_symbol:
+            if yahoo_symbol not in bars_by_symbol:
+                try:
+                    bars_by_symbol[yahoo_symbol] = fetch_uk_daily_bars(yahoo_symbol)
+                except Exception as exc:  # noqa: BLE001 - price enrichment is best-effort, never fatal
+                    row = compute_price_reaction(
+                        announcement,
+                        ticker=yahoo_symbol,
+                        bars=[],
+                        price_data_source=UK_PRICE_DATA_SOURCE,
+                        timestamp=timestamp,
+                        anchor_date=reaction_anchor_date_uk(announcement),
+                    ) | {
+                        "status": "fetch_error",
+                        "notes": f"Could not fetch daily prices for {yahoo_symbol}: {exc}",
+                    }
+                    db.upsert_price_reaction(row)
+                    refreshed.append(row)
+                    continue
+            bars = bars_by_symbol[yahoo_symbol]
+        row = compute_price_reaction(
+            announcement,
+            ticker=yahoo_symbol,
+            bars=bars,
+            price_data_source=UK_PRICE_DATA_SOURCE,
+            timestamp=timestamp,
+            anchor_date=reaction_anchor_date_uk(announcement),
+        )
+        db.upsert_price_reaction(row)
+        refreshed.append(row)
+    return refreshed
+
+
+def refresh_price_reactions(db: Database, *, user_agent: str) -> list[dict[str, Any]]:
+    """Reaction-day price math for every qualifying announcement, US and UK
+    alike - each market resolves its own ticker and fetches its own bars
+    (SEC CIK map + Yahoo/Stooq for US; EPIC->LSE symbol + yfinance for UK,
+    see popday/prices.py), but both funnel through the same market-agnostic
+    compute_price_reaction(). UK prices are stored in GBP (never FX-converted
+    to USD - see popday/prices.py's normalize_close()); the existing `market`
+    column is the currency indicator (_money_text_for_market() in
+    flask_app.py already renders UK rows with a £ prefix)."""
+    announcements = [dict(row) for row in db.investor_day_announcements()]
+    us_announcements = [a for a in announcements if str(a.get("market") or "US") == "US"]
+    uk_announcements = [a for a in announcements if str(a.get("market") or "US") == "UK"]
+    timestamp = utc_now()
+    refreshed = _refresh_us_price_reactions(
+        db, us_announcements, user_agent=user_agent, timestamp=timestamp
+    )
+    refreshed += _refresh_uk_price_reactions(db, uk_announcements, timestamp=timestamp)
     return refreshed
