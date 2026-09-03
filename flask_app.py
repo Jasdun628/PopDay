@@ -1075,6 +1075,7 @@ def _build_admin_context(
                 "email": r["email"],
                 "active": bool(r["active"]),
                 "created": _friendly_datetime_str(r["created_timestamp"]),
+                "frequency": r["frequency"] or "immediate",
             }
             for r in db.alert_recipients()
         ]
@@ -1300,6 +1301,22 @@ def admin_recipients_reactivate():
         db = _get_db()
         try:
             db.reactivate_alert_recipient(email)
+        finally:
+            db.close()
+    return redirect(url_for("admin_tab", tab="recipients"))
+
+
+@app.route("/admin/recipients/frequency", methods=["POST"])
+def admin_recipients_set_frequency():
+    auth = _check_admin()
+    if auth is not None:
+        return auth
+    email = request.form.get("email", "").strip().lower()
+    frequency = request.form.get("frequency", "").strip().lower()
+    if email and frequency in {"immediate", "weekly"}:
+        db = _get_db()
+        try:
+            db.set_alert_recipient_frequency(email, frequency)
         finally:
             db.close()
     return redirect(url_for("admin_tab", tab="recipients"))

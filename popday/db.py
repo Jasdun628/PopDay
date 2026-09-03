@@ -68,7 +68,9 @@ CREATE TABLE IF NOT EXISTS rules (
 CREATE TABLE IF NOT EXISTS alert_recipients (
     email TEXT PRIMARY KEY,
     active INTEGER NOT NULL DEFAULT 1,
-    created_timestamp TEXT NOT NULL
+    created_timestamp TEXT NOT NULL,
+    frequency TEXT NOT NULL DEFAULT 'immediate',
+    last_digest_sent_utc TEXT
 );
 
 CREATE TABLE IF NOT EXISTS known_announcements (
@@ -335,6 +337,21 @@ class Database:
                 "substr(filing_date, 1, 4) || '-' || substr(filing_date, 5, 2) "
                 "|| '-' || substr(filing_date, 7, 2) "
                 "WHERE filing_date GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'"
+            )
+        # Weekly digest option (Sept 2026): 'immediate' is the default so no
+        # existing recipient's behaviour silently changes. last_digest_sent_utc
+        # is per-recipient (not the ops_alerts table's cooldown pattern) since
+        # each digest recipient's "since last digest" window is their own.
+        recipient_columns = {
+            row["name"] for row in self.conn.execute("PRAGMA table_info(alert_recipients)").fetchall()
+        }
+        if recipient_columns and "frequency" not in recipient_columns:
+            self.conn.execute(
+                "ALTER TABLE alert_recipients ADD COLUMN frequency TEXT NOT NULL DEFAULT 'immediate'"
+            )
+        if recipient_columns and "last_digest_sent_utc" not in recipient_columns:
+            self.conn.execute(
+                "ALTER TABLE alert_recipients ADD COLUMN last_digest_sent_utc TEXT"
             )
 
     def close(self) -> None:
@@ -1288,21 +1305,37 @@ class Database:
     def alert_recipients(self) -> list[sqlite3.Row]:
         return self.conn.execute(
             """
-            SELECT email, active, created_timestamp
+            SELECT email, active, created_timestamp, frequency, last_digest_sent_utc
             FROM alert_recipients
             ORDER BY email
             """
         ).fetchall()
 
     def active_alert_recipients(self) -> list[str]:
+        """Immediate-send recipients only. Filtering to frequency = 'immediate'
+        here (rather than every active row) is the one change to this
+        function the digest feature required - it does not change anything
+        for an existing recipient, since 'immediate' is every row's default
+        and unchanged behaviour; it only stops a newly-opted-in weekly
+        recipient from also receiving the immediate send."""
         rows = self.conn.execute(
             """
             SELECT email FROM alert_recipients
-            WHERE active = 1
+            WHERE active = 1 AND frequency = 'immediate'
             ORDER BY email
             """
         ).fetchall()
         return [str(row["email"]) for row in rows]
+
+    def active_digest_recipients(self) -> list[sqlite3.Row]:
+        return self.conn.execute(
+            """
+            SELECT email, created_timestamp, last_digest_sent_utc
+            FROM alert_recipients
+            WHERE active = 1 AND frequency = 'weekly'
+            ORDER BY email
+            """
+        ).fetchall()
 
     def add_alert_recipient(self, email: str) -> None:
         self.conn.execute(
@@ -1332,6 +1365,61 @@ class Database:
     def delete_alert_recipient(self, email: str) -> None:
         self.conn.execute("DELETE FROM alert_recipients WHERE email = ?", (email,))
         self.conn.commit()
+
+    def set_alert_recipient_frequency(self, email: str, frequency: str) -> None:
+        self.conn.execute(
+            "UPDATE alert_recipients SET frequency = ? WHERE email = ?",
+            (frequency, email.strip().lower()),
+        )
+        self.conn.commit()
+
+    def record_digest_sent(self, email: str, sent_utc: str | None = None) -> None:
+        self.conn.execute(
+            "UPDATE alert_recipients SET last_digest_sent_utc = ? WHERE email = ?",
+            (sent_utc or utc_now(), email.strip().lower()),
+        )
+        self.conn.commit()
+
+    def alerts_sent_since(self, since_utc: str) -> list[dict[str, Any]]:
+        """Every already-emailed detection/known-announcement whose
+        alert_sent_timestamp is after since_utc - the digest's source of
+        "what's new". Deliberately reuses the exact row shape
+        latest_sent_alert_batch() already produces (so cli.py's existing
+        _alert_from_sent_row() works unchanged) and, by construction, only
+        ever includes detections that already passed the same dedup gate
+        the immediate send path uses (detection_already_alerted() - a
+        detection can only reach alert_sent = 1 after clearing that check
+        at scan time), so a digest can never re-surface a duplicate
+        announcement the immediate path already filtered out."""
+        detection_rows = self.conn.execute(
+            """
+            SELECT d.id, d.company_name, d.event_type, d.event_date, d.form_type, d.filing_url AS source_url,
+                   'SEC filing' AS source_label, snippet, d.event_url,
+                   d.evidence_url, d.evidence_label, alert_sent_timestamp,
+                   h.qualifying_count, h.hype_status, h.provisional
+            FROM detections d
+            LEFT JOIN hype_tracking h ON h.candidate_id = d.id
+            WHERE d.alert_sent = 1 AND d.alert_sent_timestamp > ?
+              AND d.status = 'alert_candidate'
+              AND d.event_type IS NOT NULL
+              AND d.event_date IS NOT NULL
+            ORDER BY alert_sent_timestamp, id
+            """,
+            (since_utc,),
+        ).fetchall()
+        known_rows = self.conn.execute(
+            """
+            SELECT id, company_name, event_type, event_date, '' AS form_type, source_url,
+                   source_label, '' AS snippet, '' AS event_url,
+                   source_url AS evidence_url, source_label AS evidence_label, alert_sent_timestamp,
+                   NULL AS qualifying_count, NULL AS hype_status, NULL AS provisional
+            FROM known_announcements
+            WHERE alert_sent = 1 AND alert_sent_timestamp > ?
+            ORDER BY alert_sent_timestamp, id
+            """,
+            (since_utc,),
+        ).fetchall()
+        return [dict(row) for row in [*detection_rows, *known_rows]]
 
     # ------------------------------------------------------- company websites
 

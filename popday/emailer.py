@@ -429,6 +429,40 @@ def send_alert_email(config: Config, alerts: list[object], recipients: list[str]
             smtp.send_message(message)
 
 
+def send_digest_email(config: Config, alerts: list[object], recipient: str) -> None:
+    """One weekly-digest email to one recipient, bundling every announcement
+    new since their last digest. Deliberately reuses build_alert_body() /
+    build_alert_html() unchanged - same per-alert formatting, market
+    grouping, and numbering as the immediate send - only the subject line
+    and the personalized unsubscribe link differ, exactly mirroring
+    send_alert_email()'s per-recipient send (a unique unsubscribe link per
+    recipient, not a shared To: list)."""
+    if not config.email_configured:
+        raise RuntimeError("Email is not configured. Set SMTP and email environment variables or config.json.")
+    if not alerts:
+        raise RuntimeError("No alerts to include in this digest.")
+
+    alert_count = len(alerts)
+    subject = (
+        "PopDay Weekly Digest: 1 new investor-event announcement"
+        if alert_count == 1
+        else f"PopDay Weekly Digest: {alert_count} new investor-event announcements"
+    )
+
+    with smtplib.SMTP(config.smtp_host, config.smtp_port, timeout=30) as smtp:
+        smtp.starttls()
+        smtp.login(config.smtp_username, config.smtp_password)
+        unsubscribe_link = _unsubscribe_link(config, recipient)
+        message = EmailMessage()
+        message["Subject"] = subject
+        message["From"] = config.email_from
+        message["To"] = recipient
+        message["List-Unsubscribe"] = f"<{unsubscribe_link}>"
+        message.set_content(build_alert_body(alerts, unsubscribe_link=unsubscribe_link))
+        message.add_alternative(build_alert_html(alerts, unsubscribe_link=unsubscribe_link), subtype="html")
+        smtp.send_message(message)
+
+
 def send_privileged_format_test_email(
     config: Config,
     alerts: list[object],

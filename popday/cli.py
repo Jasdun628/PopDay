@@ -12,7 +12,7 @@ from .company_websites import company_key, fetch_edgar_website, normalize_cik, r
 from .config import load_config
 from .coverage_gap import missed_business_days
 from .date_extract import format_human_date
-from .db import Database
+from .db import Database, utc_now
 from .detector import detect_in_parsed_filing, detect_in_sections, detect_in_uk_announcement
 from .debug_server import serve_debug_ui
 from .wikidata_resolver import resolve_website_wikidata
@@ -32,6 +32,7 @@ from .sources.investegate import (
 from .emailer import (
     build_alert_body,
     send_alert_email,
+    send_digest_email,
     send_ops_alert_email,
     send_privileged_format_test_email,
 )
@@ -1087,6 +1088,50 @@ def send_known_alerts(args: argparse.Namespace) -> int:
     return 0
 
 
+def send_digest(args: argparse.Namespace) -> int:
+    """One email per active weekly-digest recipient, bundling every
+    already-sent announcement newer than their own last_digest_sent_utc
+    (or, on a recipient's first-ever digest, newer than when they signed
+    up - never the full historical backlog). Reuses the exact same
+    alert_sent_timestamp state and _alert_from_sent_row() shape the
+    immediate path and the admin "Alert History" list already use, so a
+    digest can never surface an announcement the immediate path's dedup
+    gate (detection_already_alerted(), applied once at detection time)
+    would have rejected - there is no separate dedup logic here to get
+    wrong. Never touches active_alert_recipients() or the ops-alarm path.
+    """
+    config = load_config(args.config)
+    db = Database(config.db_path)
+    try:
+        recipients = db.active_digest_recipients()
+        if not recipients:
+            print("No active weekly-digest recipients.")
+            return 0
+        now = utc_now()
+        sent_count = 0
+        for row in recipients:
+            since = str(row["last_digest_sent_utc"] or row["created_timestamp"])
+            rows = db.alerts_sent_since(since)
+            alerts = [_alert_from_sent_row(r) for r in rows]
+            if not alerts:
+                print(f"{row['email']}: nothing new since {since}, skipped.")
+                continue
+            if args.dry_run:
+                print(f"[DRY-RUN] Would send digest to {row['email']}: {len(alerts)} alert(s) since {since}")
+                continue
+            send_digest_email(config, alerts, recipient=str(row["email"]))
+            db.record_digest_sent(str(row["email"]), now)
+            sent_count += 1
+            print(f"{row['email']}: digest sent, {len(alerts)} alert(s).")
+    except Exception as exc:
+        print(f"Weekly digest failed: {exc}")
+        return 1
+    finally:
+        db.close()
+    print(f"Weekly digests sent: {sent_count}")
+    return 0
+
+
 def watch_hype(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     if config.sec_user_agent_has_placeholder_contact:
@@ -1232,6 +1277,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Send alert emails for unsent known non-EDGAR announcements.",
     )
     parser.add_argument(
+        "--send-digest",
+        action="store_true",
+        help=(
+            "Send the weekly digest email to every active frequency='weekly' recipient, "
+            "bundling announcements new since their last digest. Intended for a Friday "
+            "afternoon ET scheduled run; add --dry-run to preview without sending."
+        ),
+    )
+    parser.add_argument(
         "--watch-hype",
         action="store_true",
         help="Classify upcoming Analyst and Investor Days as hyped or quiet using SEC submissions JSON.",
@@ -1273,6 +1327,8 @@ def main(argv: list[str] | None = None) -> int:
         return send_test(args)
     if args.send_known_alerts:
         return send_known_alerts(args)
+    if args.send_digest:
+        return send_digest(args)
     if args.watch_hype:
         return watch_hype(args)
     if args.reclassify:

@@ -1062,7 +1062,7 @@
 	    {% elif recipients %}
 	    <table>
       <thead>
-        <tr><th>Email</th><th>Active</th><th>Added</th><th>Action</th></tr>
+        <tr><th>Email</th><th>Active</th><th>Frequency</th><th>Added</th><th>Action</th></tr>
       </thead>
       <tbody>
         {% for r in recipients %}
@@ -1074,6 +1074,14 @@
             {% else %}
               <span class="pill pill-warn">no</span>
             {% endif %}
+          </td>
+          <td>
+            <span class="pill {{ 'pill-neutral' if r.frequency == 'weekly' else 'pill-ok' }}">{{ r.frequency }}</span>
+            <form method="post" action="{{ url_for('admin_recipients_set_frequency') }}" style="display:inline; margin-left:6px;">
+              <input type="hidden" name="email" value="{{ r.email }}">
+              <input type="hidden" name="frequency" value="{{ 'immediate' if r.frequency == 'weekly' else 'weekly' }}">
+              <button type="submit">{{ 'Switch to immediate' if r.frequency == 'weekly' else 'Switch to weekly digest' }}</button>
+            </form>
           </td>
           <td>{{ r.created }}</td>
           <td>
