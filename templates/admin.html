@@ -148,7 +148,7 @@
 <div class="table-scroll">
   <table class="price-reaction-table" style="min-width: {{ 1585 if show_event_day_close else 1465 }}px;">
     <colgroup>
-      <col style="width: 185px"><col style="width: 115px"><col style="width: 105px"><col style="width: 110px">
+      <col style="width: 185px"><col style="width: 105px"><col style="width: 115px"><col style="width: 110px">
       <col style="width: 135px">{% if show_event_day_close %}<col style="width: 120px">{% endif %}
       <col style="width: 150px"><col style="width: 100px">
       <col style="width: 100px"><col style="width: 85px"><col style="width: 110px"><col style="width: 130px">
@@ -165,8 +165,8 @@
       </tr>
       <tr>
         <th>Company</th>
-        <th class="grp-start"><span class="tip-head" data-tip="The freshest closing price PopDay has for this stock, with its date shown underneath.">Latest Close</span></th>
-        <th><span class="tip-head" data-tip="The running score: how far the stock has moved in total from just before the news to its latest close.">Interval Return</span></th>
+        <th class="grp-start"><span class="tip-head" data-tip="The running score: how far the stock has moved in total from just before the news to its latest close.">Interval Return</span></th>
+        <th><span class="tip-head" data-tip="The freshest closing price PopDay has for this stock, with its date shown underneath.">Latest Close</span></th>
         <th><span class="tip-head" data-tip="How bumpy the ride has been since the news - the typical size of the day-to-day swings over the whole stretch. Higher means a jumpier stock.">Daily Volatility</span></th>
         <th class="grp-start">Event Date</th>
         {% if show_event_day_close %}<th><span class="tip-head" data-tip="Where the stock finished on the Investor Day itself - green if it ended up, red if down, with that day's move underneath. Blank until the event has actually happened.">Investor Day Close</span></th>{% endif %}
@@ -190,8 +190,7 @@
           {% endif %}
           {% if r.ticker and r.ticker != '—' %}<div class="ticker-sub"><a href="https://finance.yahoo.com/quote/{{ r.ticker }}" target="_blank" rel="noopener">{{ r.ticker }}</a></div>{% endif %}
         </td>
-        <td class="number-cell grp-start">{{ r.latest_close }}<div class="status-meta">{{ r.latest_close_date }}</div></td>
-        <td class="number-cell">
+        <td class="number-cell grp-start">
           {% if r.interval_return_raw is not none %}
           <span class="return-pill {{ 'return-pill-up' if r.interval_return_raw > 0 else ('return-pill-down' if r.interval_return_raw < 0 else 'return-pill-flat') }}">
             {% if r.interval_return_raw > 0 %}<span class="return-arrow">&#9650;</span>{% elif r.interval_return_raw < 0 %}<span class="return-arrow">&#9660;</span>{% endif %}{{ r.interval_return_pct }}
@@ -200,6 +199,7 @@
           {{ r.interval_return_pct }}
           {% endif %}
         </td>
+        <td class="number-cell close-value">{{ r.latest_close }}<div class="status-meta">{{ r.latest_close_date }}</div></td>
         <td class="number-cell">{{ r.interval_daily_volatility_pct }}</td>
         <td class="date-strong grp-start">{{ r.event_date }}</td>
         {% if show_event_day_close %}<td class="{{ 'move-up' if r.event_day_direction == 'up' else ('move-down' if r.event_day_direction == 'down' else 'number-cell') }}">{{ r.event_day_close }}{% if r.event_day_move_pct %}<div class="move-sub">{{ r.event_day_move_pct }}</div>{% endif %}</td>{% endif %}
@@ -219,8 +219,8 @@
     <tfoot>
       <tr class="total-row">
         <td></td>
-        <td colspan="2" class="total-label {% if average.startswith('+') %}move-up{% elif average.startswith('-') %}move-down{% endif %}"><span class="tip-head" data-tip="The bottom line for this table: take every Interval Return above and average them - the typical total move a stock has made since its announcement.">Average interval return</span></td>
         <td class="number-cell {% if average.startswith('+') %}move-up{% elif average.startswith('-') %}move-down{% endif %}">{{ average }}</td>
+        <td colspan="2" class="total-label {% if average.startswith('+') %}move-up{% elif average.startswith('-') %}move-down{% endif %}"><span class="tip-head" data-tip="The bottom line for this table: take every Interval Return above and average them - the typical total move a stock has made since its announcement.">Average interval return</span></td>
         {% if show_event_average %}
         <td class="total-label {% if event_average.startswith('+') %}move-up{% elif event_average.startswith('-') %}move-down{% endif %}"><span class="tip-head" data-tip="Take every Investor Day Close move above and average them - how the stock typically fared on the big day itself. Only rows whose event has already happened count.">Average event-day return</span></td>
         <td class="number-cell {% if event_average.startswith('+') %}move-up{% elif event_average.startswith('-') %}move-down{% endif %}">{{ event_average }}</td>
@@ -542,11 +542,11 @@
     .table-scroll table tbody tr:nth-child(even) td:first-child { background: var(--panel-soft); }
     .table-scroll table tbody tr:hover td:first-child { background: #eef5f8; }
     /* price-reaction-table additionally pins the "Since AD" outcome group
-       (Latest Close, Interval Return, Daily Volatility - cols 2-4, right
+       (Interval Return, Latest Close, Daily Volatility - cols 2-4, right
        after Company) as one block, so the headline "how much has this
        moved" numbers stay in view next to the company name while the rest
        of the row scrolls underneath. Left offsets are the running sum of
-       the fixed colgroup widths (185 / 115 / 105px). Unlike the group
+       the fixed colgroup widths (185 / 105 / 115px). Unlike the group
        headers further right, this range's group-row cell (colspan 3) and
        tfoot cells (colspan 2 + 1) each span exactly the same columns as
        the pinned block below them, so they pin cleanly with no width
@@ -572,11 +572,23 @@
       background: var(--panel);
     }
     .price-reaction-table td:nth-child(4),
-    .price-reaction-table thead tr:not(.group-row) th:nth-child(4),
-    .price-reaction-table tfoot td:nth-child(3) {
+    .price-reaction-table thead tr:not(.group-row) th:nth-child(4) {
       position: -webkit-sticky;
       position: sticky;
       left: 405px;
+      z-index: 2;
+      background: var(--panel);
+      border-right: 1px solid var(--line);
+      box-shadow: 2px 0 4px -2px rgba(0, 0, 0, 0.15);
+    }
+    /* tfoot's total row merges Latest Close + Daily Volatility into one
+       colspan-2 label cell (nth-child 3, after the standalone average
+       value at nth-child 2), so it needs its own pin at col3's left
+       offset - the col4 rule above only covers unmerged rows. */
+    .price-reaction-table tfoot td:nth-child(3) {
+      position: -webkit-sticky;
+      position: sticky;
+      left: 300px;
       z-index: 2;
       background: var(--panel);
       border-right: 1px solid var(--line);
@@ -586,7 +598,7 @@
       z-index: 3;
     }
     /* The group-row's "Since AD" cell (colspan 3) covers exactly cols 2-4,
-       so it pins at the same left offset as Latest Close and, since its
+       so it pins at the same left offset as Interval Return and, since its
        right edge lines up with Daily Volatility's, carries the same
        trailing border/shadow as that column's own pin rule above. */
     .price-reaction-table thead tr.group-row th:nth-child(2) {
@@ -623,6 +635,10 @@
       background: #eef5f8;
     }
     .number-cell { font-weight: 650; white-space: nowrap; }
+    /* Latest Close is supporting detail behind the Interval Return pill
+       (the actual headline figure), so it's deliberately lighter/smaller
+       than the default bold .number-cell weight. */
+    .price-reaction-table td.close-value { font-weight: 500; font-size: 13px; }
     .tip-head { border-bottom: 1px dotted var(--muted); cursor: help; }
     .total-row td { border-top: 2px solid var(--line); }
     .total-label { font-weight: 750; text-align: right; }
