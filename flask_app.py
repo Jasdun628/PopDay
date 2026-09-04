@@ -10,10 +10,12 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from flask import Flask, redirect, render_template, request, session, url_for
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from popday.company_websites import resolve_company_website
 from popday.config import DEFAULT_COMPANY_WEBSITES, load_config
 from popday.db import Database
+from popday.emailer import send_ops_alert_email
 
 
 app = Flask(__name__)
@@ -1176,26 +1178,116 @@ def _render_main_ui(tab: str, *, is_admin: bool) -> str:
 # ---------------------------------------------------------------------------
 
 
+RESET_TOKEN_TTL_MINUTES = 30
+
+
+def _get_admin_password_hash(db: Database) -> str | None:
+    """The DB-stored hash is the source of truth. On first use after this
+    feature shipped, with no stored hash yet, bootstrap it from the
+    POPDAY_ADMIN_PASSWORD env var (if set) so existing deployments keep
+    working unchanged - the "Forgotten password" flow then lets the env
+    var be retired entirely once a reset has been done at least once."""
+    stored = db.get_admin_password_hash()
+    if stored:
+        return stored
+    env_password = os.environ.get("POPDAY_ADMIN_PASSWORD", "")
+    if not env_password:
+        return None
+    bootstrapped = generate_password_hash(env_password, method="pbkdf2:sha256")
+    db.set_admin_password_hash(bootstrapped)
+    return bootstrapped
+
+
 @app.route("/admin/login", methods=["GET", "POST"])
 def admin_login():
-    admin_pw = os.environ.get("POPDAY_ADMIN_PASSWORD", "")
-    if not admin_pw:
-        return render_template(
-            "admin_login.html",
-            error="Admin access is not configured. Set the POPDAY_ADMIN_PASSWORD environment variable.",
-            disabled=True,
+    config = load_config()
+    db = Database(config.db_path)
+    try:
+        admin_hash = _get_admin_password_hash(db)
+        if not admin_hash:
+            return render_template(
+                "admin_login.html",
+                error="Admin access is not configured. Set the POPDAY_ADMIN_PASSWORD environment variable.",
+                disabled=True,
+            )
+        error = None
+        next_path = request.args.get("next", "")
+        if not next_path.startswith("/admin/"):
+            next_path = url_for("admin_tab", tab="summary")
+        if request.method == "POST":
+            provided = request.form.get("password", "")
+            if check_password_hash(admin_hash, provided):
+                session["admin_authenticated"] = True
+                return redirect(next_path)
+            error = "Incorrect password."
+        return render_template("admin_login.html", error=error, disabled=False)
+    finally:
+        db.close()
+
+
+@app.route("/admin/forgot", methods=["GET", "POST"])
+def admin_forgot():
+    config = load_config()
+    db = Database(config.db_path)
+    try:
+        sent = False
+        error = None
+        if request.method == "POST":
+            token = secrets.token_urlsafe(32)
+            token_hash = hashlib.sha256(token.encode()).hexdigest()
+            expires_utc = (
+                datetime.now(timezone.utc) + timedelta(minutes=RESET_TOKEN_TTL_MINUTES)
+            ).isoformat(timespec="seconds")
+            db.set_admin_reset_token(token_hash, expires_utc)
+            reset_url = url_for("admin_reset", token=token, _external=True)
+            body = (
+                "A password reset was requested for the PopDay admin area.\n\n"
+                f"Reset link (valid {RESET_TOKEN_TTL_MINUTES} minutes):\n{reset_url}\n\n"
+                "If you didn't request this, you can ignore this email - the "
+                "link expires on its own and no change happens until it's used."
+            )
+            try:
+                send_ops_alert_email(config, "PopDay admin password reset", body)
+                sent = True
+            except RuntimeError as exc:
+                error = f"Couldn't send the reset email: {exc}"
+        return render_template("admin_forgot.html", sent=sent, error=error)
+    finally:
+        db.close()
+
+
+@app.route("/admin/reset/<token>", methods=["GET", "POST"])
+def admin_reset(token: str):
+    config = load_config()
+    db = Database(config.db_path)
+    try:
+        row = db.get_admin_reset_token()
+        token_hash = str(row["reset_token_hash"]) if row and row["reset_token_hash"] else ""
+        expires_utc = str(row["reset_token_expires_utc"]) if row and row["reset_token_expires_utc"] else ""
+        valid = bool(token_hash) and secrets.compare_digest(
+            hashlib.sha256(token.encode()).hexdigest(), token_hash
         )
-    error = None
-    next_path = request.args.get("next", "")
-    if not next_path.startswith("/admin/"):
-        next_path = url_for("admin_tab", tab="summary")
-    if request.method == "POST":
-        provided = request.form.get("password", "")
-        if secrets.compare_digest(provided.encode(), admin_pw.encode()):
-            session["admin_authenticated"] = True
-            return redirect(next_path)
-        error = "Incorrect password."
-    return render_template("admin_login.html", error=error, disabled=False)
+        if valid and expires_utc:
+            valid = datetime.now(timezone.utc) <= datetime.fromisoformat(expires_utc)
+        if not valid:
+            return render_template("admin_reset.html", invalid=True, error=None)
+
+        error = None
+        if request.method == "POST":
+            new_password = request.form.get("password", "")
+            confirm_password = request.form.get("confirm_password", "")
+            if len(new_password) < 8:
+                error = "Password must be at least 8 characters."
+            elif new_password != confirm_password:
+                error = "Passwords don't match."
+            else:
+                db.set_admin_password_hash(generate_password_hash(new_password, method="pbkdf2:sha256"))
+                db.clear_admin_reset_token()
+                session["admin_authenticated"] = True
+                return redirect(url_for("admin_tab", tab="summary"))
+        return render_template("admin_reset.html", invalid=False, error=error)
+    finally:
+        db.close()
 
 
 @app.route("/admin/logout")

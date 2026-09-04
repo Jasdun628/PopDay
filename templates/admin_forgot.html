@@ -14,6 +14,8 @@
       --panel: #ffffff;
       --danger: #b3261e;
       --danger-bg: #fce8e6;
+      --ok: #1e7d3a;
+      --ok-bg: #e6f4ea;
       --accent: #2f6f9f;
     }
     * { box-sizing: border-box; }
@@ -37,6 +39,7 @@
       padding: 28px;
     }
     .login-card h2 { margin: 0 0 20px; font-size: 16px; font-weight: 650; }
+    .login-card p.hint { margin: 0 0 20px; }
     .error-msg {
       background: var(--danger-bg);
       color: var(--danger);
@@ -44,25 +47,13 @@
       margin-bottom: 16px;
       padding: 10px 12px;
     }
-    label {
-      color: var(--muted);
-      display: grid;
-      font-size: 12px;
-      font-weight: 650;
-      gap: 4px;
+    .ok-msg {
+      background: var(--ok-bg);
+      color: var(--ok);
+      font-size: 13px;
       margin-bottom: 16px;
-      text-transform: uppercase;
+      padding: 10px 12px;
     }
-    input[type=password] {
-      border: 1px solid var(--line);
-      border-radius: 4px;
-      color: var(--text);
-      font: inherit;
-      min-height: 36px;
-      padding: 7px 8px;
-      width: 100%;
-    }
-    input:focus { border-color: var(--accent); outline: 2px solid rgba(47,111,159,0.18); }
     button {
       background: #202124;
       border: 0;
@@ -87,18 +78,17 @@
 </header>
 <main>
   <div class="login-card">
-    <h2>Sign in</h2>
+    <h2>Forgotten password</h2>
     {% if error %}<div class="error-msg">{{ error }}</div>{% endif %}
-    {% if not disabled %}
-    <form method="post" autocomplete="off">
-      <label>Password
-        <input type="password" name="password" autofocus required>
-      </label>
-      <button type="submit">Sign in</button>
-    </form>
-    <p class="back-link"><a href="{{ url_for('admin_forgot') }}">Forgotten password?</a></p>
+    {% if sent %}
+      <div class="ok-msg">Reset link sent - check the configured admin email. It expires in 30 minutes.</div>
+    {% else %}
+      <p class="hint">A reset link will be emailed to the configured admin address.</p>
+      <form method="post">
+        <button type="submit">Send reset link</button>
+      </form>
     {% endif %}
-    <p class="back-link"><a href="{{ url_for('index') }}">Back to PopDay</a></p>
+    <p class="back-link"><a href="{{ url_for('admin_login') }}">Back to sign in</a></p>
   </div>
 </main>
 </body>

@@ -211,6 +211,17 @@ CREATE TABLE IF NOT EXISTS resolved_company_websites (
     resolution_method TEXT NOT NULL DEFAULT 'heuristic_domain_guess',
     resolved_checked_utc TEXT NOT NULL
 );
+
+-- Single row (id=1). Holds the admin login credential as a salted hash, so
+-- it no longer has to live only in the PA process's POPDAY_ADMIN_PASSWORD
+-- env var (which has no in-app recovery path if it's wrong or stale). The
+-- reset_token columns back the "Forgotten password" email flow.
+CREATE TABLE IF NOT EXISTS admin_auth (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    password_hash TEXT,
+    reset_token_hash TEXT,
+    reset_token_expires_utc TEXT
+);
 """
 
 
@@ -1525,3 +1536,41 @@ class Database:
             """,
             (market,),
         ).fetchall()
+
+    def get_admin_password_hash(self) -> str | None:
+        row = self.conn.execute("SELECT password_hash FROM admin_auth WHERE id = 1").fetchone()
+        return str(row["password_hash"]) if row and row["password_hash"] else None
+
+    def set_admin_password_hash(self, password_hash: str) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO admin_auth (id, password_hash) VALUES (1, ?)
+            ON CONFLICT(id) DO UPDATE SET password_hash = excluded.password_hash
+            """,
+            (password_hash,),
+        )
+        self.conn.commit()
+
+    def set_admin_reset_token(self, token_hash: str, expires_utc: str) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO admin_auth (id, reset_token_hash, reset_token_expires_utc)
+            VALUES (1, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                reset_token_hash = excluded.reset_token_hash,
+                reset_token_expires_utc = excluded.reset_token_expires_utc
+            """,
+            (token_hash, expires_utc),
+        )
+        self.conn.commit()
+
+    def get_admin_reset_token(self) -> sqlite3.Row | None:
+        return self.conn.execute(
+            "SELECT reset_token_hash, reset_token_expires_utc FROM admin_auth WHERE id = 1"
+        ).fetchone()
+
+    def clear_admin_reset_token(self) -> None:
+        self.conn.execute(
+            "UPDATE admin_auth SET reset_token_hash = NULL, reset_token_expires_utc = NULL WHERE id = 1"
+        )
+        self.conn.commit()
