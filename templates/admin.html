@@ -219,8 +219,8 @@
     <tfoot>
       <tr class="total-row">
         <td></td>
-        <td class="number-cell {% if average.startswith('+') %}move-up{% elif average.startswith('-') %}move-down{% endif %}">{{ average }}</td>
         <td colspan="2" class="total-label {% if average.startswith('+') %}move-up{% elif average.startswith('-') %}move-down{% endif %}"><span class="tip-head" data-tip="The bottom line for this table: take every Interval Return above and average them - the typical total move a stock has made since its announcement.">Average interval return</span></td>
+        <td class="number-cell {% if average.startswith('+') %}move-up{% elif average.startswith('-') %}move-down{% endif %}">{{ average }}</td>
         {% if show_event_average %}
         <td class="total-label {% if event_average.startswith('+') %}move-up{% elif event_average.startswith('-') %}move-down{% endif %}"><span class="tip-head" data-tip="Take every Investor Day Close move above and average them - how the stock typically fared on the big day itself. Only rows whose event has already happened count.">Average event-day return</span></td>
         <td class="number-cell {% if event_average.startswith('+') %}move-up{% elif event_average.startswith('-') %}move-down{% endif %}">{{ event_average }}</td>
@@ -554,7 +554,7 @@
        or its tfoot equivalent) carries the border/shadow, so Company +
        Since AD read as one pinned block instead of four separately
        outlined cells. */
-    .price-reaction-table td:nth-child(2),
+    .price-reaction-table tbody td:nth-child(2),
     .price-reaction-table thead tr:not(.group-row) th:nth-child(2),
     .price-reaction-table tfoot td:nth-child(2) {
       position: -webkit-sticky;
@@ -563,7 +563,7 @@
       z-index: 2;
       background: var(--panel);
     }
-    .price-reaction-table td:nth-child(3),
+    .price-reaction-table tbody td:nth-child(3),
     .price-reaction-table thead tr:not(.group-row) th:nth-child(3) {
       position: -webkit-sticky;
       position: sticky;
@@ -571,24 +571,12 @@
       z-index: 2;
       background: var(--panel);
     }
-    .price-reaction-table td:nth-child(4),
-    .price-reaction-table thead tr:not(.group-row) th:nth-child(4) {
-      position: -webkit-sticky;
-      position: sticky;
-      left: 405px;
-      z-index: 2;
-      background: var(--panel);
-      border-right: 1px solid var(--line);
-      box-shadow: 2px 0 4px -2px rgba(0, 0, 0, 0.15);
-    }
-    /* tfoot's total row merges Latest Close + Daily Volatility into one
-       colspan-2 label cell (nth-child 3, after the standalone average
-       value at nth-child 2), so it needs its own pin at col3's left
-       offset - the col4 rule above only covers unmerged rows. */
+    .price-reaction-table tbody td:nth-child(4),
+    .price-reaction-table thead tr:not(.group-row) th:nth-child(4),
     .price-reaction-table tfoot td:nth-child(3) {
       position: -webkit-sticky;
       position: sticky;
-      left: 300px;
+      left: 405px;
       z-index: 2;
       background: var(--panel);
       border-right: 1px solid var(--line);
