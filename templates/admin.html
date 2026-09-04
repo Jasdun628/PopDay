@@ -1283,7 +1283,7 @@
             {% if c.status == 'alert_candidate' %}
               <span class="pill pill-ok">{{ c.status_display }}</span>
             {% elif c.status == 'dismissed' %}
-              <span class="pill pill-warn">{{ c.status_display }}</span>
+              <span class="pill pill-warn"><span class="tip-head" data-tip="{{ c.reason }}">{{ c.status_display }}</span></span>
             {% else %}
               <span class="pill pill-neutral">{{ c.status_display }}</span>
             {% endif %}
