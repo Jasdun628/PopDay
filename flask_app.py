@@ -729,9 +729,9 @@ def _announcement_sort_settings() -> tuple[str, str]:
     return sort_key, direction
 
 
-def _research_sort_settings() -> tuple[str, str]:
-    sort_key = request.args.get("sort", "investor_comms").strip().lower()
-    direction = request.args.get("direction", "desc").strip().lower()
+def _research_sort_settings(param_prefix: str) -> tuple[str, str]:
+    sort_key = request.args.get(f"{param_prefix}_sort", "investor_comms").strip().lower()
+    direction = request.args.get(f"{param_prefix}_direction", "desc").strip().lower()
     valid = {
         "company", "ticker", "event_type", "ad", "id", "days", "raw",
         "investor_comms", "item_701", "item_801", "presentation",
@@ -963,7 +963,8 @@ def _build_admin_context(
             announcement_direction=direction,
         )
     elif tab == "research":
-        sort_key, direction = _research_sort_settings()
+        upcoming_sort_key, upcoming_direction = _research_sort_settings("upcoming")
+        legacy_sort_key, legacy_direction = _research_sort_settings("legacy")
         research_rows = []
         for r in db.research_hype_events(market):
             row = dict(r)
@@ -1016,23 +1017,32 @@ def _build_admin_context(
                     "source_label": source_label,
                 }
             )
-        sorted_research_rows = _sort_research_rows(research_rows, sort_key, direction)
-        upcoming_research_rows = [
-            item for item in sorted_research_rows if _is_upcoming_announcement(
-                {"event_date_raw": item.get("id_date_raw") or ""}
-            )
-        ]
-        legacy_research_rows = [
-            item for item in sorted_research_rows if not _is_upcoming_announcement(
-                {"event_date_raw": item.get("id_date_raw") or ""}
-            )
-        ]
+        upcoming_research_rows = _sort_research_rows(
+            [
+                item for item in research_rows if _is_upcoming_announcement(
+                    {"event_date_raw": item.get("id_date_raw") or ""}
+                )
+            ],
+            upcoming_sort_key,
+            upcoming_direction,
+        )
+        legacy_research_rows = _sort_research_rows(
+            [
+                item for item in research_rows if not _is_upcoming_announcement(
+                    {"event_date_raw": item.get("id_date_raw") or ""}
+                )
+            ],
+            legacy_sort_key,
+            legacy_direction,
+        )
         ctx.update(
-            research_rows=sorted_research_rows,
+            research_rows=research_rows,
             upcoming_research_rows=upcoming_research_rows,
             legacy_research_rows=legacy_research_rows,
-            research_sort=sort_key,
-            research_direction=direction,
+            upcoming_research_sort=upcoming_sort_key,
+            upcoming_research_direction=upcoming_direction,
+            legacy_research_sort=legacy_sort_key,
+            legacy_research_direction=legacy_direction,
             research_unknown_note=(
                 "Research counts are shown only where PopDay has enough data. Unknown means "
                 "the event has not been backfilled yet. Upcoming means the Investor Day has "
