@@ -146,25 +146,29 @@
 {% macro price_reaction_table(rows, average, event_average, show_event_average=true, show_event_day_close=true) %}
 <div class="pr-table-wrap" data-page-size="25">
 <div class="table-scroll">
-  <table class="price-reaction-table">
+  <table class="price-reaction-table" style="min-width: {{ 1585 if show_event_day_close else 1465 }}px;">
     <colgroup>
-      <col style="width: 185px"><col style="width: 135px">{% if show_event_day_close %}<col style="width: 120px">{% endif %}
+      <col style="width: 185px"><col style="width: 115px"><col style="width: 105px"><col style="width: 110px">
+      <col style="width: 135px">{% if show_event_day_close %}<col style="width: 120px">{% endif %}
       <col style="width: 150px"><col style="width: 130px"><col style="width: 100px">
       <col style="width: 100px"><col style="width: 85px"><col style="width: 110px">
-      <col style="width: 115px"><col style="width: 105px"><col style="width: 110px">
       <col style="width: 140px">
     </colgroup>
     <thead>
       <tr class="group-row">
-        <th colspan="{{ 3 if show_event_day_close else 2 }}" class="grp grp-event"><span class="tip-head" data-tip="Who held the Investor Day, when it happened (or will), and where the stock closed on the day itself.">The event</span></th>
+        <th class="grp grp-company"></th>
+        <th colspan="3" class="grp grp-since grp-start"><span class="tip-head" data-tip="The bigger picture since the news: where the stock has drifted from just before that first reaction day to its latest close, and how bumpy the ride has been.">Since AD</span></th>
+        <th colspan="{{ 2 if show_event_day_close else 1 }}" class="grp grp-event grp-start"><span class="tip-head" data-tip="Who held the Investor Day, when it happened (or will), and where the stock closed on the day itself.">The event</span></th>
         <th colspan="2" class="grp grp-announce grp-start"><span class="tip-head" data-tip="When the news landed: the moment the SEC filing arrived, and the first trading day anyone could act on it.">Announcement Day (AD)</span></th>
         <th colspan="4" class="grp grp-reaction grp-start"><span class="tip-head" data-tip="What the stock did on day one after the announcement (AD) dropped - the market's knee-jerk verdict, long before the Investor Day itself.">First-day reaction to AD</span></th>
-        <th colspan="3" class="grp grp-since grp-start"><span class="tip-head" data-tip="The bigger picture since the news: where the stock has drifted from just before that first reaction day to its latest close, and how bumpy the ride has been.">Since then</span></th>
         <th class="grp grp-status grp-start"><span class="tip-head" data-tip="A quick sanity flag: is this row complete, or is something missing (and why)?">Status</span></th>
       </tr>
       <tr>
         <th>Company</th>
-        <th>Event Date</th>
+        <th class="grp-start"><span class="tip-head" data-tip="The freshest closing price PopDay has for this stock, with its date shown underneath.">Latest Close</span></th>
+        <th><span class="tip-head" data-tip="The running score: how far the stock has moved in total from just before the news to its latest close.">Interval Return</span></th>
+        <th><span class="tip-head" data-tip="How bumpy the ride has been since the news - the typical size of the day-to-day swings over the whole stretch. Higher means a jumpier stock.">Daily Volatility</span></th>
+        <th class="grp-start">Event Date</th>
         {% if show_event_day_close %}<th><span class="tip-head" data-tip="Where the stock finished on the Investor Day itself - green if it ended up, red if down, with that day's move underneath. Blank until the event has actually happened.">Investor Day Close</span></th>{% endif %}
         <th class="grp-start"><span class="tip-head" data-tip="The exact moment the filing hit the SEC. Anything accepted at or after 4pm ET missed the closing bell, so the market's first chance to react rolls to the next trading day.">Filed / Accepted</span></th>
         <th><span class="tip-head" data-tip="The first day traders could actually do anything about the news - same day if it landed during market hours, the next trading day if it came in after the close.">Reaction Day</span></th>
@@ -172,9 +176,6 @@
         <th><span class="tip-head" data-tip="Where the stock finished at the end of the reaction day - the first close after the market had its say.">Reaction Close</span></th>
         <th><span class="tip-head" data-tip="Day one in a single number: how far the stock moved from the previous close once the news was out.">Move</span></th>
         <th><span class="tip-head" data-tip="How wild the reaction day was - the full swing from that day's low to its high, as a share of the previous close. Bigger number, wilder session.">Intraday Range</span></th>
-        <th class="grp-start"><span class="tip-head" data-tip="The freshest closing price PopDay has for this stock, with its date shown underneath.">Latest Close</span></th>
-        <th><span class="tip-head" data-tip="The running score: how far the stock has moved in total from just before the news to its latest close.">Interval Return</span></th>
-        <th><span class="tip-head" data-tip="How bumpy the ride has been since the news - the typical size of the day-to-day swings over the whole stretch. Higher means a jumpier stock.">Daily Volatility</span></th>
         <th class="grp-start"><span class="tip-head" data-tip="Ok means the row is complete; anything else is a short note on what data is missing and why.">Status</span></th>
       </tr>
     </thead>
@@ -189,14 +190,6 @@
           {% endif %}
           {% if r.ticker and r.ticker != '—' %}<div class="ticker-sub"><a href="https://finance.yahoo.com/quote/{{ r.ticker }}" target="_blank" rel="noopener">{{ r.ticker }}</a></div>{% endif %}
         </td>
-        <td class="date-strong">{{ r.event_date }}</td>
-        {% if show_event_day_close %}<td class="{{ 'move-up' if r.event_day_direction == 'up' else ('move-down' if r.event_day_direction == 'down' else 'number-cell') }}">{{ r.event_day_close }}{% if r.event_day_move_pct %}<div class="move-sub">{{ r.event_day_move_pct }}</div>{% endif %}</td>{% endif %}
-        <td class="grp-start {{ 'unknown-text' if r.accepted == '—' and r.filing_date == '—' else 'secondary-cell' }}">{% if r.accepted != '—' %}{{ r.accepted }}{% if r.accepted_time %}<div class="status-meta">{{ r.accepted_time }}</div>{% endif %}{% else %}{{ r.filing_date }}{% endif %}</td>
-        <td class="{{ 'unknown-text' if r.reaction_date == '—' else 'date-strong' }}">{{ r.reaction_date }}</td>
-        <td class="number-cell grp-start">{{ r.previous_close }}</td>
-        <td class="number-cell">{{ r.reaction_close }}</td>
-        <td class="number-cell">{{ r.announcement_move_pct }}</td>
-        <td class="number-cell">{{ r.intraday_range_pct }}</td>
         <td class="number-cell grp-start">{{ r.latest_close }}<div class="status-meta">{{ r.latest_close_date }}</div></td>
         <td class="number-cell">
           {% if r.interval_return_raw is not none %}
@@ -208,6 +201,14 @@
           {% endif %}
         </td>
         <td class="number-cell">{{ r.interval_daily_volatility_pct }}</td>
+        <td class="date-strong grp-start">{{ r.event_date }}</td>
+        {% if show_event_day_close %}<td class="{{ 'move-up' if r.event_day_direction == 'up' else ('move-down' if r.event_day_direction == 'down' else 'number-cell') }}">{{ r.event_day_close }}{% if r.event_day_move_pct %}<div class="move-sub">{{ r.event_day_move_pct }}</div>{% endif %}</td>{% endif %}
+        <td class="grp-start {{ 'unknown-text' if r.accepted == '—' and r.filing_date == '—' else 'secondary-cell' }}">{% if r.accepted != '—' %}{{ r.accepted }}{% if r.accepted_time %}<div class="status-meta">{{ r.accepted_time }}</div>{% endif %}{% else %}{{ r.filing_date }}{% endif %}</td>
+        <td class="{{ 'unknown-text' if r.reaction_date == '—' else 'date-strong' }}">{{ r.reaction_date }}</td>
+        <td class="number-cell grp-start">{{ r.previous_close }}</td>
+        <td class="number-cell">{{ r.reaction_close }}</td>
+        <td class="number-cell">{{ r.announcement_move_pct }}</td>
+        <td class="number-cell">{{ r.intraday_range_pct }}</td>
         <td class="grp-start {{ 'status-good' if r.status == 'Ok' else 'secondary-cell' }}">
           {{ r.status }}
           {% if r.notes %}<div class="status-meta">{{ r.notes }}</div>{% endif %}
@@ -217,16 +218,17 @@
     </tbody>
     <tfoot>
       <tr class="total-row">
+        <td></td>
+        <td colspan="2" class="total-label {% if average.startswith('+') %}move-up{% elif average.startswith('-') %}move-down{% endif %}"><span class="tip-head" data-tip="The bottom line for this table: take every Interval Return above and average them - the typical total move a stock has made since its announcement.">Average interval return</span></td>
+        <td class="number-cell {% if average.startswith('+') %}move-up{% elif average.startswith('-') %}move-down{% endif %}">{{ average }}</td>
         {% if show_event_average %}
-        <td colspan="2" class="total-label {% if event_average.startswith('+') %}move-up{% elif event_average.startswith('-') %}move-down{% endif %}"><span class="tip-head" data-tip="Take every Investor Day Close move above and average them - how the stock typically fared on the big day itself. Only rows whose event has already happened count.">Average event-day return</span></td>
+        <td class="total-label {% if event_average.startswith('+') %}move-up{% elif event_average.startswith('-') %}move-down{% endif %}"><span class="tip-head" data-tip="Take every Investor Day Close move above and average them - how the stock typically fared on the big day itself. Only rows whose event has already happened count.">Average event-day return</span></td>
         <td class="number-cell {% if event_average.startswith('+') %}move-up{% elif event_average.startswith('-') %}move-down{% endif %}">{{ event_average }}</td>
         <td colspan="6"></td>
         {% else %}
-        <td colspan="{{ 9 if show_event_day_close else 8 }}"></td>
+        <td colspan="{{ 8 if show_event_day_close else 7 }}"></td>
         {% endif %}
-        <td colspan="2" class="total-label {% if average.startswith('+') %}move-up{% elif average.startswith('-') %}move-down{% endif %}"><span class="tip-head" data-tip="The bottom line for this table: take every Interval Return above and average them - the typical total move a stock has made since its announcement.">Average interval return</span></td>
-        <td class="number-cell {% if average.startswith('+') %}move-up{% elif average.startswith('-') %}move-down{% endif %}">{{ average }}</td>
-        <td colspan="1"></td>
+        <td></td>
       </tr>
     </tfoot>
   </table>
@@ -519,9 +521,11 @@
     /* Sticky first column (company name + ticker) on wide scroll-container
        tables, so it stays visible while the rest of a row scrolls
        underneath - otherwise there's no way to tell which row you're on
-       once you've scrolled right on a narrow/mobile viewport. */
+       once you've scrolled right on a narrow/mobile viewport. Company's
+       colgroup width (185px, table-layout:fixed) is what makes every
+       "left" offset below reliable regardless of cell content. */
     .table-scroll table td:first-child,
-    .table-scroll table thead tr:not(.group-row) th:first-child {
+    .table-scroll table thead th:first-child {
       position: -webkit-sticky;
       position: sticky;
       left: 0;
@@ -533,16 +537,86 @@
     .table-scroll table thead tr:not(.group-row) th:first-child { z-index: 3; }
     .table-scroll table tbody tr:nth-child(even) td:first-child { background: var(--panel-soft); }
     .table-scroll table tbody tr:hover td:first-child { background: #eef5f8; }
-    /* price-reaction-table's grouped top header row and footer total-row
-       have a merged/label first cell that doesn't correspond 1:1 with the
-       sticky company column's width - leave those scrolling normally
-       rather than sticking a wider cell that would overlap the columns
-       beneath it. */
-    .table-scroll table thead tr.group-row th:first-child,
-    .table-scroll table tfoot td:first-child {
-      position: static;
-      box-shadow: none;
+    /* price-reaction-table additionally pins the "Since AD" outcome group
+       (Latest Close, Interval Return, Daily Volatility - cols 2-4, right
+       after Company) as one block, so the headline "how much has this
+       moved" numbers stay in view next to the company name while the rest
+       of the row scrolls underneath. Left offsets are the running sum of
+       the fixed colgroup widths (185 / 115 / 105px). Unlike the group
+       headers further right, this range's group-row cell (colspan 3) and
+       tfoot cells (colspan 2 + 1) each span exactly the same columns as
+       the pinned block below them, so they pin cleanly with no width
+       mismatch to work around - only the trailing edge (Daily Volatility,
+       or its tfoot equivalent) carries the border/shadow, so Company +
+       Since AD read as one pinned block instead of four separately
+       outlined cells. */
+    .price-reaction-table td:nth-child(2),
+    .price-reaction-table thead tr:not(.group-row) th:nth-child(2),
+    .price-reaction-table tfoot td:nth-child(2) {
+      position: -webkit-sticky;
+      position: sticky;
+      left: 185px;
+      z-index: 2;
+      background: var(--panel);
+    }
+    .price-reaction-table td:nth-child(3),
+    .price-reaction-table thead tr:not(.group-row) th:nth-child(3) {
+      position: -webkit-sticky;
+      position: sticky;
+      left: 300px;
+      z-index: 2;
+      background: var(--panel);
+    }
+    .price-reaction-table td:nth-child(4),
+    .price-reaction-table thead tr:not(.group-row) th:nth-child(4),
+    .price-reaction-table tfoot td:nth-child(3) {
+      position: -webkit-sticky;
+      position: sticky;
+      left: 405px;
+      z-index: 2;
+      background: var(--panel);
+      border-right: 1px solid var(--line);
+      box-shadow: 2px 0 4px -2px rgba(0, 0, 0, 0.15);
+    }
+    .price-reaction-table thead tr.group-row th:nth-child(1) {
+      z-index: 3;
+    }
+    /* The group-row's "Since AD" cell (colspan 3) covers exactly cols 2-4,
+       so it pins at the same left offset as Latest Close and, since its
+       right edge lines up with Daily Volatility's, carries the same
+       trailing border/shadow as that column's own pin rule above. */
+    .price-reaction-table thead tr.group-row th:nth-child(2) {
+      position: -webkit-sticky;
+      position: sticky;
+      left: 185px;
+      z-index: 3;
+      border-right: 1px solid var(--line);
+      box-shadow: 2px 0 4px -2px rgba(0, 0, 0, 0.15);
+    }
+    .price-reaction-table thead tr:not(.group-row) th:nth-child(2),
+    .price-reaction-table thead tr:not(.group-row) th:nth-child(3),
+    .price-reaction-table thead tr:not(.group-row) th:nth-child(4) {
+      z-index: 3;
+    }
+    /* Only the outer edge of the pinned block (Daily Volatility, the last
+       Since AD column) keeps the border/shadow above - Company's own
+       right edge no longer marks a pinned/scrolling boundary now that
+       Since AD is pinned alongside it, so its border/shadow is dropped
+       here (the boundary marker on col 4 above is what shows now). */
+    table.price-reaction-table td:first-child,
+    .price-reaction-table thead th:first-child {
       border-right: none;
+      box-shadow: none;
+    }
+    .price-reaction-table tbody tr:nth-child(even) td:nth-child(2),
+    .price-reaction-table tbody tr:nth-child(even) td:nth-child(3),
+    .price-reaction-table tbody tr:nth-child(even) td:nth-child(4) {
+      background: var(--panel-soft);
+    }
+    .price-reaction-table tbody tr:hover td:nth-child(2),
+    .price-reaction-table tbody tr:hover td:nth-child(3),
+    .price-reaction-table tbody tr:hover td:nth-child(4) {
+      background: #eef5f8;
     }
     .number-cell { font-weight: 650; white-space: nowrap; }
     .tip-head { border-bottom: 1px dotted var(--muted); cursor: help; }
@@ -1262,7 +1336,7 @@
     <p class="page-note">What each public PopDay tab is for.</p>
     <div class="manual-grid">
       {% for title, text in [
-        ("Price Reaction",      "Cached daily market-data view for confirmed announcements, split into Upcoming and Legacy by Investor Day date. The cache refreshes automatically after every scan, so newly detected companies appear here without manual steps. Company names link to the company website when PopDay has a reliable link. Columns are grouped by theme (The event, Announcement Day (AD), First-day reaction to AD, Since then). Legacy shows the closing price on the actual Investor Day coloured green when the stock rose and red when it fell; both sections show the reaction-day move, latest available close, interval return, average interval return, and daily volatility, while Legacy also shows average event-day return. UK rows show £ and US rows show $; use the All / US / UK filter above the table to focus on one market."),
+        ("Price Reaction",      "Cached daily market-data view for confirmed announcements, split into Upcoming and Legacy by Investor Day date. The cache refreshes automatically after every scan, so newly detected companies appear here without manual steps. Company names link to the company website when PopDay has a reliable link. Columns are grouped by theme (Since AD, The event, Announcement Day (AD), First-day reaction to AD) - Since AD leads, right after Company, since that's the outcome most rows are scanned for. Legacy shows the closing price on the actual Investor Day coloured green when the stock rose and red when it fell; both sections show the reaction-day move, latest available close, interval return, average interval return, and daily volatility, while Legacy also shows average event-day return. UK rows show £ and US rows show $; use the All / US / UK filter above the table to focus on one market."),
         ("Investor Days",       "Confirmed Investor Day, Analyst Day, and Capital Markets Day announcements PopDay has found, split into Upcoming and Legacy, with Evidence links to the source. Company names link to the company website when PopDay has a reliable curated or SEC-reported link. Events announced without a firm date yet appear as Date TBD under Upcoming. Covers both US filings (SEC EDGAR, evidence links to the SEC) and UK RNS announcements (via Investegate, evidence links to the Investegate page — use the All / US / UK filter above the table to pick one market)."),
         ("Research / Hype",     "Research view for already detected events. It is split into Upcoming and Legacy using the Investor Day date, and shows — where PopDay does not yet have enough data. Filterable by market like Investor Days."),
         ("Scan Log",            "Inspection view for filings PopDay examined, including dismissed false positives. It shows why something did or did not qualify, plus the next expected scan time and a collapsible history of recent scan runs."),
