@@ -312,3 +312,23 @@ Two Research/Hype briefs landed together and were implemented in one pass since 
 **Remove Event type column.** Dropped entirely (header cell, body cell, and its `colgroup` entry) per explicit decision that it's not needed. `event_type` is still computed server-side (`flask_app.py`, feeds the row dict) since it's also used to build the row's `event_type` sort key in `_sort_research_rows`/`_research_sort_settings` - left that in place as inert/unreachable rather than pruning it, since there was never a clickable header exposing it as a sort option anyway (no regression either way). Confirmed via grep it isn't referenced anywhere else on this page or in Help tab text. `research-table`'s `min-width` reduced 1375px -> 1255px to match the narrower `colgroup` sum (table uses `table-layout: fixed`, so leaving a stale wider min-width would have let the browser stretch the remaining columns proportionally rather than at their specified pixel widths).
 
 Verified: full test suite green (246 tests) - one test (`test_public_research_hype_tab_renders`, unrelated to this change but sharing a template) needed no updates since it doesn't assert Event-type text or the old `sort=`/`direction=` param names. Confirmed in a local Flask preview: sort-link hrefs use the correct per-section param names; sorting Legacy by Company (asc) changed Legacy's row order while Upcoming stayed on its own default sort and its own `sort-active` state, confirming true independence (not just separate URLs); ticker cells render as blue links to the correct Yahoo Finance URL where a real ticker exists, plain grey `—` where it doesn't; "Event type" is absent from both sections' headers and rows. Checked at mobile (375px) and desktop widths. Deployed straight through per routine-change policy; both live verify scripts passed post-deploy.
+
+## Session reconciliation: check for work lost to message interruption (2026-09-04)
+
+Several briefs landed in rapid succession earlier today while prior tasks were still mid-commit/mid-deploy, raising a concern that Claude Code's message handling might have interrupted/redirected work before it finished, silently dropping a fix. Reconciled by checking actual state, not prior summaries or commit messages:
+
+1. `git status` - clean, nothing uncommitted, nothing untracked besides an unrelated `$CODEX_HOME/` directory.
+2. `git log` - all 10 of today's commits present in order, from the initial "Since AD" reorder through the Research tab independent-sort work.
+3. `md5sum templates/admin.html flask_app.py` compared against the same files fetched live from PythonAnywhere via SSH (`ssh Jasdun@ssh.pythonanywhere.com`) - **byte-for-byte identical** on both files. The live site is running exactly what's committed locally; nothing was lost, and nothing is stuck mid-deploy.
+4. Directly measured six specific items against the live site (not git history, not this file's own prior claims) via `getBoundingClientRect()`/computed-style checks in the Browser pane, all on `jasdun.pythonanywhere.com`:
+
+| Item | Result |
+|---|---|
+| Date compaction (Filed/Accepted, Reaction Day, Latest Close) | **CONFIRMED LIVE** - all render compact ("3 Sept", no weekday/ordinal/year) |
+| Ticker link colour (blue at rest) | **CONFIRMED LIVE** - `rgb(18, 103, 177)` (`var(--link)`) on an unhovered ticker link |
+| Reaction Day in "First-day reaction to AD" group | **CONFIRMED LIVE** - last sub-column in that group, after Intraday Range |
+| "Average interval return" value under Interval Return column | **CONFIRMED LIVE** - value cell rect `[202, 307]` pixel-exact match to the Interval Return header cell's rect |
+| "Average event-day return" label/value overlap | **CONFIRMED LIVE, NO OVERLAP** - label `[532, 787]`, value `[787, 937]`, zero `overflowsLeft`/`overflowsRight` on either |
+| Event Date in "The event" group not bold | **CONFIRMED LIVE** - computed `font-weight: 500` |
+
+All six: CONFIRMED LIVE AND CORRECT. No fixes were needed - the interruption concern did not materialize into any actual lost or undeployed work this session; every commit reached PythonAnywhere via its own deploy run. Full test suite (246 tests) and both `verify_live_popday.py`/`verify_live_popday_buttons.py` re-run clean against the live site as final confirmation.
