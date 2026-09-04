@@ -128,6 +128,18 @@ def _friendly_date(value: str) -> str:
     return f"{day}{_day_suffix(day)} {_abbrev_month_year(parsed)}"
 
 
+def _compact_friendly_date(value: str) -> str:
+    """Like _friendly_date but no ordinal suffix, year dropped when current."""
+    if not value:
+        return ""
+    try:
+        fmt = "%Y%m%d" if value.isdigit() and len(value) == 8 else "%Y-%m-%d"
+        parsed = datetime.strptime(value, fmt)
+    except ValueError:
+        return value
+    return _compact_date_str(parsed)
+
+
 def _sec_filing_url(filing_url: str) -> str:
     """Convert raw SEC .txt URL to the human-readable filing index page."""
     marker = "/Archives/edgar/data/"
@@ -294,8 +306,16 @@ def _friendly_source_datetime_str(value: str) -> str:
     )
 
 
+def _compact_date_str(value_date) -> str:
+    """Day + abbreviated month, no weekday/suffix; year appended only if not current."""
+    day = value_date.day
+    if value_date.year == date.today().year:
+        return f"{day} {_MONTH_ABBR[value_date.month]}"
+    return f"{day} {_MONTH_ABBR[value_date.month]} {value_date.year}"
+
+
 def _friendly_source_datetime_parts(value: str) -> tuple[str, str]:
-    """Split an EDGAR acceptance datetime into (date line, time line)."""
+    """Split an EDGAR acceptance datetime into (compact date line, time line)."""
     if not value:
         return "", ""
     try:
@@ -305,8 +325,7 @@ def _friendly_source_datetime_parts(value: str) -> tuple[str, str]:
     zone = parsed.tzname() or ""
     if zone in {"UTC-04:00", "UTC-05:00"}:
         zone = "ET"
-    day = parsed.day
-    date_line = f"{_abbrev_weekday(parsed)} {day}{_day_suffix(day)} {_abbrev_month_year(parsed)}"
+    date_line = _compact_date_str(parsed)
     time_line = f"{parsed.strftime('%H:%M')} {zone}".strip()
     return date_line, time_line
 
@@ -1030,10 +1049,10 @@ def _build_admin_context(
                 "ticker": _unknown_text(r["ticker"]),
                 "event_date_raw": dict(r).get("event_date") or "",
                 "event_date": _friendly_date(r["event_date"]) if dict(r).get("event_date") else "Date TBD",
-                "filing_date": _friendly_date(r["filing_date"]) if dict(r).get("filing_date") else "—",
+                "filing_date": _compact_friendly_date(r["filing_date"]) if dict(r).get("filing_date") else "—",
                 "accepted": (_friendly_source_datetime_parts(r["acceptance_datetime"])[0] if dict(r).get("acceptance_datetime") else "—"),
                 "accepted_time": (_friendly_source_datetime_parts(r["acceptance_datetime"])[1] if dict(r).get("acceptance_datetime") else ""),
-                "reaction_date": _friendly_date(r["reaction_date"]) if dict(r).get("reaction_date") else "—",
+                "reaction_date": _compact_friendly_date(r["reaction_date"]) if dict(r).get("reaction_date") else "—",
                 "market": dict(r).get("market") or "US",
                 "previous_close": _money_text_for_market(r["previous_close"], dict(r).get("market")),
                 "reaction_close": _money_text_for_market(r["reaction_close"], dict(r).get("market")),
