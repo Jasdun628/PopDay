@@ -1065,7 +1065,7 @@ def _build_admin_context(
                 ),
                 "announcement_move_pct": _pct_text(r["announcement_move_pct"]),
                 "intraday_range_pct": _pct_text(r["intraday_range_pct"]),
-                "latest_close_date": _friendly_date(r["latest_close_date"]) if dict(r).get("latest_close_date") else "—",
+                "latest_close_date": _compact_friendly_date(r["latest_close_date"]) if dict(r).get("latest_close_date") else "—",
                 "latest_close": _money_text_for_market(r["latest_close"], dict(r).get("market")),
                 "interval_return_pct": _pct_text(r["interval_return_pct"]),
                 "interval_return_raw": r["interval_return_pct"],

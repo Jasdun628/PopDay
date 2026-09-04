@@ -199,7 +199,7 @@
           {{ r.interval_return_pct }}
           {% endif %}
         </td>
-        <td class="number-cell close-value">{{ r.latest_close }}<div class="status-meta">{{ r.latest_close_date }}</div></td>
+        <td class="number-cell close-value">{{ r.latest_close }}<div class="status-meta close-date-sub">{{ r.latest_close_date }}</div></td>
         <td class="number-cell">{{ r.interval_daily_volatility_pct }}</td>
         <td class="date-strong grp-start">{{ r.event_date }}</td>
         {% if show_event_day_close %}<td class="{{ 'move-up' if r.event_day_direction == 'up' else ('move-down' if r.event_day_direction == 'down' else 'number-cell') }}">{{ r.event_day_close }}{% if r.event_day_move_pct %}<div class="move-sub">{{ r.event_day_move_pct }}</div>{% endif %}</td>{% endif %}
@@ -639,6 +639,9 @@
        (the actual headline figure), so it's deliberately lighter/smaller
        than the default bold .number-cell weight. */
     .price-reaction-table td.close-value { font-weight: 500; font-size: 13px; }
+    /* The Latest Close date is a step further down the hierarchy still -
+       smaller than both the pill above it and its own price line. */
+    .close-date-sub { font-size: 11px; }
     .tip-head { border-bottom: 1px dotted var(--muted); cursor: help; }
     .total-row td { border-top: 2px solid var(--line); }
     .total-label { font-weight: 750; text-align: right; }
