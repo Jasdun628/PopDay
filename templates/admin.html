@@ -201,7 +201,7 @@
         </td>
         <td class="number-cell close-value">{{ r.latest_close }}<div class="status-meta close-date-sub">{{ r.latest_close_date }}</div></td>
         <td class="number-cell">{{ r.interval_daily_volatility_pct }}</td>
-        <td class="date-strong grp-start">{{ r.event_date }}</td>
+        <td class="date-strong event-date-cell grp-start">{{ r.event_date }}</td>
         {% if show_event_day_close %}<td class="{{ 'move-up' if r.event_day_direction == 'up' else ('move-down' if r.event_day_direction == 'down' else 'number-cell') }}">{{ r.event_day_close }}{% if r.event_day_move_pct %}<div class="move-sub">{{ r.event_day_move_pct }}</div>{% endif %}</td>{% endif %}
         <td class="grp-start {{ 'unknown-text' if r.accepted == '—' and r.filing_date == '—' else 'secondary-cell' }}">{% if r.accepted != '—' %}{{ r.accepted }}{% if r.accepted_time %}<div class="status-meta accepted-time-sub">{{ r.accepted_time }}</div>{% endif %}{% else %}{{ r.filing_date }}{% endif %}</td>
         <td class="number-cell grp-start">{{ r.previous_close }}</td>
@@ -500,6 +500,11 @@
     }
     .evidence-link:hover { text-decoration: underline; }
     .date-strong { color: var(--text); font-weight: 650; white-space: nowrap; }
+    /* De-emphasizes the event's date cell in Price Reaction's "The event"
+       group only - .date-strong is shared across many unrelated columns
+       and tabs, so this overrides just this one cell's weight via a
+       combined selector rather than touching the shared class. */
+    .date-strong.event-date-cell { font-weight: 500; }
     .date-muted { color: var(--muted); font-weight: 500; white-space: nowrap; }
     .phrase-text { color: var(--muted); font-weight: 650; }
     .status-good { color: var(--ok); font-weight: 750; white-space: nowrap; }
