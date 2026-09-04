@@ -150,8 +150,8 @@
     <colgroup>
       <col style="width: 185px"><col style="width: 115px"><col style="width: 105px"><col style="width: 110px">
       <col style="width: 135px">{% if show_event_day_close %}<col style="width: 120px">{% endif %}
-      <col style="width: 150px"><col style="width: 130px"><col style="width: 100px">
-      <col style="width: 100px"><col style="width: 85px"><col style="width: 110px">
+      <col style="width: 150px"><col style="width: 100px">
+      <col style="width: 100px"><col style="width: 85px"><col style="width: 110px"><col style="width: 130px">
       <col style="width: 140px">
     </colgroup>
     <thead>
@@ -159,8 +159,8 @@
         <th class="grp grp-company"></th>
         <th colspan="3" class="grp grp-since grp-start"><span class="tip-head" data-tip="The bigger picture since the news: where the stock has drifted from just before that first reaction day to its latest close, and how bumpy the ride has been.">Since Announcement Day (AD)</span></th>
         <th colspan="{{ 2 if show_event_day_close else 1 }}" class="grp grp-event grp-start"><span class="tip-head" data-tip="Who held the Investor Day and when it happened (or will).">The event</span></th>
-        <th colspan="2" class="grp grp-announce grp-start"><span class="tip-head" data-tip="When the news landed: the moment the SEC filing arrived, and the first trading day anyone could act on it.">Announcement Day</span></th>
-        <th colspan="4" class="grp grp-reaction grp-start"><span class="tip-head" data-tip="What the stock did on day one after the announcement (AD) dropped - the market's knee-jerk verdict, long before the Investor Day itself.">First-day reaction to AD</span></th>
+        <th colspan="1" class="grp grp-announce grp-start"><span class="tip-head" data-tip="When the news landed: the moment the SEC filing arrived, and the first trading day anyone could act on it.">Announcement Day</span></th>
+        <th colspan="5" class="grp grp-reaction grp-start"><span class="tip-head" data-tip="What the stock did on day one after the announcement (AD) dropped - the market's knee-jerk verdict, long before the Investor Day itself.">First-day reaction to AD</span></th>
         <th class="grp grp-status grp-start"><span class="tip-head" data-tip="A quick sanity flag: is this row complete, or is something missing (and why)?">Status</span></th>
       </tr>
       <tr>
@@ -171,11 +171,11 @@
         <th class="grp-start">Event Date</th>
         {% if show_event_day_close %}<th><span class="tip-head" data-tip="Where the stock finished on the Investor Day itself - green if it ended up, red if down, with that day's move underneath. Blank until the event has actually happened.">Investor Day Close</span></th>{% endif %}
         <th class="grp-start"><span class="tip-head" data-tip="The exact moment the filing hit the SEC. Anything accepted at or after 4pm ET missed the closing bell, so the market's first chance to react rolls to the next trading day.">Filed / Accepted</span></th>
-        <th><span class="tip-head" data-tip="The first day traders could actually do anything about the news - same day if it landed during market hours, the next trading day if it came in after the close.">Reaction Day</span></th>
         <th class="grp-start"><span class="tip-head" data-tip="Where the stock stood the day before anyone knew - the starting line every move on this row is measured from.">Previous Close</span></th>
         <th><span class="tip-head" data-tip="Where the stock finished at the end of the reaction day - the first close after the market had its say.">Reaction Close</span></th>
         <th><span class="tip-head" data-tip="Day one in a single number: how far the stock moved from the previous close once the news was out.">Move</span></th>
         <th><span class="tip-head" data-tip="How wild the reaction day was - the full swing from that day's low to its high, as a share of the previous close. Bigger number, wilder session.">Intraday Range</span></th>
+        <th><span class="tip-head" data-tip="The first day traders could actually do anything about the news - same day if it landed during market hours, the next trading day if it came in after the close.">Reaction Day</span></th>
         <th class="grp-start"><span class="tip-head" data-tip="Ok means the row is complete; anything else is a short note on what data is missing and why.">Status</span></th>
       </tr>
     </thead>
@@ -204,11 +204,11 @@
         <td class="date-strong grp-start">{{ r.event_date }}</td>
         {% if show_event_day_close %}<td class="{{ 'move-up' if r.event_day_direction == 'up' else ('move-down' if r.event_day_direction == 'down' else 'number-cell') }}">{{ r.event_day_close }}{% if r.event_day_move_pct %}<div class="move-sub">{{ r.event_day_move_pct }}</div>{% endif %}</td>{% endif %}
         <td class="grp-start {{ 'unknown-text' if r.accepted == '—' and r.filing_date == '—' else 'secondary-cell' }}">{% if r.accepted != '—' %}{{ r.accepted }}{% if r.accepted_time %}<div class="status-meta accepted-time-sub">{{ r.accepted_time }}</div>{% endif %}{% else %}{{ r.filing_date }}{% endif %}</td>
-        <td class="{{ 'unknown-text' if r.reaction_date == '—' else 'date-strong' }}">{{ r.reaction_date }}</td>
         <td class="number-cell grp-start">{{ r.previous_close }}</td>
         <td class="number-cell">{{ r.reaction_close }}</td>
         <td class="number-cell">{{ r.announcement_move_pct }}</td>
         <td class="number-cell">{{ r.intraday_range_pct }}</td>
+        <td class="{{ 'unknown-text' if r.reaction_date == '—' else 'date-strong' }}">{{ r.reaction_date }}</td>
         <td class="grp-start {{ 'status-good' if r.status == 'Ok' else 'secondary-cell' }}">
           {{ r.status }}
           {% if r.notes %}<div class="status-meta">{{ r.notes }}</div>{% endif %}
