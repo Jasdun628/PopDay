@@ -1,7 +1,64 @@
 import unittest
-from datetime import date
+from datetime import date, datetime, time
+from zoneinfo import ZoneInfo
 
-from popday.stock_reaction import PriceBar, compute_price_reaction, reaction_anchor_date
+from popday.stock_reaction import (
+    PriceBar,
+    _drop_incomplete_current_day_bar,
+    compute_price_reaction,
+    reaction_anchor_date,
+)
+
+
+class DropIncompleteCurrentDayBarTests(unittest.TestCase):
+    def test_drops_todays_bar_before_market_close(self):
+        tz = ZoneInfo("Europe/London")
+        bars = [
+            PriceBar(date=date(2026, 9, 3), open=1, high=1, low=1, close=1),
+            PriceBar(date=date(2026, 9, 4), open=2, high=2, low=2, close=2),
+        ]
+        now = datetime(2026, 9, 4, 14, 0, tzinfo=tz)  # mid-afternoon, market open
+
+        result = _drop_incomplete_current_day_bar(
+            bars, tz=tz, market_close=time(16, 30), now=now
+        )
+
+        self.assertEqual([bar.date for bar in result], [date(2026, 9, 3)])
+
+    def test_keeps_todays_bar_after_market_close(self):
+        tz = ZoneInfo("Europe/London")
+        bars = [
+            PriceBar(date=date(2026, 9, 3), open=1, high=1, low=1, close=1),
+            PriceBar(date=date(2026, 9, 4), open=2, high=2, low=2, close=2),
+        ]
+        now = datetime(2026, 9, 4, 20, 30, tzinfo=tz)  # after LSE close
+
+        result = _drop_incomplete_current_day_bar(
+            bars, tz=tz, market_close=time(16, 30), now=now
+        )
+
+        self.assertEqual([bar.date for bar in result], [date(2026, 9, 3), date(2026, 9, 4)])
+
+    def test_keeps_bars_when_last_bar_is_not_today(self):
+        tz = ZoneInfo("America/New_York")
+        bars = [
+            PriceBar(date=date(2026, 9, 2), open=1, high=1, low=1, close=1),
+            PriceBar(date=date(2026, 9, 3), open=2, high=2, low=2, close=2),
+        ]
+        now = datetime(2026, 9, 4, 10, 0, tzinfo=tz)  # weekend/holiday gap, no bar today
+
+        result = _drop_incomplete_current_day_bar(
+            bars, tz=tz, market_close=time(16, 0), now=now
+        )
+
+        self.assertEqual([bar.date for bar in result], [date(2026, 9, 2), date(2026, 9, 3)])
+
+    def test_empty_bars_returned_unchanged(self):
+        tz = ZoneInfo("America/New_York")
+        result = _drop_incomplete_current_day_bar(
+            [], tz=tz, market_close=time(16, 0), now=datetime(2026, 9, 4, 10, 0, tzinfo=tz)
+        )
+        self.assertEqual(result, [])
 
 
 class PriceReactionTests(unittest.TestCase):

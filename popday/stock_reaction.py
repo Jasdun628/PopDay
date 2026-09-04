@@ -28,11 +28,13 @@ YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/"
 PRICE_DATA_SOURCE = "yahoo_chart_daily_json"
 UK_PRICE_DATA_SOURCE = "yfinance"
 LONDON_TZ = ZoneInfo("Europe/London")
+NY_TZ = ZoneInfo("America/New_York")
 # LSE's continuous trading session closes 16:30 London time - unlike the US
 # path's time(16, 0) UTC-naive cutoff, this must be timezone-aware since
 # London alternates BST/GMT (a fixed UTC cutoff would misclassify RNS
 # announcements near the close for roughly half the year).
 UK_MARKET_CLOSE = time(16, 30)
+US_MARKET_CLOSE = time(16, 0)
 
 COMPANY_TICKER_OVERRIDES = {
     "barnes & noble education, inc.": "BNED",
@@ -128,6 +130,27 @@ def fetch_stooq_daily_bars(ticker: str, *, user_agent: str) -> list[PriceBar]:
     return parse_daily_bars(text)
 
 
+def _drop_incomplete_current_day_bar(
+    bars: list[PriceBar], *, tz: ZoneInfo, market_close: time, now: datetime | None = None
+) -> list[PriceBar]:
+    """Drop a still-in-progress trading day from the end of `bars`.
+
+    The scheduled capture jobs (capture_uk_prices.py, and its US equivalent)
+    are timed to run after their market closes, so yfinance/Yahoo's
+    current-day bar is always genuinely final by then. refresh_price_reactions
+    has no such timing guarantee - it runs on every deploy, any time of day -
+    so a deploy during market hours would otherwise surface today's live,
+    still-moving price as "Latest Close". Bars are pre-sorted ascending by
+    date, so the last bar is the one to check.
+    """
+    if not bars:
+        return bars
+    current = (now or datetime.now(tz)).astimezone(tz)
+    if bars[-1].date == current.date() and current.time() < market_close:
+        return bars[:-1]
+    return bars
+
+
 def fetch_yahoo_daily_bars(ticker: str, *, user_agent: str) -> list[PriceBar]:
     start = int(datetime(2024, 1, 1, tzinfo=timezone.utc).timestamp())
     end = int((datetime.now(timezone.utc) + timedelta(days=3)).timestamp())
@@ -166,7 +189,7 @@ def fetch_yahoo_daily_bars(ticker: str, *, user_agent: str) -> list[PriceBar]:
             )
         )
     bars.sort(key=lambda bar: bar.date)
-    return bars
+    return _drop_incomplete_current_day_bar(bars, tz=NY_TZ, market_close=US_MARKET_CLOSE)
 
 
 def fetch_daily_bars(ticker: str, *, user_agent: str) -> tuple[list[PriceBar], str]:
@@ -221,7 +244,7 @@ def fetch_uk_daily_bars(yahoo_symbol: str) -> list[PriceBar]:
             )
         )
     bars.sort(key=lambda bar: bar.date)
-    return bars
+    return _drop_incomplete_current_day_bar(bars, tz=LONDON_TZ, market_close=UK_MARKET_CLOSE)
 
 
 def parse_daily_bars(text: str) -> list[PriceBar]:
